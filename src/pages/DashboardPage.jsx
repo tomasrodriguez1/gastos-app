@@ -8,10 +8,10 @@ import { formatCLP, formatFecha, formatMesLargo, getMesActual, privacyFormat } f
 
 function MetricCard({ label, value, detail, tone = 'text-slate-200' }) {
   return (
-    <div className="rounded-xl border border-slate-800/80 bg-slate-900/40 p-5">
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`mt-3 font-mono-numbers text-2xl font-bold ${tone}`}>{value}</div>
-      {detail && <div className="mt-2 text-sm text-slate-500">{detail}</div>}
+    <div className="rounded-xl border border-slate-800/80 bg-slate-900/40 p-3 sm:p-5">
+      <div className="text-[10px] sm:text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={`mt-1.5 sm:mt-3 font-mono-numbers text-lg sm:text-2xl font-bold leading-tight ${tone}`}>{value}</div>
+      {detail && <div className="hidden sm:block mt-2 text-sm text-slate-500">{detail}</div>}
     </div>
   )
 }
@@ -74,7 +74,7 @@ export function DashboardPage({ gastos, obtenerPresupuesto, guardarPresupuesto, 
         </Link>
       </div>
 
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <section className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4">
         <MetricCard label="Ingresos" value={privacyFormat(ingresos, isPrivacyModeEnabled)} detail="Presupuesto del mes" tone="text-emerald-400" />
         <MetricCard label="Gasto real" value={privacyFormat(real, isPrivacyModeEnabled)} detail={`${avance}% del presupuesto`} />
         <MetricCard label="Presupuestado" value={privacyFormat(previsto, isPrivacyModeEnabled)} detail="Total planificado" tone="text-sky-300" />

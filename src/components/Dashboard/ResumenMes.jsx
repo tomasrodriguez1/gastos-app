@@ -13,11 +13,11 @@ function Card({ label, value, rawValue, sub, color = 'text-slate-200', accent })
     : accent?.text
 
   return (
-    <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-3 sm:p-5">
-      <div className="text-[10px] sm:text-xs text-slate-500 uppercase tracking-wider mb-1 sm:mb-2">{label}</div>
-      <div className={`text-base sm:text-2xl font-mono-numbers font-bold leading-tight ${color}`}>{displayValue}</div>
-      {sub && <div className="hidden sm:block text-xs text-slate-500 mt-1">{sub}</div>}
-      {accent && <div className="text-[10px] sm:text-xs mt-1" style={{ color: accent.color }}>{accentText}</div>}
+    <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+      <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">{label}</div>
+      <div className={`text-2xl font-mono-numbers font-bold ${color}`}>{displayValue}</div>
+      {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
+      {accent && <div className="text-xs mt-1" style={{ color: accent.color }}>{accentText}</div>}
     </div>
   )
 }
@@ -37,7 +37,7 @@ export function ResumenMes({ gastosMes, presupuestoMes }) {
   const diferenciaProyeccion = proyeccion - totalPrevisto
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
       <Card
         label="Ingresos"
         rawValue={totalIngresos}
