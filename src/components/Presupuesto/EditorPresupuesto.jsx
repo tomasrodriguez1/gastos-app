@@ -86,7 +86,7 @@ function InputMonto({ value, onChange }) {
       onFocus={() => { setFocused(true); setRaw(String(value || 0)) }}
       onChange={e => { setRaw(e.target.value); onChange(Number(e.target.value) || 0) }}
       onBlur={() => setFocused(false)}
-      className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-1.5 text-sm font-mono-numbers text-slate-200 outline-none focus:border-sky-500 w-32 text-right"
+      className="bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-1.5 text-sm font-mono-numbers text-slate-200 outline-none focus:border-sky-500 w-24 sm:w-32 text-right"
     />
   )
 }
@@ -211,9 +211,9 @@ export function EditorPresupuesto({ mes, presupuestoMes, gastos, onGuardar, onNu
   return (
     <div className="space-y-6">
       {/* Ingresos + Resumen — fila superior */}
-      <div className="flex gap-4 items-stretch">
-        {/* Ingresos — 30% */}
-        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5" style={{ flexBasis: '30%', flexShrink: 0 }}>
+      <div className="flex flex-col lg:flex-row gap-4 items-stretch">
+        {/* Ingresos — 30% en desktop, full en mobile */}
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 lg:w-[30%] lg:shrink-0">
           <h3 className="text-sm font-medium text-slate-400 mb-4 uppercase tracking-wider">Ingresos previstos</h3>
           <div className="space-y-2">
             {Object.entries(datos?.ingresos || {}).map(([fuente, monto]) => (
@@ -255,11 +255,11 @@ export function EditorPresupuesto({ mes, presupuestoMes, gastos, onGuardar, onNu
                   <span className={`font-mono-numbers text-xs w-24 text-right ${COLOR_TEXT[estado]}`}>
                     {formatCLP(realGrupo)}
                   </span>
-                  <span className="font-mono-numbers text-xs text-slate-600 w-24 text-right">
+                  <span className="hidden sm:inline font-mono-numbers text-xs text-slate-600 w-24 text-right">
                     / {formatCLP(prevGrupo)}
                   </span>
                   {prevGrupo > 0 && (
-                    <span className={`font-mono-numbers text-xs w-20 text-right ${diff > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                    <span className={`hidden sm:inline font-mono-numbers text-xs w-20 text-right ${diff > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
                       {diff > 0 ? '+' : ''}{formatCLP(diff)}
                     </span>
                   )}
@@ -272,8 +272,8 @@ export function EditorPresupuesto({ mes, presupuestoMes, gastos, onGuardar, onNu
           <span className="text-xs font-medium text-slate-400 w-40 shrink-0">TOTAL</span>
           <div className="flex-1" />
           <span className="font-mono-numbers text-sm font-bold text-slate-200 w-24 text-right">{formatCLP(totalReal)}</span>
-          <span className="font-mono-numbers text-sm text-slate-500 w-24 text-right">/ {formatCLP(totalPrevisto)}</span>
-          <span className={`font-mono-numbers text-sm font-bold w-20 text-right ${totalReal - totalPrevisto > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+          <span className="hidden sm:inline font-mono-numbers text-sm text-slate-500 w-24 text-right">/ {formatCLP(totalPrevisto)}</span>
+          <span className={`hidden sm:inline font-mono-numbers text-sm font-bold w-20 text-right ${totalReal - totalPrevisto > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
             {totalReal - totalPrevisto > 0 ? '+' : ''}{formatCLP(totalReal - totalPrevisto)}
           </span>
         </div>
@@ -326,7 +326,7 @@ export function EditorPresupuesto({ mes, presupuestoMes, gastos, onGuardar, onNu
                     <th className="px-5 py-2 text-left text-xs text-slate-500 uppercase tracking-wider">Subcategoría</th>
                     <th className="px-5 py-2 text-right text-xs text-slate-500 uppercase tracking-wider w-36">Previsto</th>
                     <th className="px-5 py-2 text-right text-xs text-slate-500 uppercase tracking-wider w-28">Real</th>
-                    <th className="px-5 py-2 text-right text-xs text-slate-500 uppercase tracking-wider w-24">Dif.</th>
+                    <th className="hidden sm:table-cell px-5 py-2 text-right text-xs text-slate-500 uppercase tracking-wider w-24">Dif.</th>
                     <th className="px-5 py-2 text-center text-xs text-slate-500 uppercase tracking-wider w-14">FGP</th>
                     <th className="w-8" />
                   </tr>
@@ -368,7 +368,7 @@ export function EditorPresupuesto({ mes, presupuestoMes, gastos, onGuardar, onNu
                               <span className="text-slate-700">—</span>
                             )}
                           </td>
-                          <td className="px-5 py-2 text-right font-mono-numbers text-xs">
+                          <td className="hidden sm:table-cell px-5 py-2 text-right font-mono-numbers text-xs">
                             {hasData && prev > 0 ? (
                               <span className={diff > 0 ? 'text-red-400' : 'text-emerald-400'}>
                                 {diff > 0 ? '+' : ''}{formatCLP(diff)}
@@ -442,7 +442,7 @@ export function EditorPresupuesto({ mes, presupuestoMes, gastos, onGuardar, onNu
       )}
 
       {/* Resumen y guardar */}
-      <div className="flex items-center justify-between bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
         <div className="flex gap-8">
           <div>
             <div className="text-xs text-slate-500 uppercase tracking-wider">Total previsto</div>

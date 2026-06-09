@@ -7,7 +7,6 @@ import { EditarAsignacion } from './EditarAsignacion'
 
 function formatCreatedAt(ts) {
   if (!ts) return ''
-  // ts is "YYYY-MM-DD HH:MM:SS" — take date part only
   const date = ts.substring(0, 10)
   const [, mo, da] = date.split('-')
   return `${da}/${mo}`
@@ -109,17 +108,119 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos }) {
 
   return (
     <>
-      <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden">
+      {/* ── Vista mobile: cards ──────────────────────────────── */}
+      <div className="sm:hidden bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden">
+        <div className="divide-y divide-slate-700/30">
+          {gastos.map((g, i) => {
+            const gastoId = getGastoId(g, i)
+            return (
+              <div
+                key={gastoId}
+                className={`px-4 py-3 ${g.manual ? 'bg-violet-500/[0.03]' : ''}`}
+              >
+                {/* Fila 1: motivo + monto */}
+                <div className="flex items-start justify-between gap-3 mb-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    {g.manual && (
+                      <span title="Gasto manual" className="text-violet-400 text-xs shrink-0">✎</span>
+                    )}
+                    <span className="text-slate-200 text-sm truncate" title={g.motivo}>
+                      {g.motivo}
+                    </span>
+                  </div>
+                  <div className="shrink-0">
+                    <MontoCell g={g} />
+                  </div>
+                </div>
+
+                {/* Fila 2: meta + acciones */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                    <span className="text-xs text-slate-600 font-mono-numbers shrink-0">
+                      {formatFecha(g.fecha)}
+                    </span>
+                    <PresupuestoBadge g={g} />
+                    {(g.tipos || []).slice(0, 2).map(t => <Badge key={t} tipo={t} />)}
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {confirmandoId === gastoId ? (
+                      <>
+                        <button
+                          onClick={() => { onEliminar(gastoId); setConfirmandoId(null) }}
+                          className="text-xs text-red-400 font-medium"
+                        >
+                          Eliminar
+                        </button>
+                        <button
+                          onClick={() => setConfirmandoId(null)}
+                          className="text-xs text-slate-500"
+                        >
+                          ✕
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {onActualizar && (
+                          <button
+                            onClick={() => onActualizar(g.id, { pagado: !g.pagado })}
+                            className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                              g.pagado
+                                ? 'text-emerald-400 border-emerald-500/30 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30'
+                                : 'text-amber-500/70 border-amber-500/20 hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/30'
+                            }`}
+                          >
+                            {g.pagado ? 'Pagado' : 'Pend.'}
+                          </button>
+                        )}
+                        {onActualizar && (
+                          <button
+                            onClick={() => setEditando(g)}
+                            title="Editar asignación"
+                            className="text-slate-600 hover:text-sky-400 transition-colors text-sm leading-none px-1"
+                          >
+                            ✎
+                          </button>
+                        )}
+                        {onEliminar && (
+                          <button
+                            onClick={() => setConfirmandoId(gastoId)}
+                            title="Eliminar"
+                            className="text-slate-700 hover:text-red-400 transition-colors text-base leading-none px-1"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-slate-700/50 bg-slate-800/80 px-4 py-3 flex items-center justify-between">
+          <span className="text-xs text-slate-500">{gastos.length} movimientos</span>
+          <span className={`font-mono-numbers font-bold text-sm ${total < 0 ? 'text-emerald-400' : 'text-slate-200'}`}>
+            {formatCLP(total)}
+          </span>
+        </div>
+      </div>
+
+      {/* ── Vista desktop: tabla ─────────────────────────────── */}
+      <div className="hidden sm:block bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden">
         <div className="overflow-x-auto scrollbar-thin">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700/50">
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-16">Fecha</th>
-                <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-16">Ingresado</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-16">Ingresado</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Motivo</th>
-                <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-28">Banco</th>
-                <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Tipos</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-28">Presup.</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-28">Banco</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Tipos</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-28">Presupuesto</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider w-32">Monto</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider w-20">Estado</th>
                 <th className="px-4 py-3 w-12" />
@@ -136,7 +237,7 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos }) {
                   <td className="px-4 py-2.5 font-mono-numbers text-xs text-slate-500">
                     {formatFecha(g.fecha)}
                   </td>
-                  <td className="hidden sm:table-cell px-4 py-2.5 font-mono-numbers text-xs text-slate-700" title={g.created_at}>
+                  <td className="px-4 py-2.5 font-mono-numbers text-xs text-slate-700" title={g.created_at}>
                     {formatCreatedAt(g.created_at)}
                   </td>
                   <td className="px-4 py-2.5 text-slate-300 max-w-xs">
@@ -150,8 +251,8 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos }) {
                       </div>
                     </div>
                   </td>
-                  <td className="hidden sm:table-cell px-4 py-2.5 text-slate-400 text-xs">{g.banco || 'Sin banco'}</td>
-                  <td className="hidden sm:table-cell px-4 py-2.5">
+                  <td className="px-4 py-2.5 text-slate-400 text-xs">{g.banco || 'Sin banco'}</td>
+                  <td className="px-4 py-2.5">
                     <div className="flex flex-wrap gap-1">
                       {(g.tipos || []).map(t => <Badge key={t} tipo={t} />)}
                     </div>
