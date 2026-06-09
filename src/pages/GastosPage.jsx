@@ -86,7 +86,41 @@ export function GastosPage({ gastos, gastosLocales, meses, onAgregarGasto, onEli
       />
     )}
     <main className="max-w-7xl mx-auto px-3 py-4 sm:px-6 sm:py-6 space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+
+      {/* ── Header mobile ─────────────────────────────────── */}
+      <div className="flex sm:hidden flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <SelectorMes mes={mes} meses={meses} onChange={m => { setMes(m); setFiltros(FILTROS_INIT) }} />
+          <BotonActualizar compact onSync={onSync} syncing={syncing} error={syncError} />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 flex-1">
+            {gastosFiltrados.length} registros
+            {manualesDelMes > 0 && <span className="text-violet-400 ml-2">{manualesDelMes} man.</span>}
+          </span>
+          <button
+            onClick={() => setMostrarDuplicados(true)}
+            className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 text-xs font-medium hover:bg-slate-700/60 transition-all"
+          >
+            Duplicados
+            {resumen?.gastos_afectados > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-slate-900 px-1">
+                {resumen.gastos_afectados}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setMostrarForm(true)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-400 text-xs font-medium hover:bg-violet-500/20 transition-all"
+          >
+            <span className="text-sm leading-none">+</span>
+            Nuevo
+          </button>
+        </div>
+      </div>
+
+      {/* ── Header desktop ────────────────────────────────── */}
+      <div className="hidden sm:flex items-center justify-between gap-4">
         <SelectorMes mes={mes} meses={meses} onChange={m => { setMes(m); setFiltros(FILTROS_INIT) }} />
         <div className="flex items-center gap-3">
           {manualesDelMes > 0 && (
