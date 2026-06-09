@@ -453,13 +453,16 @@ async function leerPresupuestoMes(mes) {
 
   const fondos = {}
   for (const r of fondoRows) {
+    const vinculado = typeof r.vinculado === 'string'
+      ? JSON.parse(r.vinculado)
+      : (r.vinculado ?? null)
     fondos[r.nombre] = {
       previsto_aportar: toMonto(r.previsto_aportar),
       acumulado: toMonto(r.acumulado),
       objetivo: toMonto(r.objetivo),
       ...(r.emoji && { emoji: r.emoji }),
       ...(r.fecha_meta && { fecha_meta: r.fecha_meta }),
-      ...(r.vinculado && { vinculado: r.vinculado }),  // ya es objeto JS (JSONB)
+      ...(vinculado && { vinculado }),
     }
   }
 
