@@ -104,7 +104,7 @@ export function Sidebar() {
       </aside>
 
       {/* ── Mobile bottom nav ───────────────────────────────────── */}
-      <nav className="fixed bottom-0 inset-x-0 z-50 md:hidden border-t border-slate-800 bg-[var(--background)]/95 backdrop-blur pb-safe">
+      <nav className="fixed bottom-0 inset-x-0 z-[200] md:hidden border-t border-slate-800 bg-[var(--background)]/95 backdrop-blur pb-safe">
         <div className="flex items-center h-16 px-1">
           <NavLink to="/" end className={mobileNavClass}>
             <IconDashboard />

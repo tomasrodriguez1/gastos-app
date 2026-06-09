@@ -109,7 +109,7 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos }) {
   return (
     <>
       {/* ── Vista mobile: cards ──────────────────────────────── */}
-      <div className="sm:hidden bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden">
+      <div className="block sm:hidden bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden">
         <div className="divide-y divide-slate-700/30">
           {gastos.map((g, i) => {
             const gastoId = getGastoId(g, i)

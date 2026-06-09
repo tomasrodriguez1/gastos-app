@@ -133,23 +133,23 @@ export function GastosPage({ gastos, gastosLocales, meses, onAgregarGasto, onEli
           catalogos={catalogos}
         />
       )}
-    </main>
 
-    {mostrarDuplicados && (
-      <DuplicadosReview
-        grupos={grupos}
-        resumen={resumen}
-        loading={loadingDup}
-        error={errorDup}
-        mes={mes}
-        onActualizar={onActualizarGasto}
-        onEliminar={onEliminarGasto}
-        onExcluir={excluirPar}
-        onRefrescar={refrescarDup}
-        onCerrar={() => setMostrarDuplicados(false)}
-        catalogos={catalogos}
-      />
-    )}
+      {mostrarDuplicados && (
+        <DuplicadosReview
+          grupos={grupos}
+          resumen={resumen}
+          loading={loadingDup}
+          error={errorDup}
+          mes={mes}
+          onActualizar={onActualizarGasto}
+          onEliminar={onEliminarGasto}
+          onExcluir={excluirPar}
+          onRefrescar={refrescarDup}
+          onCerrar={() => setMostrarDuplicados(false)}
+          catalogos={catalogos}
+        />
+      )}
+    </main>
     </>
   )
 }
