@@ -85,7 +85,7 @@ export function GastosPage({ gastos, gastosLocales, meses, onAgregarGasto, onEli
         catalogos={catalogos}
       />
     )}
-    <main className="max-w-7xl mx-auto px-6 py-6 space-y-4">
+    <main className="max-w-7xl mx-auto px-3 py-4 sm:px-6 sm:py-6 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <SelectorMes mes={mes} meses={meses} onChange={m => { setMes(m); setFiltros(FILTROS_INIT) }} />
         <div className="flex items-center gap-3">

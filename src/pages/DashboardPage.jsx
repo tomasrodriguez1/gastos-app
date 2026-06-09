@@ -60,7 +60,7 @@ export function DashboardPage({ gastos, obtenerPresupuesto, guardarPresupuesto, 
   const ultimosGastos = gastosMes.slice(0, 5)
 
   return (
-    <main className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+    <main className="max-w-7xl mx-auto px-3 py-4 sm:px-6 sm:py-6 space-y-5">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <p className="text-sm text-slate-500">{formatMesLargo(mes)}</p>

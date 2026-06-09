@@ -38,7 +38,7 @@ export function PresupuestoPage({ gastos, meses, obtenerPresupuesto, guardarPres
   }
 
   return (
-    <main className="max-w-[1400px] mx-auto px-6 py-6 space-y-5">
+    <main className="max-w-[1400px] mx-auto px-3 py-4 sm:px-6 sm:py-6 space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <SelectorMes mes={mes} meses={mesesConFuturos} onChange={setMes} />

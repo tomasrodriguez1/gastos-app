@@ -1,6 +1,67 @@
 import { NavLink } from 'react-router-dom'
 import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 
+// ─── Íconos SVG inline ────────────────────────────────────────────────────────
+
+function IconDashboard() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  )
+}
+
+function IconCashflow() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+      <polyline points="16 7 22 7 22 13" />
+    </svg>
+  )
+}
+
+function IconGastos() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="8" y1="13" x2="16" y2="13" />
+      <line x1="8" y1="17" x2="16" y2="17" />
+    </svg>
+  )
+}
+
+function IconPresupuesto() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a10 10 0 0 1 0 20A10 10 0 0 1 12 2z" />
+      <path d="M12 2 A10 10 0 0 1 22 12 L12 12Z" fill="currentColor" opacity="0.25" stroke="none"/>
+      <line x1="12" y1="12" x2="12" y2="2" />
+      <line x1="12" y1="12" x2="20" y2="16" />
+    </svg>
+  )
+}
+
+function IconOjo({ open }) {
+  return open ? (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ) : (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  )
+}
+
+// ─── Sidebar desktop (sin cambios) ───────────────────────────────────────────
+
 export function Sidebar() {
   const { isPrivacyModeEnabled, togglePrivacyMode } = usePrivacyMode()
 
@@ -11,35 +72,68 @@ export function Sidebar() {
         : 'text-muted hover:text-foreground hover:bg-white/4'
     }`
 
+  const mobileNavClass = ({ isActive }) =>
+    `flex flex-col items-center gap-1 px-2 py-1 text-xs font-medium transition-colors min-w-0 flex-1 ${
+      isActive
+        ? 'text-[var(--accent)]'
+        : 'text-muted'
+    }`
+
   return (
-    <aside className="border-b border-slate-800 bg-[var(--background)]/95 backdrop-blur md:fixed md:inset-y-0 md:left-0 md:z-50 md:w-64 md:border-b-0 md:border-r md:pt-safe">
-      <div className="flex min-h-16 items-center justify-between gap-4 px-4 md:min-h-screen md:flex-col md:items-stretch md:justify-start md:px-5 md:py-6">
-        <div className="flex items-center justify-between gap-3 md:mb-6">
-          <span className="font-heading text-xl text-white">Gastos</span>
+    <>
+      {/* ── Desktop sidebar ─────────────────────────────────────── */}
+      <aside className="hidden md:block md:fixed md:inset-y-0 md:left-0 md:z-50 md:w-64 border-r border-slate-800 bg-[var(--background)]/95 backdrop-blur pt-safe">
+        <div className="flex min-h-screen flex-col items-stretch justify-start px-5 py-6">
+          <div className="flex items-center justify-between gap-3 mb-6">
+            <span className="font-heading text-xl text-white">Gastos</span>
+            <button
+              onClick={togglePrivacyMode}
+              className="h-9 rounded-lg border border-slate-800 px-3 text-xs font-medium text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
+              title={isPrivacyModeEnabled ? 'Mostrar montos' : 'Ocultar montos'}
+            >
+              {isPrivacyModeEnabled ? 'Mostrar' : 'Ocultar'}
+            </button>
+          </div>
+          <nav className="flex flex-col gap-1">
+            <NavLink to="/" end className={navClass}>Dashboard</NavLink>
+            <NavLink to="/cashflow" className={navClass}>Cashflow</NavLink>
+            <NavLink to="/gastos" className={navClass}>Gastos</NavLink>
+            <NavLink to="/presupuesto" className={navClass}>Presupuesto</NavLink>
+          </nav>
+        </div>
+      </aside>
+
+      {/* ── Mobile bottom nav ───────────────────────────────────── */}
+      <nav className="fixed bottom-0 inset-x-0 z-50 md:hidden border-t border-slate-800 bg-[var(--background)]/95 backdrop-blur pb-safe">
+        <div className="flex items-center h-16 px-1">
+          <NavLink to="/" end className={mobileNavClass}>
+            <IconDashboard />
+            <span>Dashboard</span>
+          </NavLink>
+          <NavLink to="/cashflow" className={mobileNavClass}>
+            <IconCashflow />
+            <span>Cashflow</span>
+          </NavLink>
+          <NavLink to="/gastos" className={mobileNavClass}>
+            <IconGastos />
+            <span>Gastos</span>
+          </NavLink>
+          <NavLink to="/presupuesto" className={mobileNavClass}>
+            <IconPresupuesto />
+            <span>Presup.</span>
+          </NavLink>
           <button
             onClick={togglePrivacyMode}
-            className="hidden h-9 rounded-lg border border-slate-800 px-3 text-xs font-medium text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200 md:block"
+            className={`flex flex-col items-center gap-1 px-2 py-1 text-xs font-medium transition-colors min-w-0 flex-1 ${
+              isPrivacyModeEnabled ? 'text-[var(--accent)]' : 'text-muted'
+            }`}
             title={isPrivacyModeEnabled ? 'Mostrar montos' : 'Ocultar montos'}
           >
-            {isPrivacyModeEnabled ? 'Mostrar' : 'Ocultar'}
+            <IconOjo open={!isPrivacyModeEnabled} />
+            <span>{isPrivacyModeEnabled ? 'Mostrar' : 'Ocultar'}</span>
           </button>
         </div>
-        <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto md:flex-col md:overflow-visible">
-          <NavLink to="/" end className={navClass}>Dashboard</NavLink>
-          <NavLink to="/cashflow" className={navClass}>Cashflow</NavLink>
-          <NavLink to="/gastos" className={navClass}>Gastos</NavLink>
-          <NavLink to="/presupuesto" className={navClass}>Presupuesto</NavLink>
-        </nav>
-        <div className="md:hidden">
-          <button
-            onClick={togglePrivacyMode}
-            className="h-9 rounded-lg border border-slate-800 px-3 text-xs font-medium text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
-            title={isPrivacyModeEnabled ? 'Mostrar montos' : 'Ocultar montos'}
-          >
-            {isPrivacyModeEnabled ? 'Mostrar' : 'Ocultar'}
-          </button>
-        </div>
-      </div>
-    </aside>
+      </nav>
+    </>
   )
 }

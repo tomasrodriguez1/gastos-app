@@ -115,11 +115,11 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos }) {
             <thead>
               <tr className="border-b border-slate-700/50">
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-16">Fecha</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-16">Ingresado</th>
+                <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-16">Ingresado</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Motivo</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-28">Banco</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Tipos</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-28">Presupuesto</th>
+                <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-28">Banco</th>
+                <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Tipos</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-28">Presup.</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider w-32">Monto</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider w-20">Estado</th>
                 <th className="px-4 py-3 w-12" />
@@ -136,7 +136,7 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos }) {
                   <td className="px-4 py-2.5 font-mono-numbers text-xs text-slate-500">
                     {formatFecha(g.fecha)}
                   </td>
-                  <td className="px-4 py-2.5 font-mono-numbers text-xs text-slate-700" title={g.created_at}>
+                  <td className="hidden sm:table-cell px-4 py-2.5 font-mono-numbers text-xs text-slate-700" title={g.created_at}>
                     {formatCreatedAt(g.created_at)}
                   </td>
                   <td className="px-4 py-2.5 text-slate-300 max-w-xs">
@@ -150,8 +150,8 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos }) {
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-2.5 text-slate-400 text-xs">{g.banco || 'Sin banco'}</td>
-                  <td className="px-4 py-2.5">
+                  <td className="hidden sm:table-cell px-4 py-2.5 text-slate-400 text-xs">{g.banco || 'Sin banco'}</td>
+                  <td className="hidden sm:table-cell px-4 py-2.5">
                     <div className="flex flex-wrap gap-1">
                       {(g.tipos || []).map(t => <Badge key={t} tipo={t} />)}
                     </div>

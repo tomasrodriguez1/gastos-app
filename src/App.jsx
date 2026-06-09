@@ -76,7 +76,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[var(--background)]">
       <Sidebar />
-      <div className="md:pl-64">
+      <div className="pb-16 md:pb-0 md:pl-64">
         {errorGuardado && (
           <div className="bg-red-500/20 border-b border-red-500/30 text-red-400 text-sm px-6 py-2 text-center">
             {errorGuardado} — recargá la página y volvé a intentarlo

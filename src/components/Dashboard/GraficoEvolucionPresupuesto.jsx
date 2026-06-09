@@ -307,7 +307,7 @@ export function GraficoEvolucionPresupuesto({ gastos }) {
       </div>
 
       <div ref={scrollRef} className="overflow-x-auto px-3 py-5 scrollbar-thin">
-        <div style={{ minWidth: `${Math.max(640, data.length * 74)}px` }}>
+        <div style={{ minWidth: `${data.length * 60}px` }}>
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={vista === 'stacked' || vista === 'dia' ? data : cambioData} margin={{ left: 8, right: 16, top: 8, bottom: 4 }}>
               <XAxis
