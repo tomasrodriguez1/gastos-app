@@ -19,8 +19,8 @@ if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'producti
 // ─── AUTENTICACIÓN POR TOKEN ──────────────────────────────────────────────────
 
 app.use('*', async (c, next) => {
-  // Sin token configurado → acceso libre (dev local)
-  if (!ACCESS_TOKEN) return next()
+  // Sin token configurado o en dev → acceso libre
+  if (!ACCESS_TOKEN || process.env.NODE_ENV !== 'production') return next()
 
   // Las rutas /api/* validan el header Authorization o la cookie
   // El resto (frontend) solo necesita la cookie
