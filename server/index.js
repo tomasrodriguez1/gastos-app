@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { serveStatic } from 'hono/bun'
+import { getCookie, setCookie } from 'hono/cookie'
 import sql from './db/client.js'
 import { initSchema } from './db/init.js'
 import { toMonto } from './db/numeric.js'
@@ -9,10 +10,41 @@ import { detectarDuplicadosMes } from './duplicados.js'
 const app = new Hono()
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:6001'
+const ACCESS_TOKEN = process.env.ACCESS_TOKEN
 
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()
 }
+
+// ─── AUTENTICACIÓN POR TOKEN ──────────────────────────────────────────────────
+
+app.use('*', async (c, next) => {
+  // Sin token configurado → acceso libre (dev local)
+  if (!ACCESS_TOKEN) return next()
+
+  // Las rutas /api/* validan el header Authorization o la cookie
+  // El resto (frontend) solo necesita la cookie
+  const cookieToken = getCookie(c, 'gastos_access')
+  if (cookieToken === ACCESS_TOKEN) return next()
+
+  // Primera visita con ?t=TOKEN en la URL
+  const queryToken = c.req.query('t')
+  if (queryToken === ACCESS_TOKEN) {
+    setCookie(c, 'gastos_access', ACCESS_TOKEN, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Lax',
+      maxAge: 60 * 60 * 24 * 365, // 1 año
+      path: '/',
+    })
+    // Redirigir a la URL limpia (sin el token visible)
+    const url = new URL(c.req.url)
+    url.searchParams.delete('t')
+    return c.redirect(url.toString(), 302)
+  }
+
+  return c.text('Acceso no autorizado. Usá el link con el token.', 401)
+})
 
 app.use('*', cors({ origin: CORS_ORIGIN }))
 
