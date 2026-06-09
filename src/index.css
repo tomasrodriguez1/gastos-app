@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+:root {
+  --background: oklch(0.12 0.01 240);
+  --surface: oklch(0.16 0.01 240);
+  --surface-2: oklch(0.19 0.01 240);
+  --border: oklch(0.25 0.01 240);
+  --border-muted: oklch(0.22 0.01 240);
+  --foreground: oklch(0.90 0 0);
+  --muted: oklch(0.55 0 0);
+  --muted-2: oklch(0.42 0 0);
+  --accent: oklch(0.72 0.14 220);
+  --accent-muted: oklch(0.72 0.14 220 / 0.15);
+  --success: oklch(0.72 0.18 150);
+  --warning: oklch(0.80 0.15 85);
+  --danger: oklch(0.65 0.22 25);
+  --radius: 0.75rem;
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-muted: var(--border-muted);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-2: var(--muted-2);
+  --color-accent: var(--accent);
+  --color-accent-muted: var(--accent-muted);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  margin: 0;
+}
+
+#root {
+  width: 100%;
+  min-height: 100svh;
+  text-align: left;
+}
+
+.font-mono-numbers {
+  font-family: 'DM Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+}
+
+.font-heading {
+  font-family: 'IBM Plex Serif', ui-serif, Georgia, serif;
+  font-style: italic;
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: #1a1d27;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #2a2d3e;
+  border-radius: 2px;
+}
