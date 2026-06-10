@@ -109,6 +109,55 @@ function CategoryTick({ x, y, payload }) {
   )
 }
 
+function MobileDiffRows({ data, maxAbs, isPrivate }) {
+  return (
+    <div className="space-y-4 sm:hidden">
+      {data.map(item => {
+        const ahorro = item.diferencia >= 0
+        const width = Math.max(5, Math.min(100, (Math.abs(item.diferencia) / maxAbs) * 100))
+        const amount = isPrivate ? '••••••' : `${ahorro ? '+' : '-'}${formatShortCLP(Math.abs(item.diferencia))}`
+
+        return (
+          <div key={item.nombre} className="space-y-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold leading-tight text-slate-200">{item.nombre}</div>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                  <span>Real {privacyFormat(item.real, isPrivate)}</span>
+                  <span>Previsto {privacyFormat(item.previsto, isPrivate)}</span>
+                </div>
+              </div>
+              <div className={`shrink-0 font-mono-numbers text-sm font-bold ${ahorro ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {amount}
+              </div>
+            </div>
+
+            <div className="relative h-3 rounded-full bg-slate-950/45">
+              <div className="absolute left-1/2 top-[-3px] h-[18px] w-px bg-slate-600/80" />
+              <div className="absolute inset-y-0 left-0 w-1/2 pr-1">
+                {!ahorro && (
+                  <div
+                    className="ml-auto h-full rounded-full bg-rose-500"
+                    style={{ width: `${width}%` }}
+                  />
+                )}
+              </div>
+              <div className="absolute inset-y-0 right-0 w-1/2 pl-1">
+                {ahorro && (
+                  <div
+                    className="h-full rounded-full bg-emerald-400"
+                    style={{ width: `${width}%` }}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function GraficoBarras({ gastos, mes, presupuestoMes }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
   const gastosPorGrupo = calcularGastosPorGrupo(gastos, mes)
@@ -138,7 +187,7 @@ export function GraficoBarras({ gastos, mes, presupuestoMes }) {
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-700/50 bg-slate-800/50">
-      <div className="px-5 py-4 text-center">
+      <div className="px-4 py-4 text-center sm:px-5">
         <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">
           Desviación neta
           <span className="block">(Real vs. Previsto)</span>
@@ -146,55 +195,60 @@ export function GraficoBarras({ gastos, mes, presupuestoMes }) {
       </div>
 
       <div className="px-4 pb-4">
-        <ResponsiveContainer width="100%" height={chartHeight}>
-          <BarChart
-            data={data}
-            layout="vertical"
-            margin={{ left: 8, right: 132, top: 8, bottom: 48 }}
-          >
-          <XAxis
-            type="number"
-            tick={{ fill: '#64748b', fontSize: 11 }}
-            tickFormatter={v => v === 0 ? '$0' : formatShortCLP(v, isPrivacyModeEnabled)}
-            axisLine={false}
-            tickLine={false}
-            domain={[-domainLimit, domainLimit]}
-          />
-          <YAxis
-            dataKey="nombre"
-            type="category"
-            tick={<CategoryTick />}
-            width={198}
-            axisLine={false}
-            tickLine={false}
-          />
-          <Tooltip
-            content={<TooltipCustom isPrivate={isPrivacyModeEnabled} />}
-            cursor={{ fill: 'rgba(255,255,255,0.03)' }}
-          />
-          <ReferenceLine x={0} stroke="#64748b" strokeWidth={1} />
-          <Bar dataKey="diferencia" name="Diferencia" radius={[3, 3, 3, 3]} barSize={22}>
-            {data.map(entry => {
-              return (
-                <Cell
-                  key={entry.nombre}
-                  fill={entry.diferencia >= 0 ? COLOR_AHORRO : COLOR_SOBRE}
-                />
-              )
-            })}
-            <LabelList
-              dataKey="diferencia"
-              content={props => (
-                <DiffLabel
-                  {...props}
-                  isPrivate={isPrivacyModeEnabled}
-                />
-              )}
+        <MobileDiffRows data={data} maxAbs={maxAbs} isPrivate={isPrivacyModeEnabled} />
+
+        <div className="hidden sm:block">
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <BarChart
+              data={data}
+              layout="vertical"
+              margin={{ left: 8, right: 132, top: 8, bottom: 48 }}
+            >
+            <XAxis
+              type="number"
+              tick={{ fill: '#64748b', fontSize: 11 }}
+              tickFormatter={v => v === 0 ? '$0' : formatShortCLP(v, isPrivacyModeEnabled)}
+              axisLine={false}
+              tickLine={false}
+              domain={[-domainLimit, domainLimit]}
             />
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-        <div className="mt-1 flex items-center justify-center gap-6 text-sm">
+            <YAxis
+              dataKey="nombre"
+              type="category"
+              tick={<CategoryTick />}
+              width={198}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Tooltip
+              content={<TooltipCustom isPrivate={isPrivacyModeEnabled} />}
+              cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+            />
+            <ReferenceLine x={0} stroke="#64748b" strokeWidth={1} />
+            <Bar dataKey="diferencia" name="Diferencia" radius={[3, 3, 3, 3]} barSize={22}>
+              {data.map(entry => {
+                return (
+                  <Cell
+                    key={entry.nombre}
+                    fill={entry.diferencia >= 0 ? COLOR_AHORRO : COLOR_SOBRE}
+                  />
+                )
+              })}
+              <LabelList
+                dataKey="diferencia"
+                content={props => (
+                  <DiffLabel
+                    {...props}
+                    isPrivate={isPrivacyModeEnabled}
+                  />
+                )}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+        </div>
+
+        <div className="mt-5 flex items-center justify-center gap-6 text-sm sm:mt-1">
           <div className="flex items-center gap-2 text-slate-300">
             <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: COLOR_AHORRO }} />
             Ahorro
