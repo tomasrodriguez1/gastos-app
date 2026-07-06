@@ -204,17 +204,41 @@ function FormFondo({
           </div>
 
           {/* Preview */}
-          {form.objetivo && form.aporte && (
-            <div className="bg-slate-700/30 rounded-lg px-4 py-2.5 text-xs text-slate-400 space-y-0.5">
-              <div>Meta: <span className="font-mono-numbers text-slate-200">{formatCLP(Number(form.objetivo))}</span></div>
-              <div>
-                Tiempo estimado:{' '}
-                <span className="text-slate-200">
-                  ~{Math.ceil(Number(form.objetivo) / Number(form.aporte))} meses
-                </span>
+          {form.objetivo && (form.aporte || form.fecha_meta) && (() => {
+            const objetivoNum = Number(form.objetivo) || 0
+            const aporteNum = Number(form.aporte) || 0
+            const acumuladoEstimado = esVinculado
+              ? (esEditar ? (acumuladoSiDesvincula ?? fondoInicial?.acumulado ?? 0) : 0)
+              : Number(form.acumulado) || 0
+            const faltaMeta = Math.max(objetivoNum - acumuladoEstimado, 0)
+            const mesesMeta = form.fecha_meta ? mesesHastaMeta(form.fecha_meta, mes) : null
+            const necesario = mesesMeta != null && mesesMeta > 0 && faltaMeta > 0
+              ? Math.ceil(faltaMeta / mesesMeta)
+              : null
+            return (
+              <div className="bg-slate-700/30 rounded-lg px-4 py-2.5 text-xs text-slate-400 space-y-0.5">
+                <div>Meta: <span className="font-mono-numbers text-slate-200">{formatCLP(objetivoNum)}</span></div>
+                {aporteNum > 0 && faltaMeta > 0 && (
+                  <div>
+                    Tiempo estimado:{' '}
+                    <span className="text-slate-200">~{Math.ceil(faltaMeta / aporteNum)} meses</span>
+                  </div>
+                )}
+                {necesario != null && (
+                  <div>
+                    Aporte necesario:{' '}
+                    <span className="font-mono-numbers text-slate-200">{formatCLP(necesario)}/mes</span>
+                    {aporteNum > 0 && necesario > aporteNum && (
+                      <span className="text-amber-500/90"> (más que tu aporte actual)</span>
+                    )}
+                  </div>
+                )}
+                {form.fecha_meta && mesesMeta != null && mesesMeta <= 0 && faltaMeta > 0 && (
+                  <div className="text-amber-500/90">La fecha meta ya pasó</div>
+                )}
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={onCerrar}
@@ -247,6 +271,11 @@ function TarjetaFondo({ nombre, fondo, onAportar, onEliminar, onEditar, acumulad
   const faltante = Math.max(objetivo - acumulado, 0)
   const mesesRestantes = aportar > 0 && faltante > 0 ? Math.ceil(faltante / aportar) : null
   const mesesHasta = mesesHastaMeta(fondo.fecha_meta, mes)
+  const aporteNecesario = objetivo > 0 && faltante > 0 && mesesHasta != null && mesesHasta > 0
+    ? Math.ceil(faltante / mesesHasta)
+    : null
+  const metaVencida = objetivo > 0 && faltante > 0 && fondo.fecha_meta && mesesHasta != null && mesesHasta <= 0
+  const aporteInsuficiente = aporteNecesario != null && aporteNecesario > aportar
   const emoji = fondo.emoji || ICONS_DEFAULT[nombre] || '💰'
 
   const hoy = new Date().toISOString().slice(0, 10)
@@ -429,6 +458,26 @@ function TarjetaFondo({ nombre, fondo, onAportar, onEliminar, onEditar, acumulad
           </>
         )}
       </div>
+
+      {/* Ritmo necesario para la fecha meta */}
+      {aporteNecesario != null && (
+        <div className={`rounded-lg border px-3 py-2 text-xs ${
+          aporteInsuficiente
+            ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+            : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+        }`}>
+          {aporteInsuficiente ? (
+            <>Necesitás <span className="font-mono-numbers font-semibold">{formatCLP(aporteNecesario)}</span>/mes para llegar en {fondo.fecha_meta} — hoy aportás {formatCLP(aportar)}</>
+          ) : (
+            <>Vas bien: con {formatCLP(aportar)}/mes cubrís los <span className="font-mono-numbers font-semibold">{formatCLP(aporteNecesario)}</span>/mes necesarios</>
+          )}
+        </div>
+      )}
+      {metaVencida && (
+        <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-400">
+          La fecha meta ({fondo.fecha_meta}) ya pasó y faltan {formatCLP(faltante)}
+        </div>
+      )}
 
       {/* Footer */}
       <div className="pt-1 border-t border-slate-700/50 flex items-center justify-between gap-2 flex-wrap">

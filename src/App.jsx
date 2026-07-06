@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom'
 import { Sidebar } from './components/shared/Header'
 import { DashboardPage } from './pages/DashboardPage'
 import { CashflowPage } from './pages/CashflowPage'
+import { AnalisisPage } from './pages/AnalisisPage'
 import { GastosPage } from './pages/GastosPage'
 import { PresupuestoPage } from './pages/PresupuestoPage'
 import { useGastos } from './hooks/useGastos'
@@ -101,6 +102,10 @@ export default function App() {
                 onCancelarSync={cancelarSync}
               />
             }
+          />
+          <Route
+            path="/analisis"
+            element={<AnalisisPage {...sharedProps} gastos={todoLosGastos} />}
           />
           <Route
             path="/gastos"

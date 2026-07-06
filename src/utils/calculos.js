@@ -180,6 +180,80 @@ export function calcularProyeccionConservadora(gastosArray, presupuestoMes) {
   return total
 }
 
+export function obtenerMesAnterior(mes) {
+  const [yr, mo] = mes.split('-').map(Number)
+  return mo === 1 ? `${yr - 1}-12` : `${yr}-${String(mo - 1).padStart(2, '0')}`
+}
+
+function promedioArr(valores) {
+  return valores.length ? valores.reduce((a, b) => a + b, 0) / valores.length : 0
+}
+
+// Compara un mes contra el anterior y contra el promedio de los `ventana` meses previos (solo meses con datos).
+export function calcularComparadorMensual(gastos, mes, ventana = 6) {
+  const mesAnterior = obtenerMesAnterior(mes)
+  const actualPorGrupo = calcularGastosPorGrupo(gastos, mes)
+  const anteriorPorGrupo = calcularGastosPorGrupo(gastos, mesAnterior)
+
+  const mesesVentana = []
+  let m = mes
+  for (let i = 0; i < ventana; i++) {
+    m = obtenerMesAnterior(m)
+    mesesVentana.push(m)
+  }
+  const mesesConDatos = mesesVentana.filter(mv => gastos.some(g => g.mes === mv && !esGastoUsdPuro(g)))
+  const sumaPorGrupo = {}
+  mesesConDatos.forEach(mv => {
+    Object.entries(calcularGastosPorGrupo(gastos, mv)).forEach(([grupo, v]) => {
+      sumaPorGrupo[grupo] = (sumaPorGrupo[grupo] || 0) + v
+    })
+  })
+  const n = mesesConDatos.length
+
+  const grupos = new Set([
+    ...Object.keys(actualPorGrupo),
+    ...Object.keys(anteriorPorGrupo),
+    ...Object.keys(sumaPorGrupo),
+  ])
+  const filas = [...grupos]
+    .map(grupo => {
+      const actual = actualPorGrupo[grupo] || 0
+      const anterior = anteriorPorGrupo[grupo] || 0
+      const promedio = n > 0 ? (sumaPorGrupo[grupo] || 0) / n : 0
+      return {
+        grupo,
+        actual,
+        anterior,
+        promedio,
+        deltaMes: actual - anterior,
+        deltaPromedio: actual - promedio,
+      }
+    })
+    .sort((a, b) => Math.abs(b.deltaPromedio) - Math.abs(a.deltaPromedio))
+
+  return { filas, mesAnterior, mesesPromedio: n }
+}
+
+// Dirección de cada categoría: promedio de la mitad reciente de la serie vs la mitad anterior.
+export function calcularTendenciasCategorias(gastos, mesHasta, cantidad = 6) {
+  const { meses, grupos } = calcularTendenciaPorGrupo(gastos, mesHasta, cantidad)
+  const mitad = Math.floor(meses.length / 2)
+  return grupos
+    .map(grupo => {
+      const valores = meses.map(row => row[grupo] || 0)
+      const promAnterior = promedioArr(valores.slice(0, mitad))
+      const promReciente = promedioArr(valores.slice(mitad))
+      const promedio = promedioArr(valores)
+      const delta = promReciente - promAnterior
+      const pct = promAnterior > 0 ? (delta / promAnterior) * 100 : (promReciente > 0 ? 100 : 0)
+      let direccion = 'estable'
+      if (pct >= 15 && delta >= 10000) direccion = 'alza'
+      else if (pct <= -15 && delta <= -10000) direccion = 'baja'
+      return { grupo, valores, promedio, promReciente, promAnterior, delta, pct, direccion }
+    })
+    .sort((a, b) => b.promedio - a.promedio)
+}
+
 // Sum of gastos assigned to a specific grupo/subcategoria, optionally from vinculado.desde onwards.
 export function calcularAcumuladoFondo(gastos, vinculado) {
   if (!vinculado) return 0

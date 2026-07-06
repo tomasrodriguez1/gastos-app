@@ -9,6 +9,7 @@ Personal finance app: **actual spending vs monthly budget**. Local-only, SQLite.
 | Route | Purpose |
 |-------|---------|
 | `/` | Dashboard: month summary, charts, category traffic lights, savings funds, n8n sync |
+| `/analisis` | Historical analysis: month-vs-month comparator, category averages/trends (6m), recurring charges/subscriptions |
 | `/gastos` | Expense table (synced + manual), filters, budget assignment |
 | `/presupuesto` | Monthly budget editor (income, categories, funds) |
 
@@ -30,11 +31,11 @@ gastos-app/
 ├── public/data/gastos_data_canonical.json   # seed if DB empty
 └── src/
     ├── App.jsx          # hooks + routes
-    ├── pages/           # Dashboard, Gastos, Presupuesto
-    ├── components/      # Dashboard/, Gastos/, Presupuesto/, shared/
+    ├── pages/           # Dashboard, Cashflow, Analisis, Gastos, Presupuesto
+    ├── components/      # Dashboard/, Analisis/, Gastos/, Presupuesto/, shared/
     ├── hooks/           # useGastos, useGastosLocales, usePresupuesto, useSyncN8n, useCatalogos
     ├── contexts/        # PrivacyModeContext
-    └── utils/           # persistencia, calculos, mapeo, formatters
+    └── utils/           # persistencia, calculos, mapeo, formatters, recurrentes
 ```
 
 ## Data model
@@ -61,6 +62,9 @@ Important fields: `fecha`, `mes`, `motivo`, `banco`, `tipos[]`, `contexto`, amou
 3. **Expense → budget**: `presupuesto_manual` > DB rules (`mapeo.js` + server) > client fallback.
 4. **Updates**: synced → optimistic UI + `PATCH /api/gastos/:id`; manual → full array `POST ...gastos_manuales`; budget → `PUT /api/presupuesto/:mes` (partial sections only replace what you send).
 5. **Duplicates**: `useDuplicados` hook fetches `GET /api/gastos/duplicados?mes=…` on mount/mes-change; button in `/gastos` shows badge with count; `DuplicadosReview` modal shows groups by confidence (alta/media/baja) with inline edit (`EditarAsignacion`) and delete. "No es duplicado" stores pair in `duplicado_exclusion` table (migration 010).
+
+6. **Análisis** (`/analisis`, all client-side, no new APIs): `calcularComparadorMensual` / `calcularTendenciasCategorias` in `calculos.js` (mes vs anterior vs promedio 6m; tendencia excludes current partial month); `detectarRecurrentes` in `utils/recurrentes.js` (groups by normalized motivo — same normalization as `server/duplicados.js` — requires ≥3 distinct months, ≤2 charges/month, ≥60% presence, stable amounts; flags price increases and missing charges).
+7. **Fondos con fecha_meta**: `FondosAhorro.jsx` computes required monthly contribution (`faltante / mesesHasta`) and warns when `previsto_aportar` falls short or the target date passed.
 
 **Privacy**: `PrivacyModeContext` + `privacyFormat()` hide amounts in UI.
 
@@ -100,6 +104,7 @@ bun run build && bun run lint
 | Area | Files |
 |------|-------|
 | Dashboard | `pages/DashboardPage.jsx`, `utils/calculos.js`, `components/Dashboard/*` |
+| Análisis | `pages/AnalisisPage.jsx`, `components/Analisis/*` (ComparadorMensual, TendenciasCategorias, GastosRecurrentes), `utils/recurrentes.js` |
 | Expenses UI | `pages/GastosPage.jsx`, `components/Gastos/*`, `hooks/useGastos*.js` |
 | Duplicates | `server/duplicados.js`, `hooks/useDuplicados.js`, `components/Gastos/DuplicadosReview.jsx` |
 | Budget UI | `pages/PresupuestoPage.jsx`, `hooks/usePresupuesto.js`, `components/Presupuesto/*` |
