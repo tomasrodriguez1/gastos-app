@@ -85,7 +85,7 @@ function MontoCell({ g }) {
   )
 }
 
-export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos }) {
+export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, destacarIds }) {
   const [editando, setEditando] = useState(null)
   const [confirmandoId, setConfirmandoId] = useState(null)
 
@@ -113,14 +113,20 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos }) {
         <div className="divide-y divide-slate-700/30">
           {gastos.map((g, i) => {
             const gastoId = getGastoId(g, i)
+            const esNuevo = destacarIds?.has(gastoId)
             return (
               <div
                 key={gastoId}
-                className={`px-4 py-3 ${g.manual ? 'bg-violet-500/[0.03]' : ''}`}
+                className={`px-4 py-3 ${esNuevo ? 'bg-amber-500/[0.06] border-l-2 border-amber-400' : g.manual ? 'bg-violet-500/[0.03]' : ''}`}
               >
                 {/* Fila 1: motivo + monto */}
                 <div className="flex items-start justify-between gap-3 mb-1.5">
                   <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    {esNuevo && (
+                      <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-400 shrink-0">
+                        Nuevo
+                      </span>
+                    )}
                     {g.manual && (
                       <span title="Gasto manual" className="text-violet-400 text-xs shrink-0">✎</span>
                     )}
@@ -229,10 +235,11 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos }) {
             <tbody className="divide-y divide-slate-700/30">
               {gastos.map((g, i) => {
                 const gastoId = getGastoId(g, i)
+                const esNuevo = destacarIds?.has(gastoId)
                 return (
                 <tr
                   key={gastoId}
-                  className={`hover:bg-white/[0.02] transition-colors ${g.manual ? 'bg-violet-500/[0.03]' : ''}`}
+                  className={`hover:bg-white/[0.02] transition-colors ${esNuevo ? 'bg-amber-500/[0.06] border-l-2 border-amber-400' : g.manual ? 'bg-violet-500/[0.03]' : ''}`}
                 >
                   <td className="px-4 py-2.5 font-mono-numbers text-xs text-slate-500">
                     {formatFecha(g.fecha)}
@@ -242,6 +249,11 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos }) {
                   </td>
                   <td className="px-4 py-2.5 text-slate-300 max-w-xs">
                     <div className="flex items-center gap-2">
+                      {esNuevo && (
+                        <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-400 shrink-0">
+                          Nuevo
+                        </span>
+                      )}
                       {g.manual && (
                         <span title="Gasto ingresado manualmente" className="text-violet-400 text-xs shrink-0">✎</span>
                       )}

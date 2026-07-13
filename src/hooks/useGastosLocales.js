@@ -25,7 +25,7 @@ export function useGastosLocales() {
   }, [])
 
   const agregar = useCallback((gasto) => {
-    const ahora = new Date().toISOString().replace('T', ' ').substring(0, 19)
+    const ahora = new Date().toISOString()
     const nuevo = {
       ...gasto,
       id: crypto.randomUUID(),

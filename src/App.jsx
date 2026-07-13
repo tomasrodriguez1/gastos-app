@@ -4,6 +4,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { CashflowPage } from './pages/CashflowPage'
 import { AnalisisPage } from './pages/AnalisisPage'
 import { GastosPage } from './pages/GastosPage'
+import { LogPage } from './pages/LogPage'
 import { PresupuestoPage } from './pages/PresupuestoPage'
 import { useGastos } from './hooks/useGastos'
 import { useGastosLocales } from './hooks/useGastosLocales'
@@ -123,6 +124,18 @@ export default function App() {
                 pendingSync={pendingSync}
                 onConfirmarSync={confirmarSync}
                 onCancelarSync={cancelarSync}
+              />
+            }
+          />
+          <Route
+            path="/log"
+            element={
+              <LogPage
+                {...sharedProps}
+                gastos={gastos}
+                gastosLocales={gastosLocales}
+                onActualizarGasto={actualizarCualquierGasto}
+                onEliminarGasto={eliminarCualquierGasto}
               />
             }
           />
