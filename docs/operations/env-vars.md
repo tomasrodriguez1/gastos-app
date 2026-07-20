@@ -6,6 +6,7 @@ Nunca commitear valores reales. Usar `.env.example` como referencia.
 |----------|----------|-----------|----------|--------------|---------|--------|
 | `DATABASE_URL` | PostgreSQL | All | Yes | `postgresql://user:pass@localhost:5432/gastos` | Conexión a PostgreSQL | `server/db/client.js` |
 | `ACCESS_TOKEN` | API auth | Prod | Yes | `your-random-secret-token-here` | Token de acceso HTTP/cookie | `server/index.js` |
+| `COOKIE_SECURE` | API auth | Prod | No | `true` / `false` | Flag `Secure` de cookie `gastos_access`; default `true` si no está definida; `false` solo en HTTP (homelab) | `server/index.js` |
 | `NODE_ENV` | Runtime | All | Prod: Yes | `production` / `development` | Modo de ejecución | `server/index.js`, `server/db/client.js` |
 | `PORT` | API | All | No | `3001` | Puerto del servidor Hono | `server/index.js` |
 | `CORS_ORIGIN` | API CORS | Dev | No | `http://localhost:6001` | Origen permitido en dev | `server/index.js` |
@@ -18,6 +19,7 @@ Nunca commitear valores reales. Usar `.env.example` como referencia.
 
 - Variables `VITE_*` se embeben en el bundle en build time.
 - En dev, auth está deshabilitada si `NODE_ENV !== 'production'` o sin `ACCESS_TOKEN`.
+- `COOKIE_SECURE` es `true` por defecto (cualquier valor distinto de `false`); en HTTPS no hace falta definirla.
 - SSL a PostgreSQL se fuerza en prod si `DATABASE_URL` no incluye `sslmode=`.
 
 ## Grupos por servicio
@@ -30,6 +32,7 @@ Nunca commitear valores reales. Usar `.env.example` como referencia.
 - `PORT`
 - `NODE_ENV`
 - `ACCESS_TOKEN`
+- `COOKIE_SECURE`
 - `CORS_ORIGIN`
 
 ### Frontend (Vite)

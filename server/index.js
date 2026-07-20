@@ -11,6 +11,7 @@ const app = new Hono()
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:6001'
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN
+const COOKIE_SECURE = process.env.COOKIE_SECURE !== 'false'
 
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()
@@ -32,7 +33,7 @@ app.use('*', async (c, next) => {
   if (queryToken === ACCESS_TOKEN) {
     setCookie(c, 'gastos_access', ACCESS_TOKEN, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: COOKIE_SECURE,
       sameSite: 'Lax',
       maxAge: 60 * 60 * 24 * 365, // 1 año
       path: '/',

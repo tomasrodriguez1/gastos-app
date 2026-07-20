@@ -11,7 +11,7 @@
 
 - [ ] `ACCESS_TOKEN` configurado en producción.
 - [ ] Token no expuesto en repos ni docs.
-- [ ] Cookie `gastos_access`: `httpOnly`, `secure` en prod, `sameSite: Lax`.
+- [ ] Cookie `gastos_access`: `httpOnly`, `secure` vía `COOKIE_SECURE` (default `true`; `false` solo en HTTP privado), `sameSite: Lax`.
 - [ ] Primera visita con `?t=` redirige a URL sin token.
 - [ ] Dev bypass solo cuando `NODE_ENV !== 'production'`.
 
@@ -60,6 +60,7 @@
 
 - [ ] `NODE_ENV=production`
 - [ ] `ACCESS_TOKEN` fuerte (random, ≥32 chars)
+- [ ] `COOKIE_SECURE` no definida o `true` en HTTPS; `false` solo si el acceso es HTTP
 - [ ] `DATABASE_URL` apunta a DB prod con SSL
 - [ ] Build frontend sin source maps sensibles (revisar config Vite)
 - [ ] `.env` en `.gitignore`
