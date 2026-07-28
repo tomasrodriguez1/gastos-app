@@ -1,51 +1,36 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { serveStatic } from 'hono/bun'
-import { getCookie, setCookie } from 'hono/cookie'
 import sql from './db/client.js'
 import { initSchema } from './db/init.js'
+import { migrateFinancialCycles } from './db/migrate-financial-cycles.js'
 import { toMonto } from './db/numeric.js'
-import { detectarDuplicadosMes } from './duplicados.js'
+import { detectarDuplicadosCiclo } from './duplicados.js'
+import { authRouter } from './routes/auth.js'
+import { createAuthMiddleware } from './auth.js'
+import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
 
 const app = new Hono()
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:6001'
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN
-const COOKIE_SECURE = process.env.COOKIE_SECURE !== 'false'
 
+await migrateFinancialCycles()
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()
 }
 
-// ─── AUTENTICACIÓN POR TOKEN ──────────────────────────────────────────────────
+// ─── AUTENTICACIÓN PASSKEY (WebAuthn) ────────────────────────────────────────
+// Montado antes del gate para que /api/auth/* nunca quede detrás de él —
+// cada endpoint aplica su propio gate (bootstrap secret o sesión).
 
-app.use('*', async (c, next) => {
-  // Sin token configurado o en dev → acceso libre
-  if (!ACCESS_TOKEN || process.env.NODE_ENV !== 'production') return next()
+app.route('/api/auth', authRouter)
 
-  // Las rutas /api/* validan el header Authorization o la cookie
-  // El resto (frontend) solo necesita la cookie
-  const cookieToken = getCookie(c, 'gastos_access')
-  if (cookieToken === ACCESS_TOKEN) return next()
+// ─── GATE GLOBAL: sesión passkey O ACCESS_TOKEN legacy (en paralelo) ────────
+// ACCESS_TOKEN se mantiene activo hasta confirmar login passkey en producción
+// real — ver docs/architecture/decisions.md DEC-009.
 
-  // Primera visita con ?t=TOKEN en la URL
-  const queryToken = c.req.query('t')
-  if (queryToken === ACCESS_TOKEN) {
-    setCookie(c, 'gastos_access', ACCESS_TOKEN, {
-      httpOnly: true,
-      secure: COOKIE_SECURE,
-      sameSite: 'Lax',
-      maxAge: 60 * 60 * 24 * 365, // 1 año
-      path: '/',
-    })
-    // Redirigir a la URL limpia (sin el token visible)
-    const url = new URL(c.req.url)
-    url.searchParams.delete('t')
-    return c.redirect(url.toString(), 302)
-  }
-
-  return c.text('Acceso no autorizado. Usá el link con el token.', 401)
-})
+app.use('*', createAuthMiddleware(ACCESS_TOKEN))
 
 app.use('*', cors({ origin: CORS_ORIGIN }))
 
@@ -57,10 +42,18 @@ app.get('/api/gastos/sync-keys', async (c) => {
 })
 
 app.get('/api/gastos', async (c) => {
+  const ciclo = c.req.query('ciclo')
   const mes = c.req.query('mes')
-  const rows = mes
-    ? await sql`SELECT * FROM gastos WHERE mes = ${mes} ORDER BY fecha DESC`
-    : await sql`SELECT * FROM gastos ORDER BY fecha DESC`
+  let rows
+  if (ciclo && mes) {
+    rows = await sql`SELECT * FROM gastos WHERE ciclo_financiero = ${ciclo} AND mes = ${mes} ORDER BY fecha DESC`
+  } else if (ciclo) {
+    rows = await sql`SELECT * FROM gastos WHERE ciclo_financiero = ${ciclo} ORDER BY fecha DESC`
+  } else if (mes) {
+    rows = await sql`SELECT * FROM gastos WHERE mes = ${mes} ORDER BY fecha DESC`
+  } else {
+    rows = await sql`SELECT * FROM gastos ORDER BY fecha DESC`
+  }
   return c.json(rows.map(deserializarGasto))
 })
 
@@ -69,7 +62,7 @@ app.patch('/api/gastos/:id', async (c) => {
   const changes = await c.req.json()
 
   const allowed = [
-    'fecha', 'mes', 'motivo', 'banco', 'tipos', 'contexto', 'monto', 'monto_real',
+    'fecha', 'motivo', 'banco', 'tipos', 'contexto', 'monto', 'monto_real',
     'usd', 'monto_clp_manual', 'split', 'pagado',
     'presupuesto_manual', 'contexto_override', 'monto_presupuesto_manual',
   ]
@@ -79,6 +72,14 @@ app.patch('/api/gastos/:id', async (c) => {
 
   const updates = {}
   for (const f of fields) updates[f] = serializarCampoGasto(f, changes[f])
+  if (fields.includes('fecha')) {
+    try {
+      updates.mes = obtenerMesCalendario(changes.fecha)
+      updates.ciclo_financiero = obtenerCicloFinanciero(changes.fecha)
+    } catch (error) {
+      return c.json({ error: error.message }, 400)
+    }
+  }
 
   const rows = await sql`
     UPDATE gastos
@@ -92,10 +93,10 @@ app.patch('/api/gastos/:id', async (c) => {
 })
 
 app.get('/api/gastos/duplicados', async (c) => {
-  const mes = c.req.query('mes')
-  if (!mes) return c.json({ error: 'Falta parámetro mes' }, 400)
-  const { grupos, resumen } = await detectarDuplicadosMes(sql, mes, deserializarGasto)
-  return c.json({ mes, resumen, grupos })
+  const ciclo = c.req.query('ciclo')
+  if (!ciclo) return c.json({ error: 'Falta parámetro ciclo' }, 400)
+  const { grupos, resumen } = await detectarDuplicadosCiclo(sql, ciclo, deserializarGasto)
+  return c.json({ ciclo, resumen, grupos })
 })
 
 app.post('/api/gastos/duplicados/excluir', async (c) => {
@@ -130,14 +131,22 @@ app.post('/api/datos', async (c) => {
     await sql.begin(async (tx) => {
       for (const g of gastos) {
         if (!g.fecha || !g.motivo) continue
+        let mesCalendario
+        let cicloFinanciero
+        try {
+          mesCalendario = obtenerMesCalendario(g.fecha)
+          cicloFinanciero = obtenerCicloFinanciero(g.fecha)
+        } catch {
+          continue
+        }
         const syncKey = `${g.fecha}|${g.motivo.trim().toLowerCase()}`
         await tx`
-          INSERT INTO gastos (id, sync_key, fecha, mes, motivo, banco, tipos, contexto,
+          INSERT INTO gastos (id, sync_key, fecha, mes, ciclo_financiero, motivo, banco, tipos, contexto,
             monto, monto_real, usd, monto_clp_manual, split, presupuesto_manual,
             contexto_override, monto_presupuesto_manual, pagado, es_manual, updated_at)
           VALUES (
             ${crypto.randomUUID()}, ${syncKey},
-            ${g.fecha}, ${g.mes || g.fecha.substring(0, 7)}, ${g.motivo},
+            ${g.fecha}, ${mesCalendario}, ${cicloFinanciero}, ${g.motivo},
             ${g.banco || ''}, ${g.tipos || []}, ${g.contexto || ''},
             ${g.monto || 0}, ${g.monto_real || 0}, ${g.usd || 0},
             ${g.monto_clp_manual ?? null}, ${g.split || 0},
@@ -146,6 +155,9 @@ app.post('/api/datos', async (c) => {
             ${g.pagado ? true : false}, false, NOW()
           )
           ON CONFLICT(sync_key) DO UPDATE SET
+            fecha = EXCLUDED.fecha,
+            mes = EXCLUDED.mes,
+            ciclo_financiero = EXCLUDED.ciclo_financiero,
             motivo = EXCLUDED.motivo,
             banco = EXCLUDED.banco,
             tipos = EXCLUDED.tipos,
@@ -169,14 +181,22 @@ app.post('/api/datos', async (c) => {
     const gastos = Array.isArray(body) ? body : [body]
     await sql.begin(async (tx) => {
       for (const g of gastos) {
+        let mesCalendario
+        let cicloFinanciero
+        try {
+          mesCalendario = obtenerMesCalendario(g.fecha)
+          cicloFinanciero = obtenerCicloFinanciero(g.fecha)
+        } catch {
+          continue
+        }
         const id = g.id || crypto.randomUUID()
         await tx`
-          INSERT INTO gastos (id, sync_key, fecha, mes, motivo, banco, tipos, contexto,
+          INSERT INTO gastos (id, sync_key, fecha, mes, ciclo_financiero, motivo, banco, tipos, contexto,
             monto, monto_real, usd, monto_clp_manual, split, presupuesto_manual,
             contexto_override, monto_presupuesto_manual, pagado, es_manual, updated_at)
           VALUES (
             ${id}, NULL,
-            ${g.fecha}, ${g.mes || g.fecha.substring(0, 7)}, ${g.motivo || ''},
+            ${g.fecha}, ${mesCalendario}, ${cicloFinanciero}, ${g.motivo || ''},
             ${g.banco || ''}, ${g.tipos || []}, ${g.contexto || ''},
             ${g.monto || 0}, ${g.monto_real || 0}, ${g.usd || 0},
             ${g.monto_clp_manual ?? null}, ${g.split || 0},
@@ -185,6 +205,9 @@ app.post('/api/datos', async (c) => {
             ${g.pagado ? true : false}, true, NOW()
           )
           ON CONFLICT(id) DO UPDATE SET
+            fecha = EXCLUDED.fecha,
+            mes = EXCLUDED.mes,
+            ciclo_financiero = EXCLUDED.ciclo_financiero,
             motivo = EXCLUDED.motivo,
             banco = EXCLUDED.banco,
             tipos = EXCLUDED.tipos,
@@ -228,21 +251,21 @@ app.get('/api/datos', async (c) => {
 
 // ─── PRESUPUESTO ─────────────────────────────────────────────────────────────
 
-app.get('/api/presupuesto/meses', async (c) => {
-  const rows = await sql`SELECT mes FROM presupuesto_mes ORDER BY mes DESC`
-  return c.json(rows.map(r => r.mes))
+app.get('/api/presupuesto/ciclos', async (c) => {
+  const rows = await sql`SELECT ciclo FROM presupuesto_ciclo ORDER BY ciclo DESC`
+  return c.json(rows.map(r => r.ciclo))
 })
 
-app.get('/api/presupuesto/:mes', async (c) => {
-  const mes = c.req.param('mes')
-  return c.json(await leerPresupuestoMes(mes))
+app.get('/api/presupuesto/:ciclo', async (c) => {
+  const ciclo = c.req.param('ciclo')
+  return c.json(await leerPresupuestoCiclo(ciclo))
 })
 
-app.put('/api/presupuesto/:mes', async (c) => {
-  const mes = c.req.param('mes')
+app.put('/api/presupuesto/:ciclo', async (c) => {
+  const ciclo = c.req.param('ciclo')
   const datos = await c.req.json()
   try {
-    const { gastos_actualizados } = await guardarPresupuestoMesDB(mes, datos)
+    const { gastos_actualizados } = await guardarPresupuestoCicloDB(ciclo, datos)
     return c.json({ ok: true, gastos_actualizados })
   } catch (e) {
     console.error('[presupuesto PUT]', e.message)
@@ -250,18 +273,41 @@ app.put('/api/presupuesto/:mes', async (c) => {
   }
 })
 
-app.post('/api/presupuesto/:mes/copiar-anterior', async (c) => {
-  const mes = c.req.param('mes')
-  const [yr, mo] = mes.split('-').map(Number)
+app.post('/api/presupuesto/:ciclo/copiar-anterior', async (c) => {
+  const ciclo = c.req.param('ciclo')
+  const [yr, mo] = ciclo.split('-').map(Number)
   let prevMo = mo - 1, prevYr = yr
   if (prevMo <= 0) { prevMo = 12; prevYr-- }
-  const mesPrev = `${prevYr}-${String(prevMo).padStart(2, '0')}`
+  const cicloPrevio = `${prevYr}-${String(prevMo).padStart(2, '0')}`
 
-  const prevData = await leerPresupuestoMes(mesPrev)
-  if (!prevData) return c.json({ error: 'No hay presupuesto en el mes anterior' }, 404)
+  const prevData = await leerPresupuestoCiclo(cicloPrevio)
+  if (!prevData) return c.json({ error: 'No hay presupuesto en el ciclo anterior' }, 404)
 
-  await guardarPresupuestoMesDB(mes, prevData)
+  await guardarPresupuestoCicloDB(ciclo, prevData)
   return c.json({ ok: true })
+})
+
+// ─── RESERVA TARJETA ─────────────────────────────────────────────────────────
+// Saldo reservado por tarjeta para pagar la TC (ej. Mercado Pago). Standalone,
+// fuera del presupuesto — ver server/db/schema.pg.sql.
+
+app.get('/api/reserva-tarjeta', async (c) => {
+  const rows = await sql`SELECT banco, monto FROM reserva_tarjeta ORDER BY banco`
+  return c.json(rows.map(r => ({ banco: r.banco, monto: toMonto(r.monto) })))
+})
+
+app.put('/api/reserva-tarjeta/:banco', async (c) => {
+  const banco = decodeURIComponent(c.req.param('banco'))
+  const { monto } = await c.req.json()
+  if (typeof monto !== 'number' || Number.isNaN(monto)) {
+    return c.json({ error: 'monto inválido' }, 400)
+  }
+  await sql`
+    INSERT INTO reserva_tarjeta (banco, monto, updated_at)
+    VALUES (${banco}, ${monto}, NOW())
+    ON CONFLICT (banco) DO UPDATE SET monto = EXCLUDED.monto, updated_at = NOW()
+  `
+  return c.json({ ok: true, banco, monto })
 })
 
 // ─── CATÁLOGOS ───────────────────────────────────────────────────────────────
@@ -394,6 +440,11 @@ app.get('/api/stats/meses', async (c) => {
   return c.json(rows.map(r => r.mes))
 })
 
+app.get('/api/stats/ciclos', async (c) => {
+  const rows = await sql`SELECT DISTINCT ciclo_financiero FROM gastos ORDER BY ciclo_financiero DESC`
+  return c.json(rows.map(r => r.ciclo_financiero))
+})
+
 // ─── STATIC (producción) ─────────────────────────────────────────────────────
 
 if (process.env.NODE_ENV === 'production') {
@@ -432,13 +483,13 @@ function serializarCampoGasto(campo, valor) {
   return valor
 }
 
-async function leerPresupuestoMes(mes) {
-  const [mesFila] = await sql`SELECT mes FROM presupuesto_mes WHERE mes = ${mes}`
-  if (!mesFila) return null
+async function leerPresupuestoCiclo(ciclo) {
+  const [cicloFila] = await sql`SELECT ciclo FROM presupuesto_ciclo WHERE ciclo = ${ciclo}`
+  if (!cicloFila) return null
 
-  const ingresoRows = await sql`SELECT fuente, monto FROM presupuesto_ingreso WHERE mes = ${mes}`
-  const categoriaRows = await sql`SELECT grupo, subcategoria, previsto, fgp FROM presupuesto_categoria WHERE mes = ${mes} ORDER BY grupo, subcategoria`
-  const fondoRows = await sql`SELECT nombre, previsto_aportar, acumulado, objetivo, fecha_meta, vinculado, emoji FROM presupuesto_fondo WHERE mes = ${mes}`
+  const ingresoRows = await sql`SELECT fuente, monto FROM presupuesto_ingreso WHERE ciclo = ${ciclo}`
+  const categoriaRows = await sql`SELECT grupo, subcategoria, previsto, fgp FROM presupuesto_categoria WHERE ciclo = ${ciclo} ORDER BY grupo, subcategoria`
+  const fondoRows = await sql`SELECT nombre, previsto_aportar, acumulado, objetivo, fecha_meta, vinculado, emoji FROM presupuesto_fondo WHERE ciclo = ${ciclo}`
 
   const ingresos = {}
   for (const r of ingresoRows) ingresos[r.fuente] = toMonto(r.monto)
@@ -494,37 +545,37 @@ async function sincronizarGastosVinculado(tx, vinculadoAnterior, vinculadoNuevo)
   return updated.length
 }
 
-async function guardarPresupuestoMesDB(mes, datos) {
+async function guardarPresupuestoCicloDB(ciclo, datos) {
   const fondoCambios = datos.fondo_cambios
   let gastosActualizados = 0
 
   await sql.begin(async (tx) => {
-    await tx`INSERT INTO presupuesto_mes (mes) VALUES (${mes}) ON CONFLICT DO NOTHING`
-    await tx`UPDATE presupuesto_mes SET updated_at = NOW() WHERE mes = ${mes}`
+    await tx`INSERT INTO presupuesto_ciclo (ciclo) VALUES (${ciclo}) ON CONFLICT DO NOTHING`
+    await tx`UPDATE presupuesto_ciclo SET updated_at = NOW() WHERE ciclo = ${ciclo}`
 
     if (datos.ingresos !== undefined) {
-      await tx`DELETE FROM presupuesto_ingreso WHERE mes = ${mes}`
+      await tx`DELETE FROM presupuesto_ingreso WHERE ciclo = ${ciclo}`
       for (const [fuente, monto] of Object.entries(datos.ingresos)) {
-        await tx`INSERT INTO presupuesto_ingreso (mes, fuente, monto) VALUES (${mes}, ${fuente}, ${monto || 0})`
+        await tx`INSERT INTO presupuesto_ingreso (ciclo, fuente, monto) VALUES (${ciclo}, ${fuente}, ${monto || 0})`
       }
     }
 
     if (datos.categorias !== undefined) {
-      await tx`DELETE FROM presupuesto_categoria WHERE mes = ${mes}`
+      await tx`DELETE FROM presupuesto_categoria WHERE ciclo = ${ciclo}`
       for (const [grupo, gData] of Object.entries(datos.categorias)) {
         for (const [subcat, sData] of Object.entries(gData.subcategorias || {})) {
-          await tx`INSERT INTO presupuesto_categoria (mes, grupo, subcategoria, previsto, fgp) VALUES (${mes}, ${grupo}, ${subcat}, ${sData.previsto || 0}, ${sData.fgp ? true : false})`
+          await tx`INSERT INTO presupuesto_categoria (ciclo, grupo, subcategoria, previsto, fgp) VALUES (${ciclo}, ${grupo}, ${subcat}, ${sData.previsto || 0}, ${sData.fgp ? true : false})`
         }
       }
     }
 
     if (datos.fondos !== undefined) {
-      await tx`DELETE FROM presupuesto_fondo WHERE mes = ${mes}`
+      await tx`DELETE FROM presupuesto_fondo WHERE ciclo = ${ciclo}`
       for (const [nombre, fData] of Object.entries(datos.fondos)) {
         await tx`
-          INSERT INTO presupuesto_fondo (mes, nombre, previsto_aportar, acumulado, objetivo, fecha_meta, vinculado, emoji)
+          INSERT INTO presupuesto_fondo (ciclo, nombre, previsto_aportar, acumulado, objetivo, fecha_meta, vinculado, emoji)
           VALUES (
-            ${mes}, ${nombre},
+            ${ciclo}, ${nombre},
             ${fData.previsto_aportar || 0}, ${fData.acumulado || 0},
             ${fData.objetivo || null}, ${fData.fecha_meta || null},
             ${fData.vinculado || null}, ${fData.emoji || null}
@@ -532,8 +583,8 @@ async function guardarPresupuestoMesDB(mes, datos) {
         `
         if (fData.vinculado?.grupo && fData.vinculado?.subcategoria) {
           await tx`
-            INSERT INTO presupuesto_categoria (mes, grupo, subcategoria, previsto, fgp)
-            VALUES (${mes}, ${fData.vinculado.grupo}, ${fData.vinculado.subcategoria}, 0, false)
+            INSERT INTO presupuesto_categoria (ciclo, grupo, subcategoria, previsto, fgp)
+            VALUES (${ciclo}, ${fData.vinculado.grupo}, ${fData.vinculado.subcategoria}, 0, false)
             ON CONFLICT DO NOTHING
           `
         }

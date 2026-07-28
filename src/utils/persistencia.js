@@ -46,8 +46,8 @@ export async function eliminarGastoRemoto(id) {
   }
 }
 
-export async function guardarPresupuestoMes(mes, datos) {
-  return fetch(`/api/presupuesto/${mes}`, {
+export async function guardarPresupuestoCiclo(ciclo, datos) {
+  return fetch(`/api/presupuesto/${ciclo}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(datos),

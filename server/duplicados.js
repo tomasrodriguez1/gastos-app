@@ -54,11 +54,11 @@ function clavePar(idA, idB) {
   return [idA, idB].sort().join('|')
 }
 
-export async function detectarDuplicadosMes(sql, mes, deserializarGasto) {
+export async function detectarDuplicadosCiclo(sql, ciclo, deserializarGasto) {
   const exclusionesRows = await sql`SELECT gasto_id_a, gasto_id_b FROM duplicado_exclusion`
   const paresExcluidos = new Set(exclusionesRows.map(r => clavePar(r.gasto_id_a, r.gasto_id_b)))
 
-  const rawGastos = await sql`SELECT * FROM gastos WHERE mes = ${mes} ORDER BY fecha`
+  const rawGastos = await sql`SELECT * FROM gastos WHERE ciclo_financiero = ${ciclo} ORDER BY fecha`
   const gastos = rawGastos.map(deserializarGasto)
 
   const usados = new Set()
@@ -71,7 +71,7 @@ export async function detectarDuplicadosMes(sql, mes, deserializarGasto) {
     if (!porSyncKey[g.sync_key]) porSyncKey[g.sync_key] = []
     porSyncKey[g.sync_key].push(g)
   }
-  for (const [sk, fila] of Object.entries(porSyncKey)) {
+  for (const fila of Object.values(porSyncKey)) {
     if (fila.length < 2) continue
     const ids = fila.map(g => g.id)
     if (ids.some(id => usados.has(id))) continue

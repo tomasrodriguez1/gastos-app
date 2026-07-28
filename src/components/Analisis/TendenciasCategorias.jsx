@@ -2,7 +2,8 @@ import { useMemo } from 'react'
 import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 import { calcularTendenciasCategorias, obtenerMesAnterior } from '../../utils/calculos'
 import { COLOR_GRUPO } from '../../utils/categorias'
-import { getMesActual, privacyFormat } from '../../utils/formatters'
+import { privacyFormat } from '../../utils/formatters'
+import { obtenerCicloActual } from '../../utils/ciclos'
 
 function Sparkline({ valores, color }) {
   if (valores.length < 2) return null
@@ -54,8 +55,8 @@ function BadgeDireccion({ direccion, pct }) {
 
 export function TendenciasCategorias({ gastos, mes, cantidad = 6 }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
-  // El mes en curso está incompleto: la tendencia se calcula hasta el mes anterior
-  const mesHasta = mes === getMesActual() ? obtenerMesAnterior(mes) : mes
+  // El ciclo en curso está incompleto: la tendencia se calcula hasta el ciclo anterior.
+  const mesHasta = mes === obtenerCicloActual() ? obtenerMesAnterior(mes) : mes
   const tendencias = useMemo(
     () => calcularTendenciasCategorias(gastos, mesHasta, cantidad),
     [gastos, mesHasta, cantidad],
@@ -70,7 +71,7 @@ export function TendenciasCategorias({ gastos, mes, cantidad = 6 }) {
         <div>
           <h2 className="text-sm font-semibold text-slate-200">Promedio y tendencia por categoría</h2>
           <p className="mt-1 text-xs text-slate-500">
-            Últimos {cantidad} meses hasta {mesHasta} — sin contar el mes en curso
+            Últimos {cantidad} ciclos hasta {mesHasta} — sin contar el ciclo en curso
           </p>
         </div>
         <div className="flex gap-2 text-xs">
@@ -107,7 +108,7 @@ export function TendenciasCategorias({ gastos, mes, cantidad = 6 }) {
                     <div className="font-mono-numbers text-sm font-semibold text-slate-200">
                       {privacyFormat(Math.round(t.promedio), isPrivacyModeEnabled)}
                     </div>
-                    <div className="text-[10px] uppercase tracking-wide text-slate-600">prom/mes</div>
+                    <div className="text-[10px] uppercase tracking-wide text-slate-600">prom/ciclo</div>
                   </div>
                   <div className="w-24 text-right">
                     <BadgeDireccion direccion={t.direccion} pct={t.pct} />

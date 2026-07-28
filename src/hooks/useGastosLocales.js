@@ -1,9 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { cargarDeDisco, guardarEnDisco, eliminarGastoRemoto } from '../utils/persistencia'
-
-function mesDesFecha(fecha) {
-  return fecha.substring(0, 7)
-}
+import { obtenerCicloFinanciero, obtenerMesCalendario } from '../utils/ciclos'
 
 export function useGastosLocales() {
   const [gastosLocales, setGastosLocales] = useState([])
@@ -11,14 +8,23 @@ export function useGastosLocales() {
   useEffect(() => {
     cargarDeDisco('gastos_manuales').then(data => {
       if (data) {
-        setGastosLocales(data)
+        setGastosLocales(data.map(g => ({
+          ...g,
+          mes: obtenerMesCalendario(g.fecha),
+          ciclo_financiero: obtenerCicloFinanciero(g.fecha),
+        })))
       } else {
         // Migrar desde localStorage si hay datos viejos
         try {
           const raw = localStorage.getItem('gastos_manuales_v1')
           const legacy = raw ? JSON.parse(raw) : []
-          if (legacy.length) guardarEnDisco('gastos_manuales', legacy).catch(() => {})
-          setGastosLocales(legacy)
+          const normalizados = legacy.map(g => ({
+            ...g,
+            mes: obtenerMesCalendario(g.fecha),
+            ciclo_financiero: obtenerCicloFinanciero(g.fecha),
+          }))
+          if (normalizados.length) guardarEnDisco('gastos_manuales', normalizados).catch(() => {})
+          setGastosLocales(normalizados)
         } catch { setGastosLocales([]) }
       }
     })
@@ -29,7 +35,8 @@ export function useGastosLocales() {
     const nuevo = {
       ...gasto,
       id: crypto.randomUUID(),
-      mes: mesDesFecha(gasto.fecha),
+      mes: obtenerMesCalendario(gasto.fecha),
+      ciclo_financiero: obtenerCicloFinanciero(gasto.fecha),
       yr: gasto.fecha.substring(0, 4),
       monto_real: gasto.monto_real ?? gasto.monto,
       split: gasto.split ?? 0,
@@ -50,7 +57,16 @@ export function useGastosLocales() {
 
   const actualizar = useCallback((id, changes) => {
     setGastosLocales(prev => {
-      const next = prev.map(g => g.id === id ? { ...g, ...changes } : g)
+      const next = prev.map(g => {
+        if (g.id !== id) return g
+        const periodos = changes.fecha
+          ? {
+              mes: obtenerMesCalendario(changes.fecha),
+              ciclo_financiero: obtenerCicloFinanciero(changes.fecha),
+            }
+          : {}
+        return { ...g, ...changes, ...periodos }
+      })
       guardarEnDisco('gastos_manuales', next).catch(() => {
         setGastosLocales(prev)
       })

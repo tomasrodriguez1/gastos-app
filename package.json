@@ -9,11 +9,16 @@
     "start": "bun run server/index.js",
     "migrate": "bun run server/migrate.js",
     "migrate:pg": "bun run server/migrate-to-pg.js",
+    "migrate:ciclos": "bun run server/db/migrate-financial-cycles.js",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "bun test server src",
+    "test:e2e": "bun test tests/e2e"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.2",
     "@tailwindcss/vite": "^4.3.0",
     "hono": "^4.12.23",
     "postgres": "^3.4.9",
@@ -21,7 +26,8 @@
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.15.1",
     "recharts": "^3.8.1",
-    "tailwindcss": "^4.3.0"
+    "tailwindcss": "^4.3.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -2,7 +2,8 @@ import { useMemo } from 'react'
 import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 import { calcularComparadorMensual } from '../../utils/calculos'
 import { COLOR_GRUPO } from '../../utils/categorias'
-import { formatCLP, formatMes, formatMesLargo, getMesActual, privacyFormat } from '../../utils/formatters'
+import { formatCLP, formatMes, privacyFormat } from '../../utils/formatters'
+import { formatCiclo, obtenerCicloActual } from '../../utils/ciclos'
 
 function DeltaMonto({ valor, isPrivate }) {
   if (isPrivate) return <span className="font-mono-numbers text-slate-500">••••••</span>
@@ -21,7 +22,7 @@ export function ComparadorMensual({ gastos, mes }) {
     () => calcularComparadorMensual(gastos, mes),
     [gastos, mes],
   )
-  const esMesEnCurso = mes === getMesActual()
+  const esMesEnCurso = mes === obtenerCicloActual()
 
   const insights = filas
     .filter(f => f.promedio > 0 && Math.abs(f.deltaPromedio) >= 10000)
@@ -41,8 +42,8 @@ export function ComparadorMensual({ gastos, mes }) {
       <div className="border-b border-slate-800 px-5 py-4">
         <h2 className="text-sm font-semibold text-slate-200">Comparador por categoría</h2>
         <p className="mt-1 text-xs text-slate-500">
-          {formatMesLargo(mes)} vs {formatMesLargo(mesAnterior)} y vs tu promedio de los últimos {mesesPromedio || 0} meses
-          {esMesEnCurso && ' — mes en curso (parcial)'}
+          {formatCiclo(mes)} vs {formatCiclo(mesAnterior)} y vs tu promedio de los últimos {mesesPromedio || 0} ciclos
+          {esMesEnCurso && ' — ciclo en curso (parcial)'}
         </p>
       </div>
 
@@ -57,7 +58,7 @@ export function ComparadorMensual({ gastos, mes }) {
                   style={{ backgroundColor: COLOR_GRUPO[f.grupo] || '#64748b' }}
                 />
                 <span className="text-slate-400">
-                  En {formatMesLargo(mes).toLowerCase()} gastaste{' '}
+                  En {formatCiclo(mes).toLowerCase()} gastaste{' '}
                   <span className={`font-mono-numbers font-semibold ${mas ? 'text-rose-400' : 'text-emerald-400'}`}>
                     {privacyFormat(Math.abs(Math.round(f.deltaPromedio)), isPrivacyModeEnabled)}
                   </span>{' '}
@@ -76,8 +77,8 @@ export function ComparadorMensual({ gastos, mes }) {
               <th className="px-5 py-3 font-medium">Categoría</th>
               <th className="px-4 py-3 text-right font-medium">{formatMes(mes)}</th>
               <th className="px-4 py-3 text-right font-medium">{formatMes(mesAnterior)}</th>
-              <th className="px-4 py-3 text-right font-medium">Δ mes</th>
-              <th className="px-4 py-3 text-right font-medium">Prom. {mesesPromedio}m</th>
+              <th className="px-4 py-3 text-right font-medium">Δ ciclo</th>
+              <th className="px-4 py-3 text-right font-medium">Prom. {mesesPromedio}c</th>
               <th className="px-5 py-3 text-right font-medium">Δ vs prom.</th>
             </tr>
           </thead>

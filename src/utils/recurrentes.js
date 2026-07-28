@@ -1,6 +1,6 @@
 import { montoReal, esGastoUsdPuro } from './calculos'
 import { getCategoriaPresupuesto } from './mapeo'
-import { getMesActual } from './formatters'
+import { obtenerCicloActual, obtenerDiaDelCiclo } from './ciclos'
 
 // Misma normalización que server/duplicados.js
 function normalizarMotivo(motivo) {
@@ -37,10 +37,10 @@ const MARGEN_DIAS_ESPERA = 5       // días después del día típico antes de m
 
 // Detecta cargos que se repiten mes a mes (suscripciones, cuentas fijas).
 // Devuelve { recurrentes: [...], totalMensual } ordenado por monto descendente.
-export function detectarRecurrentes(gastos, mesActual = getMesActual()) {
+export function detectarRecurrentes(gastos, mesActual = obtenerCicloActual()) {
   const porMotivo = new Map()
   for (const g of gastos) {
-    if (!g.motivo || !g.mes || !g.fecha || esGastoUsdPuro(g)) continue
+    if (!g.motivo || !g.ciclo_financiero || !g.fecha || esGastoUsdPuro(g)) continue
     const clave = normalizarMotivo(g.motivo)
     if (clave.length < 3) continue
     if (!porMotivo.has(clave)) porMotivo.set(clave, [])
@@ -52,8 +52,8 @@ export function detectarRecurrentes(gastos, mesActual = getMesActual()) {
   for (const [clave, items] of porMotivo.entries()) {
     const porMes = {}
     for (const g of items) {
-      if (!porMes[g.mes]) porMes[g.mes] = []
-      porMes[g.mes].push(g)
+      if (!porMes[g.ciclo_financiero]) porMes[g.ciclo_financiero] = []
+      porMes[g.ciclo_financiero].push(g)
     }
     const mesesPresentes = Object.keys(porMes).sort()
     if (mesesPresentes.length < MESES_MINIMOS) continue
@@ -81,9 +81,11 @@ export function detectarRecurrentes(gastos, mesActual = getMesActual()) {
     const promedioPrevio = previos.length ? previos.reduce((a, b) => a + b, 0) / previos.length : montoUltimo
     const variacionPct = promedioPrevio > 0 ? ((montoUltimo - promedioPrevio) / promedioPrevio) * 100 : 0
 
-    const diaTipico = Math.round(mediana(cargos.map(g => parseInt(g.fecha.split('-')[2], 10))))
+    const diaTipico = Math.round(mediana(cargos.map(g => obtenerDiaDelCiclo(g.fecha))))
     const cobradoEsteMes = Boolean(porMes[mesActual])
-    const diaHoy = new Date().getDate()
+    const hoy = new Date()
+    const fechaHoy = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
+    const diaHoy = obtenerDiaDelCiclo(fechaHoy)
     let estado = 'cobrado'
     if (!cobradoEsteMes) estado = diaHoy <= diaTipico + MARGEN_DIAS_ESPERA ? 'esperado' : 'atrasado'
 

@@ -6,11 +6,11 @@ export function useDuplicados() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  const cargar = useCallback(async (mes) => {
+  const cargar = useCallback(async (ciclo) => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/gastos/duplicados?mes=${mes}`)
+      const res = await fetch(`/api/gastos/duplicados?ciclo=${ciclo}`)
       if (!res.ok) throw new Error(`Error ${res.status}`)
       const data = await res.json()
       setGrupos(data.grupos ?? [])
@@ -22,17 +22,17 @@ export function useDuplicados() {
     }
   }, [])
 
-  const excluirPar = useCallback(async (idA, idB, mes) => {
+  const excluirPar = useCallback(async (idA, idB, ciclo) => {
     await fetch('/api/gastos/duplicados/excluir', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id_a: idA, id_b: idB }),
     }).catch(() => {})
-    if (mes) await cargar(mes)
+    if (ciclo) await cargar(ciclo)
   }, [cargar])
 
-  const refrescar = useCallback((mes) => {
-    if (mes) cargar(mes)
+  const refrescar = useCallback((ciclo) => {
+    if (ciclo) cargar(ciclo)
   }, [cargar])
 
   return { grupos, resumen, loading, error, cargar, excluirPar, refrescar }

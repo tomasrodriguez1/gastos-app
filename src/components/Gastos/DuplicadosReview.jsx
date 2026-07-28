@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { getGastoId } from '../../utils/gastosIds'
 import { formatCLP, formatFecha } from '../../utils/formatters'
+import { formatCiclo } from '../../utils/ciclos'
 import { EditarAsignacion } from './EditarAsignacion'
 
 const LABELS = {
@@ -161,7 +162,7 @@ export function DuplicadosReview({ grupos, resumen, loading, error, mes, onActua
           <div>
             <h2 className="text-base font-semibold text-slate-200">Gastos duplicados</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              {mes} — {resumen?.gastos_afectados ?? 0} gastos en {(resumen?.alta ?? 0) + (resumen?.media ?? 0) + (resumen?.baja ?? 0)} grupos
+              {formatCiclo(mes)} — {resumen?.gastos_afectados ?? 0} gastos en {(resumen?.alta ?? 0) + (resumen?.media ?? 0) + (resumen?.baja ?? 0)} grupos
             </p>
           </div>
           <button
@@ -204,7 +205,7 @@ export function DuplicadosReview({ grupos, resumen, loading, error, mes, onActua
           )}
           {!loading && !error && gruposFiltrados.length === 0 && (
             <div className="text-center py-12 text-slate-600 text-sm">
-              No hay duplicados de {LABELS[tab].texto.toLowerCase()} en este mes
+              No hay duplicados de {LABELS[tab].texto.toLowerCase()} en este ciclo
             </div>
           )}
           {!loading && !error && gruposFiltrados.map(grupo => (

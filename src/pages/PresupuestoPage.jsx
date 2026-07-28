@@ -1,36 +1,30 @@
 import { useState } from 'react'
-import { SelectorMes } from '../components/shared/SelectorMes'
+import { SelectorCiclo } from '../components/shared/SelectorCiclo'
 import { EditorPresupuesto } from '../components/Presupuesto/EditorPresupuesto'
 import { FondosAhorro } from '../components/Dashboard/FondosAhorro'
-import { getMesActual } from '../utils/formatters'
+import { desplazarPeriodo, obtenerCicloActual } from '../utils/ciclos'
 
-function generarMesesFuturos(cantidad = 6) {
-  let [yr, mo] = getMesActual().split('-').map(Number)
-  const result = []
-  for (let i = 0; i < cantidad; i++) {
-    result.push(`${yr}-${String(mo).padStart(2, '0')}`)
-    mo++
-    if (mo > 12) { mo = 1; yr++ }
-  }
-  return result
+function generarCiclosFuturos(cantidad = 6) {
+  const actual = obtenerCicloActual()
+  return Array.from({ length: cantidad }, (_, index) => desplazarPeriodo(actual, index))
 }
 
-export function PresupuestoPage({ gastos, meses, obtenerPresupuesto, guardarPresupuesto, copiarMesAnterior, catalogos, onAgregarGasto, onRefetchGastos }) {
-  const mesHoy = getMesActual()
-  const mesesConFuturos = [...new Set([...generarMesesFuturos(6), ...meses])].sort().reverse()
+export function PresupuestoPage({ gastos, ciclos, obtenerPresupuesto, guardarPresupuesto, copiarCicloAnterior, catalogos, onAgregarGasto, onRefetchGastos }) {
+  const cicloActual = obtenerCicloActual()
+  const ciclosConFuturos = [...new Set([...generarCiclosFuturos(6), ...ciclos])].sort().reverse()
 
-  const [mes, setMes] = useState(mesHoy)
+  const [ciclo, setCiclo] = useState(cicloActual)
   const [copiado, setCopiado] = useState(false)
-  const presupuestoMes = obtenerPresupuesto(mes)
+  const presupuestoMes = obtenerPresupuesto(ciclo)
 
-  const esFuturo = mes > mesHoy
+  const esFuturo = ciclo > cicloActual
   const tienePresupuesto = (
     Object.keys(presupuestoMes.ingresos || {}).length > 0 ||
     Object.keys(presupuestoMes.categorias || {}).length > 0
   )
 
   async function handleCopiar() {
-    const ok = await copiarMesAnterior(mes)
+    const ok = await copiarCicloAnterior(ciclo)
     if (ok) {
       setCopiado(true)
       setTimeout(() => setCopiado(false), 2000)
@@ -41,7 +35,7 @@ export function PresupuestoPage({ gastos, meses, obtenerPresupuesto, guardarPres
     <main className="max-w-[1400px] mx-auto px-3 py-4 sm:px-6 sm:py-6 space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
-          <SelectorMes mes={mes} meses={mesesConFuturos} onChange={setMes} />
+          <SelectorCiclo ciclo={ciclo} ciclos={ciclosConFuturos} onChange={setCiclo} />
           {esFuturo && (
             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/15 text-indigo-400 border border-indigo-500/25">
               Futuro
@@ -56,33 +50,33 @@ export function PresupuestoPage({ gastos, meses, obtenerPresupuesto, guardarPres
               : 'bg-slate-700/50 text-slate-400 border-slate-600/50 hover:border-slate-500 hover:text-slate-300'
           }`}
         >
-          {copiado ? '✓ Copiado' : 'Copiar mes anterior'}
+          {copiado ? '✓ Copiado' : 'Copiar ciclo anterior'}
         </button>
       </div>
       {!tienePresupuesto && (
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-slate-300">Sin presupuesto para este mes</p>
-            <p className="text-xs text-slate-500 mt-0.5">Creá uno desde cero o copiá el mes anterior como punto de partida</p>
+            <p className="text-sm font-medium text-slate-300">Sin presupuesto para este ciclo financiero</p>
+            <p className="text-xs text-slate-500 mt-0.5">Creá uno desde cero o copiá el ciclo anterior como punto de partida</p>
           </div>
           <button
             onClick={handleCopiar}
             className="shrink-0 px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-600/30 transition-colors"
           >
-            Copiar mes anterior
+            Copiar ciclo anterior
           </button>
         </div>
       )}
       <EditorPresupuesto
-        mes={mes}
+        mes={ciclo}
         presupuestoMes={presupuestoMes}
         gastos={gastos}
-        onGuardar={datos => guardarPresupuesto(mes, datos)}
+        onGuardar={datos => guardarPresupuesto(ciclo, datos)}
         onNuevaSubcategoria={catalogos.recargarGrupos}
       />
       <FondosAhorro
         presupuestoMes={presupuestoMes}
-        mes={mes}
+        mes={ciclo}
         onGuardarPresupuesto={guardarPresupuesto}
         catalogos={catalogos}
         gastos={gastos}

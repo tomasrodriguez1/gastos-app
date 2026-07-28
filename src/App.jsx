@@ -6,20 +6,23 @@ import { AnalisisPage } from './pages/AnalisisPage'
 import { GastosPage } from './pages/GastosPage'
 import { LogPage } from './pages/LogPage'
 import { PresupuestoPage } from './pages/PresupuestoPage'
+import { TarjetaPage } from './pages/TarjetaPage'
+import { PasskeysPage } from './pages/PasskeysPage'
 import { useGastos } from './hooks/useGastos'
 import { useGastosLocales } from './hooks/useGastosLocales'
 import { usePresupuesto } from './hooks/usePresupuesto'
 import { useSyncN8n } from './hooks/useSyncN8n'
 import { useCatalogos } from './hooks/useCatalogos'
+import { useReservaTarjeta } from './hooks/useReservaTarjeta'
 import { cargarReglas } from './utils/mapeo'
 import { cargarDeDisco } from './utils/persistencia'
-import { getMesActual } from './utils/formatters'
+import { obtenerCicloActual } from './utils/ciclos'
 
 // Pre-cargar reglas de mapeo al iniciar la app
 cargarReglas()
 
 export default function App() {
-  const { gastos, setGastos, actualizarGasto, eliminarGasto, loading, mesesDisponibles } = useGastos()
+  const { gastos, setGastos, actualizarGasto, eliminarGasto, loading, ciclosDisponibles, mesesCalendarioDisponibles } = useGastos()
 
   async function refetchGastos() {
     const data = await cargarDeDisco('gastos')
@@ -36,9 +39,10 @@ export default function App() {
     if (gastosLocales.some(g => g.id === id)) actualizarLocal(id, changes)
     else actualizarGasto(id, changes)
   }
-  const { obtenerMes, guardar, copiarMesAnterior, cargado: presupuestoCargado, errorGuardado } = usePresupuesto()
+  const { obtenerCiclo, guardar, copiarCicloAnterior, cargado: presupuestoCargado, errorGuardado } = usePresupuesto()
   const { sincronizar, syncing, syncError, pendingSync, confirmarSync, cancelarSync } = useSyncN8n(setGastos)
   const catalogos = useCatalogos()
+  const { reservas, guardarReserva } = useReservaTarjeta()
 
   if (loading || !presupuestoCargado) {
     return (
@@ -59,17 +63,20 @@ export default function App() {
     )
   }
 
-  const mesesLocales = [...new Set(gastosLocales.map(g => g.mes))]
-  const mesesUnion = [...new Set([...mesesDisponibles, ...mesesLocales])].sort().reverse()
-  const meses = [...new Set([getMesActual(), ...mesesUnion])].sort().reverse()
+  const ciclosLocales = [...new Set(gastosLocales.map(g => g.ciclo_financiero).filter(Boolean))]
+  const ciclosUnion = [...new Set([...ciclosDisponibles, ...ciclosLocales])].sort().reverse()
+  const ciclos = [...new Set([obtenerCicloActual(), ...ciclosUnion])].sort().reverse()
+  const mesesCalendarioLocales = [...new Set(gastosLocales.map(g => g.mes).filter(Boolean))]
+  const mesesCalendario = [...new Set([...mesesCalendarioDisponibles, ...mesesCalendarioLocales])].sort().reverse()
 
   const todoLosGastos = [...gastos, ...gastosLocales]
 
   const sharedProps = {
-    meses,
-    obtenerPresupuesto: obtenerMes,
+    ciclos,
+    mesesCalendario,
+    obtenerPresupuesto: obtenerCiclo,
     guardarPresupuesto: guardar,
-    copiarMesAnterior,
+    copiarCicloAnterior,
     catalogos,
     onAgregarGasto: agregar,
     onRefetchGastos: refetchGastos,
@@ -148,6 +155,19 @@ export default function App() {
               />
             }
           />
+          <Route
+            path="/tarjeta"
+            element={
+              <TarjetaPage
+                {...sharedProps}
+                gastos={todoLosGastos}
+                reservas={reservas}
+                onGuardarReserva={guardarReserva}
+                onActualizarGasto={actualizarCualquierGasto}
+              />
+            }
+          />
+          <Route path="/passkeys" element={<PasskeysPage />} />
         </Routes>
       </div>
     </div>

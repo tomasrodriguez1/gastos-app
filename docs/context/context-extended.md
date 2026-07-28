@@ -36,7 +36,7 @@ useGastos / useGastosLocales ← GET /api/datos ←────┘
 App.jsx merge → páginas → calculos.js / mapeo.js
 ```
 
-**Presupuesto:** `usePresupuesto` ↔ `GET/PUT /api/presupuesto/:mes`
+**Presupuesto:** `usePresupuesto` ↔ `GET/PUT /api/presupuesto/:ciclo`. El ciclo se deriva de cada fecha con corte 29–28; `mes` queda como filtro calendario secundario.
 
 **Mapeo:** reglas en `regla_mapeo` → `mapeo.js` (cliente) + `mapearGastoConRegla` (servidor)
 

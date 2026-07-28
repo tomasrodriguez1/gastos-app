@@ -1,5 +1,4 @@
 import { copyFileSync, existsSync } from 'fs'
-import { resolve } from 'path'
 
 // ─── Migration 002: _id → UUID + sync_key ────────────────────────────────────
 
@@ -241,7 +240,7 @@ function migration003(db) {
   `)
 
   // Migrate from old presupuesto table if it still exists
-  let oldRows = []
+  let oldRows
   try {
     oldRows = db.prepare('SELECT mes, datos FROM presupuesto').all()
   } catch { return } // table already dropped
@@ -418,7 +417,9 @@ function migration008(db) {
           v.desde = '2026-05'
           update.run(JSON.stringify(v), row.id)
         }
-      } catch {}
+      } catch {
+        // Un vínculo legacy inválido se conserva sin modificar.
+      }
     }
   })
   updateAll(rows)

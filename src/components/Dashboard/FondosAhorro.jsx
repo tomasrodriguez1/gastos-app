@@ -133,7 +133,7 @@ function FormFondo({
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 uppercase tracking-wider block mb-1.5">Aporte/mes</label>
+              <label className="text-xs text-slate-500 uppercase tracking-wider block mb-1.5">Aporte/ciclo</label>
               <input
                 type="number"
                 value={form.aporte}
@@ -221,13 +221,13 @@ function FormFondo({
                 {aporteNum > 0 && faltaMeta > 0 && (
                   <div>
                     Tiempo estimado:{' '}
-                    <span className="text-slate-200">~{Math.ceil(faltaMeta / aporteNum)} meses</span>
+                    <span className="text-slate-200">~{Math.ceil(faltaMeta / aporteNum)} ciclos</span>
                   </div>
                 )}
                 {necesario != null && (
                   <div>
                     Aporte necesario:{' '}
-                    <span className="font-mono-numbers text-slate-200">{formatCLP(necesario)}/mes</span>
+                    <span className="font-mono-numbers text-slate-200">{formatCLP(necesario)}/ciclo</span>
                     {aporteNum > 0 && necesario > aporteNum && (
                       <span className="text-amber-500/90"> (más que tu aporte actual)</span>
                     )}
@@ -467,9 +467,9 @@ function TarjetaFondo({ nombre, fondo, onAportar, onEliminar, onEditar, acumulad
             : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
         }`}>
           {aporteInsuficiente ? (
-            <>Necesitás <span className="font-mono-numbers font-semibold">{formatCLP(aporteNecesario)}</span>/mes para llegar en {fondo.fecha_meta} — hoy aportás {formatCLP(aportar)}</>
+            <>Necesitás <span className="font-mono-numbers font-semibold">{formatCLP(aporteNecesario)}</span>/ciclo para llegar en {fondo.fecha_meta} — hoy aportás {formatCLP(aportar)}</>
           ) : (
-            <>Vas bien: con {formatCLP(aportar)}/mes cubrís los <span className="font-mono-numbers font-semibold">{formatCLP(aporteNecesario)}</span>/mes necesarios</>
+            <>Vas bien: con {formatCLP(aportar)}/ciclo cubrís los <span className="font-mono-numbers font-semibold">{formatCLP(aporteNecesario)}</span>/ciclo necesarios</>
           )}
         </div>
       )}
@@ -482,7 +482,7 @@ function TarjetaFondo({ nombre, fondo, onAportar, onEliminar, onEditar, acumulad
       {/* Footer */}
       <div className="pt-1 border-t border-slate-700/50 flex items-center justify-between gap-2 flex-wrap">
         <span className="text-xs text-slate-600">
-          {aportar > 0 ? `+${formatCLP(aportar)}/mes` : 'Sin aporte previsto'}
+          {aportar > 0 ? `+${formatCLP(aportar)}/ciclo` : 'Sin aporte previsto'}
         </span>
         <div className="flex items-center gap-2">
           {fondo.fecha_meta && (
@@ -494,7 +494,7 @@ function TarjetaFondo({ nombre, fondo, onAportar, onEliminar, onEditar, acumulad
             </span>
           )}
           {mesesRestantes != null && !fondo.fecha_meta && (
-            <span className="text-xs text-slate-500">~{mesesRestantes} {mesesRestantes === 1 ? 'mes' : 'meses'}</span>
+            <span className="text-xs text-slate-500">~{mesesRestantes} {mesesRestantes === 1 ? 'ciclo' : 'ciclos'}</span>
           )}
           {pct >= 100 && <span className="text-xs text-emerald-400 font-medium">Completado</span>}
         </div>
@@ -530,7 +530,8 @@ export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalo
   }
 
   function datosFondoDesdeForm(datos) {
-    const { nombre, vinculadoAnterior: _va, ...resto } = datos
+    const { nombre, ...resto } = datos
+    delete resto.vinculadoAnterior
     return { nombre, datos: resto }
   }
 

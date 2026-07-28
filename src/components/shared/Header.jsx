@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
+import { useAuth } from '../../contexts/AuthContext'
 
 // ─── Íconos SVG inline ────────────────────────────────────────────────────────
 
@@ -55,6 +56,35 @@ function IconPresupuesto() {
   )
 }
 
+function IconTarjeta() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <line x1="2" y1="10" x2="22" y2="10" />
+    </svg>
+  )
+}
+
+function IconLlave() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="7.5" cy="15.5" r="4.5" />
+      <path d="m21 2-9.6 9.6" />
+      <path d="m15.5 7.5 3 3L22 7l-3-3" />
+    </svg>
+  )
+}
+
+function IconLogout() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  )
+}
+
 function IconOjo({ open }) {
   return open ? (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -74,6 +104,7 @@ function IconOjo({ open }) {
 
 export function Sidebar() {
   const { isPrivacyModeEnabled, togglePrivacyMode } = usePrivacyMode()
+  const { logout } = useAuth()
 
   const navClass = ({ isActive }) =>
     `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
@@ -109,8 +140,19 @@ export function Sidebar() {
             <NavLink to="/cashflow" className={navClass}>Cashflow</NavLink>
             <NavLink to="/analisis" className={navClass}>Análisis</NavLink>
             <NavLink to="/gastos" className={navClass}>Gastos</NavLink>
+            <NavLink to="/tarjeta" className={navClass}>Tarjeta</NavLink>
             <NavLink to="/presupuesto" className={navClass}>Presupuesto</NavLink>
+            <NavLink to="/passkeys" className={navClass}>Cuenta</NavLink>
           </nav>
+          <div className="mt-auto pt-4">
+            <button
+              onClick={logout}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:text-foreground hover:bg-white/4 transition-colors"
+            >
+              <IconLogout />
+              Cerrar sesión
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -133,9 +175,17 @@ export function Sidebar() {
             <IconGastos />
             <span>Gastos</span>
           </NavLink>
+          <NavLink to="/tarjeta" className={mobileNavClass}>
+            <IconTarjeta />
+            <span>Tarjeta</span>
+          </NavLink>
           <NavLink to="/presupuesto" className={mobileNavClass}>
             <IconPresupuesto />
             <span>Presup.</span>
+          </NavLink>
+          <NavLink to="/passkeys" className={mobileNavClass}>
+            <IconLlave />
+            <span>Cuenta</span>
           </NavLink>
           <button
             onClick={togglePrivacyMode}

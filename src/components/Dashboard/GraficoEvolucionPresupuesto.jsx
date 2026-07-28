@@ -5,7 +5,8 @@ import {
 import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 import { calcularGastosPorGrupo } from '../../utils/calculos'
 import { COLOR_GRUPO } from '../../utils/categorias'
-import { formatCLP, formatMes, formatMesLargo, privacyFormat } from '../../utils/formatters'
+import { formatCLP, formatMes, privacyFormat } from '../../utils/formatters'
+import { formatCiclo, obtenerDiaDelCiclo } from '../../utils/ciclos'
 
 const DESDE_MES = '2026-01'
 
@@ -22,8 +23,7 @@ const FALLBACK_COLORS = [
   '#8b5cf6',
 ]
 
-function getViewOptions() {
-  const dia = new Date().getDate()
+function getViewOptions(dia) {
   return [
     { id: 'stacked', label: 'Stacked' },
     { id: 'dia', label: `Día ${dia}` },
@@ -94,7 +94,7 @@ function StackedTooltip({ active, payload, label, isPrivate }) {
   return (
     <div className="min-w-[220px] rounded-lg border border-slate-700 bg-slate-950/95 p-3 text-sm shadow-xl">
       <div className="mb-2 flex items-center justify-between gap-4">
-        <span className="font-medium text-slate-300">{formatMesLargo(label)}</span>
+        <span className="font-medium text-slate-300">{formatCiclo(label)}</span>
         <span className="font-mono-numbers font-bold text-white">
           {privacyFormat(total, isPrivate)}
         </span>
@@ -133,7 +133,7 @@ function ChangeTooltip({ active, payload, isPrivate, mode }) {
 
   return (
     <div className="min-w-[180px] rounded-lg border border-slate-700 bg-slate-950/95 p-3 text-sm shadow-xl">
-      <div className="font-medium text-slate-300">{formatMesLargo(point.mes)}</div>
+      <div className="font-medium text-slate-300">{formatCiclo(point.mes)}</div>
       <div className="mt-2 flex items-center justify-between gap-4">
         <span className="text-slate-500">Cambio</span>
         <span className={`font-mono-numbers font-semibold ${tone}`}>
@@ -150,8 +150,10 @@ export function GraficoEvolucionPresupuesto({ gastos }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
   const scrollRef = useRef(null)
   const [vista, setVista] = useState('stacked')
-  const diaHoy = new Date().getDate()
-  const VIEW_OPTIONS = getViewOptions()
+  const ahora = new Date()
+  const fechaHoy = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`
+  const diaHoy = obtenerDiaDelCiclo(fechaHoy)
+  const VIEW_OPTIONS = getViewOptions(diaHoy)
 
   const {
     data,
@@ -163,11 +165,14 @@ export function GraficoEvolucionPresupuesto({ gastos }) {
     porcentajePeriodo,
     cambioData,
   } = useMemo(() => {
+    const fechaCorte = new Date()
+    const fechaCorteLocal = `${fechaCorte.getFullYear()}-${String(fechaCorte.getMonth() + 1).padStart(2, '0')}-${String(fechaCorte.getDate()).padStart(2, '0')}`
+    const diaCorte = obtenerDiaDelCiclo(fechaCorteLocal)
     const gastosBase = vista === 'dia'
-      ? gastos.filter(g => parseInt(g.fecha.split('-')[2], 10) <= diaHoy)
+      ? gastos.filter(g => obtenerDiaDelCiclo(g.fecha) <= diaCorte)
       : gastos
 
-    const ultimoMes = [...new Set(gastosBase.map(gasto => gasto.mes).filter(Boolean))]
+    const ultimoMes = [...new Set(gastosBase.map(gasto => gasto.ciclo_financiero).filter(Boolean))]
       .filter(mes => mes >= DESDE_MES)
       .sort()
       .at(-1)
@@ -241,7 +246,7 @@ export function GraficoEvolucionPresupuesto({ gastos }) {
       porcentajePeriodo: porcentajeDesdeInicio,
       cambioData: changes,
     }
-  }, [gastos, vista, diaHoy])
+  }, [gastos, vista])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -252,7 +257,7 @@ export function GraficoEvolucionPresupuesto({ gastos }) {
   if (!data.length || !grupos.length) {
     return (
       <section className="rounded-xl border border-slate-800/80 bg-slate-900/40 p-5">
-        <h2 className="text-sm font-semibold text-slate-200">Evolución por categoría</h2>
+        <h2 className="text-sm font-semibold text-slate-200">Evolución por ciclo y categoría</h2>
         <div className="mt-6 flex h-[260px] items-center justify-center text-sm text-slate-500">
           Sin datos desde enero 2026.
         </div>
@@ -264,18 +269,18 @@ export function GraficoEvolucionPresupuesto({ gastos }) {
     <section className="rounded-xl border border-slate-800/80 bg-slate-900/40">
       <div className="flex items-start justify-between gap-4 border-b border-slate-800 px-5 py-4">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-slate-200">Evolución por categoría</h2>
+          <h2 className="text-sm font-semibold text-slate-200">Evolución por ciclo y categoría</h2>
           <div className="mt-2 font-mono-numbers text-3xl font-bold tracking-tight text-white">
             {privacyFormat(totalUltimoMes, isPrivacyModeEnabled)}
           </div>
           {vista === 'dia' && (
             <div className="mt-1 text-xs text-slate-500">
-              Gastos hasta el día {diaHoy} de cada mes
+              Gastos hasta el día {diaHoy} de cada ciclo
             </div>
           )}
           <div className="mt-2 space-y-1">
             <TrendLine
-              label="este mes"
+              label="este ciclo"
               value={porcentajeMes}
               previous={totalUltimoMes - cambioMes}
               type="percent"

@@ -18,7 +18,9 @@ SPA React servida por Vite en desarrollo y por Hono (`serveStatic`) en producci�
 - **Framework:** Hono 4
 - **Puerto:** `PORT` (default 3001)
 - **Archivo principal:** `server/index.js`
-- **Auth:** middleware global con cookie/query token en producción
+- **Auth:** middleware global combinado (`server/auth.js`) — sesión passkey válida O
+  `ACCESS_TOKEN` legacy. Endpoints de auth en `server/routes/auth.js`, montados en
+  `/api/auth/*` y exentos del gate (cada uno aplica su propio control interno)
 
 ## Base de datos
 
@@ -27,6 +29,8 @@ SPA React servida por Vite en desarrollo y por Hono (`serveStatic`) en producci�
 - **Conexión:** `DATABASE_URL` (requerida)
 - **SSL:** requerido en prod si URL no incluye `sslmode=`
 - **Inicialización:** `RUN_SCHEMA_INIT=true` o `NODE_ENV !== 'production'` ejecuta `schema.pg.sql`
+- **Período presupuestario:** `gastos.ciclo_financiero` se deriva de `fecha`; `gastos.mes` se conserva únicamente para consultas por mes calendario.
+- **Migración de ciclos:** `bun run migrate:ciclos` renombra las claves históricas de presupuesto y recalcula/verifica los períodos sin alterar datos financieros.
 
 ## Storage
 
@@ -48,14 +52,18 @@ Ver `docs/architecture/integrations.md`.
 
 ## Autenticación
 
-Token compartido (`ACCESS_TOKEN`) en producción. Cookie HTTP-only `gastos_access`. Primera visita vía `?t=TOKEN`.
+Passkeys/WebAuthn (`@simplewebauthn/server` + `@simplewebauthn/browser`), single-owner. Sesión
+propia (token opaco hasheado en `auth_sessions`) vía cookie HTTP-only `gastos_session`.
+Enrolamiento inicial protegido por `PASSKEY_BOOTSTRAP_SECRET`. `ACCESS_TOKEN` (cookie legacy
+`gastos_access`) se mantiene activo en paralelo durante la transición — ver DEC-009 en
+`docs/architecture/decisions.md` y `docs/context/context.md` para el detalle de endpoints.
 
 ## Entornos
 
 | Entorno | Frontend | API | DB | Auth |
 |---------|----------|-----|-----|------|
-| Local | Vite :6001 | Bun :3001 | PostgreSQL local/remoto | Deshabilitada |
-| Producción (Railway) | `dist/` estático | mismo proceso | PostgreSQL managed | Token requerido |
+| Local | Vite :6001 | Bun :3001 | PostgreSQL local/remoto | Passkey real u opcional (gate legacy sigue abierto en dev) |
+| Producción (Coolify) | `dist/` estático | mismo proceso | PostgreSQL managed | Passkey requerida; `ACCESS_TOKEN` legacy aceptado en paralelo |
 
 ## Flujo general
 
@@ -69,10 +77,14 @@ Usuario → Browser (React SPA)
 
 ## Riesgos
 
-- Token en URL en primera visita (se redirige a URL limpia, pero puede quedar en logs del browser).
+- `ACCESS_TOKEN` en URL en primera visita (legacy, en paralelo — se redirige a URL limpia,
+  pero puede quedar en logs del browser). Se retira una vez confirmado el login passkey.
+- Rate limiting de `/api/auth/*` en memoria por proceso — se resetea en restart y no se
+  comparte entre instancias (aceptable para un solo contenedor; revisar si se escala).
 - Webhook n8n llamado desde el cliente (URL expuesta en bundle si `VITE_*`).
-- Sin rate limiting en API.
-- Schema PG sin migraciones versionadas post-migración SQLite.
+- Sin rate limiting en el resto de la API (`/api/gastos`, `/api/presupuesto`, etc.).
+- Schema PG sin migraciones versionadas post-migración SQLite (las tablas de auth siguen el
+  mismo patrón `CREATE TABLE IF NOT EXISTS` en `schema.pg.sql`).
 
 ## Decisiones pendientes
 

@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { BANCOS, TODOS_LOS_TIPOS } from '../../utils/categorias'
 
-export function FiltrosGastos({ filtros, onChange, contextos = [], bancos = BANCOS, todosTipos = TODOS_LOS_TIPOS }) {
-  const { banco, tipos, soloNoPagados, busqueda, contexto } = filtros
+export function FiltrosGastos({ filtros, onChange, contextos = [], bancos = BANCOS, todosTipos = TODOS_LOS_TIPOS, mesesCalendario = [] }) {
+  const { banco, tipos, soloNoPagados, busqueda, contexto, mesCalendario } = filtros
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
 
   const cantFiltrosActivos = [
@@ -11,6 +11,7 @@ export function FiltrosGastos({ filtros, onChange, contextos = [], bancos = BANC
     soloNoPagados,
     busqueda !== '',
     (contexto || '') !== '',
+    (mesCalendario || '') !== '',
   ].filter(Boolean).length
 
   function toggleTipo(tipo) {
@@ -71,6 +72,18 @@ export function FiltrosGastos({ filtros, onChange, contextos = [], bancos = BANC
               </select>
             </div>
           )}
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-500 uppercase tracking-wider">Mes calendario</label>
+            <select
+              value={mesCalendario || ''}
+              onChange={e => onChange({ ...filtros, mesCalendario: e.target.value })}
+              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-sky-500"
+            >
+              <option value="">Todos los meses del ciclo</option>
+              {mesesCalendario.map(mes => <option key={mes} value={mes}>{mes}</option>)}
+            </select>
+          </div>
 
           <input
             type="text"

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { cargarDeDisco, guardarEnDisco, actualizarGastoRemoto, eliminarGastoRemoto } from '../utils/persistencia'
+import { obtenerCicloFinanciero, obtenerMesCalendario } from '../utils/ciclos'
 
 function makeId(g) {
   return g.id || `${g.fecha}|${g.motivo?.trim().toLowerCase()}`
@@ -23,6 +24,8 @@ export function useGastos() {
               const migrated = json.map(g => ({
                 ...g,
                 id: makeId(g),
+                mes: obtenerMesCalendario(g.fecha),
+                ciclo_financiero: obtenerCicloFinanciero(g.fecha),
                 monto_real: g.monto_real ?? g.monto,
               }))
               if (migrated.length) guardarEnDisco('gastos', migrated).catch(() => {})
@@ -50,7 +53,8 @@ export function useGastos() {
     eliminarGastoRemoto(id).catch(() => {})
   }, [])
 
-  const mesesDisponibles = [...new Set(gastos.map(g => g.mes))].sort().reverse()
+  const ciclosDisponibles = [...new Set(gastos.map(g => g.ciclo_financiero).filter(Boolean))].sort().reverse()
+  const mesesCalendarioDisponibles = [...new Set(gastos.map(g => g.mes).filter(Boolean))].sort().reverse()
 
-  return { gastos, setGastos, actualizarGasto, eliminarGasto, loading, mesesDisponibles }
+  return { gastos, setGastos, actualizarGasto, eliminarGasto, loading, ciclosDisponibles, mesesCalendarioDisponibles }
 }
