@@ -77,7 +77,7 @@ Según el área, leer los archivos listados en la tabla "Where to read next" de 
 ### Auth / permisos
 
 - Leer `security-checklist.md`.
-- Un token = acceso total; no hay roles.
+- Passkey/sesión válida (o `ACCESS_TOKEN` legacy en paralelo, ver DEC-009) = acceso total; no hay roles.
 
 ### Integraciones
 

@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS gastos (
   sync_key                 TEXT UNIQUE,
   fecha                    TEXT NOT NULL,
   mes                      TEXT NOT NULL,
+  ciclo_financiero         TEXT NOT NULL,
   motivo                   TEXT NOT NULL,
   banco                    TEXT DEFAULT '',
   tipos                    JSONB DEFAULT '[]',
@@ -24,38 +25,39 @@ CREATE TABLE IF NOT EXISTS gastos (
 );
 
 CREATE INDEX IF NOT EXISTS idx_gastos_mes ON gastos(mes);
+CREATE INDEX IF NOT EXISTS idx_gastos_ciclo_financiero ON gastos(ciclo_financiero);
 CREATE INDEX IF NOT EXISTS idx_gastos_fecha ON gastos(fecha);
 CREATE INDEX IF NOT EXISTS idx_gastos_sync_key ON gastos(sync_key) WHERE sync_key IS NOT NULL;
 
 -- ─── PRESUPUESTO ─────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS presupuesto_mes (
-  mes        TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS presupuesto_ciclo (
+  ciclo      TEXT PRIMARY KEY,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS presupuesto_ingreso (
   id     SERIAL PRIMARY KEY,
-  mes    TEXT NOT NULL REFERENCES presupuesto_mes(mes) ON DELETE CASCADE,
+  ciclo  TEXT NOT NULL REFERENCES presupuesto_ciclo(ciclo) ON DELETE CASCADE,
   fuente TEXT NOT NULL,
   monto  NUMERIC NOT NULL DEFAULT 0,
-  UNIQUE(mes, fuente)
+  UNIQUE(ciclo, fuente)
 );
 
 CREATE TABLE IF NOT EXISTS presupuesto_categoria (
   id           SERIAL PRIMARY KEY,
-  mes          TEXT NOT NULL REFERENCES presupuesto_mes(mes) ON DELETE CASCADE,
+  ciclo        TEXT NOT NULL REFERENCES presupuesto_ciclo(ciclo) ON DELETE CASCADE,
   grupo        TEXT NOT NULL,
   subcategoria TEXT NOT NULL,
   previsto     NUMERIC NOT NULL DEFAULT 0,
   fgp          BOOLEAN NOT NULL DEFAULT FALSE,
-  UNIQUE(mes, grupo, subcategoria)
+  UNIQUE(ciclo, grupo, subcategoria)
 );
 
 CREATE TABLE IF NOT EXISTS presupuesto_fondo (
   id               SERIAL PRIMARY KEY,
-  mes              TEXT NOT NULL REFERENCES presupuesto_mes(mes) ON DELETE CASCADE,
+  ciclo            TEXT NOT NULL REFERENCES presupuesto_ciclo(ciclo) ON DELETE CASCADE,
   nombre           TEXT NOT NULL,
   previsto_aportar NUMERIC DEFAULT 0,
   acumulado        NUMERIC DEFAULT 0,
@@ -63,7 +65,7 @@ CREATE TABLE IF NOT EXISTS presupuesto_fondo (
   fecha_meta       TEXT,
   vinculado        JSONB,
   emoji            TEXT DEFAULT '💰',
-  UNIQUE(mes, nombre)
+  UNIQUE(ciclo, nombre)
 );
 
 -- ─── CATÁLOGOS ───────────────────────────────────────────────────────────────
@@ -132,3 +134,55 @@ CREATE TABLE IF NOT EXISTS config (
   valor      TEXT NOT NULL,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ─── RESERVA TARJETA ─────────────────────────────────────────────────────────
+-- Saldo reservado (ej. en Mercado Pago) para pagar cada tarjeta. Standalone,
+-- no vinculado a presupuesto_fondo: evita duplicar el gasto (ya registrado en
+-- `gastos`) como aporte a un fondo. Ver docs/context/data_model_context.md.
+
+CREATE TABLE IF NOT EXISTS reserva_tarjeta (
+  banco      TEXT PRIMARY KEY,
+  monto      NUMERIC NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── AUTENTICACIÓN (WebAuthn / Passkeys) ────────────────────────────────────
+-- Reemplaza ACCESS_TOKEN. Ver docs/architecture/decisions.md DEC-009.
+-- `config` (arriba en este archivo, ver sección CONFIG) guarda además una fila
+-- clave='webauthn_user_id' con el handle de usuario WebAuthn (single-owner).
+
+CREATE TABLE IF NOT EXISTS passkey_credentials (
+  id            SERIAL PRIMARY KEY,
+  credential_id TEXT UNIQUE NOT NULL,
+  public_key    BYTEA NOT NULL,
+  counter       BIGINT NOT NULL DEFAULT 0,
+  transports    TEXT[],
+  device_type   TEXT,
+  backed_up     BOOLEAN,
+  name          TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at  TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+  id          SERIAL PRIMARY KEY,
+  challenge   TEXT UNIQUE NOT NULL,
+  type        TEXT NOT NULL CHECK (type IN ('registration', 'authentication')),
+  expires_at  TIMESTAMPTZ NOT NULL,
+  consumed_at TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_expires ON webauthn_challenges(expires_at);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  id           SERIAL PRIMARY KEY,
+  token_hash   TEXT UNIQUE NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at   TIMESTAMPTZ NOT NULL,
+  last_used_at TIMESTAMPTZ,
+  revoked_at   TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires
+  ON auth_sessions(expires_at) WHERE revoked_at IS NULL;

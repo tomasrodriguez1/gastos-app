@@ -21,7 +21,7 @@ function BadgeEstado({ item }) {
   }
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-400">
-      ⚠ No llegó este mes
+      ⚠ No llegó este ciclo
     </span>
   )
 }
@@ -50,7 +50,7 @@ export function GastosRecurrentes({ gastos }) {
         <div>
           <h2 className="text-sm font-semibold text-slate-200">Recurrentes y suscripciones</h2>
           <p className="mt-1 text-xs text-slate-500">
-            Cargos detectados automáticamente que se repiten mes a mes (mínimo 3 meses)
+            Cargos detectados automáticamente que se repiten ciclo a ciclo (mínimo 3 ciclos)
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
@@ -58,7 +58,7 @@ export function GastosRecurrentes({ gastos }) {
             {recurrentes.length} detectados
           </span>
           <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-sky-300">
-            ~{privacyFormat(Math.round(totalMensual), isPrivacyModeEnabled)}/mes
+            ~{privacyFormat(Math.round(totalMensual), isPrivacyModeEnabled)}/ciclo
           </span>
           {alertas > 0 && (
             <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-amber-400">
@@ -70,7 +70,7 @@ export function GastosRecurrentes({ gastos }) {
 
       {recurrentes.length === 0 ? (
         <div className="px-5 py-8 text-sm text-slate-500">
-          Aún no se detectan gastos recurrentes. Se necesitan cargos con el mismo motivo en al menos 3 meses distintos.
+          Aún no se detectan gastos recurrentes. Se necesitan cargos con el mismo motivo en al menos 3 ciclos distintos.
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -80,7 +80,7 @@ export function GastosRecurrentes({ gastos }) {
                 <th className="px-5 py-3 font-medium">Cargo</th>
                 <th className="px-4 py-3 text-right font-medium">Monto típico</th>
                 <th className="px-4 py-3 text-right font-medium">Último cobro</th>
-                <th className="px-4 py-3 text-center font-medium">Meses</th>
+                <th className="px-4 py-3 text-center font-medium">Ciclos</th>
                 <th className="px-5 py-3 text-right font-medium">Estado</th>
               </tr>
             </thead>

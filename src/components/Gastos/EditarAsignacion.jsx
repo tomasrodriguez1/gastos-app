@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { GRUPOS_PRESUPUESTO } from '../../utils/categorias'
 import { getSubcategoriaPresupuesto } from '../../utils/mapeo'
 import { formatCLP } from '../../utils/formatters'
+import { obtenerCicloFinanciero, obtenerMesCalendario } from '../../utils/ciclos'
 
 const CONTEXTOS_DEFAULT = ['Familia', 'Trabajo', 'Amigos', 'Personal', 'Polola']
 const TIPOS_DEFAULT = [
@@ -75,9 +76,10 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos }) {
       delete changes.monto_real
     }
 
-    // recalculate mes if fecha changed
+    // El servidor es autoritativo; estos valores mantienen consistente el update optimista.
     if (fecha !== gasto.fecha) {
-      changes.mes = fecha.substring(0, 7)
+      changes.mes = obtenerMesCalendario(fecha)
+      changes.ciclo_financiero = obtenerCicloFinanciero(fecha)
     }
 
     onGuardar(changes)

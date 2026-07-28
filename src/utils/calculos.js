@@ -1,4 +1,5 @@
 import { getCategoriaPresupuesto, getSubcategoriaPresupuesto } from './mapeo'
+import { obtenerDiaDelCiclo, obtenerDuracionCiclo } from './ciclos'
 
 export function montoReal(g) {
   if (g.monto_presupuesto_manual != null) return g.monto_presupuesto_manual
@@ -10,9 +11,9 @@ export function esGastoUsdPuro(g) {
   return g.usd > 0 && !g.monto && !g.monto_clp_manual
 }
 
-export function calcularGastosPorGrupo(gastos, mes) {
+export function calcularGastosPorGrupo(gastos, ciclo) {
   return gastos
-    .filter(g => g.mes === mes)
+    .filter(g => g.ciclo_financiero === ciclo)
     .filter(g => !esGastoUsdPuro(g))
     .reduce((acc, g) => {
       const ctx = g.contexto_override || g.contexto || ''
@@ -23,17 +24,17 @@ export function calcularGastosPorGrupo(gastos, mes) {
     }, {})
 }
 
-export function calcularTotalMes(gastos, mes) {
+export function calcularTotalMes(gastos, ciclo) {
   return gastos
-    .filter(g => g.mes === mes)
+    .filter(g => g.ciclo_financiero === ciclo)
     .filter(g => !esGastoUsdPuro(g))
     .reduce((sum, g) => sum + montoReal(g), 0)
 }
 
 // Returns all gastos that map to a specific grupo + subcategoria in the given mes
-export function getGastosPorSubcategoria(gastos, mes, grupo, subcategoria) {
+export function getGastosPorSubcategoria(gastos, ciclo, grupo, subcategoria) {
   return gastos
-    .filter(g => g.mes === mes)
+    .filter(g => g.ciclo_financiero === ciclo)
     .filter(g => !esGastoUsdPuro(g))
     .filter(g => {
       const ctx = g.contexto_override || g.contexto || ''
@@ -44,10 +45,10 @@ export function getGastosPorSubcategoria(gastos, mes, grupo, subcategoria) {
 }
 
 // Returns { GRUPO: { subcategoria: amount } }
-export function calcularGastosPorSubcategoria(gastos, mes) {
+export function calcularGastosPorSubcategoria(gastos, ciclo) {
   const result = {}
   gastos
-    .filter(g => g.mes === mes)
+    .filter(g => g.ciclo_financiero === ciclo)
     .filter(g => !esGastoUsdPuro(g))
     .forEach(g => {
       const ctx = g.contexto_override || g.contexto || ''
@@ -103,8 +104,8 @@ export function calcularTotalPrevisto(presupuestoMes) {
   return total
 }
 
-export function calcularUltimosMeses(gastos, mesActual, cantidad = 6) {
-  const [yr, mo] = mesActual.split('-').map(Number)
+export function calcularUltimosMeses(gastos, cicloActual, cantidad = 6) {
+  const [yr, mo] = cicloActual.split('-').map(Number)
   const meses = []
   for (let i = cantidad - 1; i >= 0; i--) {
     let m = mo - i
@@ -112,15 +113,15 @@ export function calcularUltimosMeses(gastos, mesActual, cantidad = 6) {
     while (m <= 0) { m += 12; y-- }
     const mesStr = `${y}-${String(m).padStart(2, '0')}`
     const total = gastos
-      .filter(g => g.mes === mesStr && !esGastoUsdPuro(g))
+      .filter(g => g.ciclo_financiero === mesStr && !esGastoUsdPuro(g))
       .reduce((s, g) => s + montoReal(g), 0)
     meses.push({ mes: mesStr, total })
   }
   return meses
 }
 
-export function calcularTendenciaPorGrupo(gastos, mesActual, cantidad = 6) {
-  const [yr, mo] = mesActual.split('-').map(Number)
+export function calcularTendenciaPorGrupo(gastos, cicloActual, cantidad = 6) {
+  const [yr, mo] = cicloActual.split('-').map(Number)
   const grupos = new Set()
   const meses = []
   for (let i = cantidad - 1; i >= 0; i--) {
@@ -134,14 +135,13 @@ export function calcularTendenciaPorGrupo(gastos, mesActual, cantidad = 6) {
   return { meses, grupos: [...grupos].sort() }
 }
 
-export function calcularVelocidadDiaria(gastos, mes, presupuestoTotal) {
-  const [yr, mo] = mes.split('-').map(Number)
-  const diasEnMes = new Date(yr, mo, 0).getDate()
+export function calcularVelocidadDiaria(gastos, ciclo, presupuestoTotal) {
+  const diasEnMes = obtenerDuracionCiclo(ciclo)
   const porFecha = {}
   gastos
-    .filter(g => g.mes === mes && !esGastoUsdPuro(g))
+    .filter(g => g.ciclo_financiero === ciclo && !esGastoUsdPuro(g))
     .forEach(g => {
-      const d = parseInt(g.fecha.split('-')[2])
+      const d = obtenerDiaDelCiclo(g.fecha)
       porFecha[d] = (porFecha[d] || 0) + montoReal(g)
     })
   let acumulado = 0
@@ -201,7 +201,7 @@ export function calcularComparadorMensual(gastos, mes, ventana = 6) {
     m = obtenerMesAnterior(m)
     mesesVentana.push(m)
   }
-  const mesesConDatos = mesesVentana.filter(mv => gastos.some(g => g.mes === mv && !esGastoUsdPuro(g)))
+  const mesesConDatos = mesesVentana.filter(mv => gastos.some(g => g.ciclo_financiero === mv && !esGastoUsdPuro(g)))
   const sumaPorGrupo = {}
   mesesConDatos.forEach(mv => {
     Object.entries(calcularGastosPorGrupo(gastos, mv)).forEach(([grupo, v]) => {
@@ -259,7 +259,7 @@ export function calcularAcumuladoFondo(gastos, vinculado) {
   if (!vinculado) return 0
   return gastos
     .filter(g => !esGastoUsdPuro(g))
-    .filter(g => !vinculado.desde || g.mes >= vinculado.desde)
+    .filter(g => !vinculado.desde || g.ciclo_financiero >= vinculado.desde)
     .reduce((sum, g) => {
       const ctx = g.contexto_override || g.contexto || ''
       const r = g.presupuesto_manual || getSubcategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')

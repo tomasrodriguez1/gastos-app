@@ -8,6 +8,7 @@ import { Database } from 'bun:sqlite'
 import { resolve } from 'path'
 import sql from './db/client.js'
 import { initSchema } from './db/init.js'
+import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
 
 const SQLITE_PATH = resolve(import.meta.dir, '../data/gastos.db')
 console.log(`[migrate] Leyendo SQLite: ${SQLITE_PATH}`)
@@ -72,12 +73,13 @@ console.log('[migrate] Schema PG listo\n')
       // tipos y presupuesto_manual están como JSON strings en SQLite → Postgres los castea a JSONB
       await tx`
         INSERT INTO gastos (
-          id, sync_key, fecha, mes, motivo, banco, tipos, contexto,
+          id, sync_key, fecha, mes, ciclo_financiero, motivo, banco, tipos, contexto,
           monto, monto_real, usd, monto_clp_manual, split,
           presupuesto_manual, contexto_override, monto_presupuesto_manual,
           es_manual, pagado, created_at, updated_at
         ) VALUES (
-          ${r.id}, ${r.sync_key ?? null}, ${r.fecha}, ${r.mes}, ${r.motivo},
+          ${r.id}, ${r.sync_key ?? null}, ${r.fecha}, ${obtenerMesCalendario(r.fecha)},
+          ${obtenerCicloFinanciero(r.fecha)}, ${r.motivo},
           ${r.banco || ''}, ${r.tipos || '[]'}, ${r.contexto || ''},
           ${r.monto || 0}, ${r.monto_real || 0}, ${r.usd || 0},
           ${r.monto_clp_manual ?? null}, ${r.split || 0},
@@ -92,12 +94,12 @@ console.log('[migrate] Schema PG listo\n')
   })
 }
 
-// ─── 7. presupuesto_mes ──────────────────────────────────────────────────────
+// ─── 7. presupuesto_ciclo ────────────────────────────────────────────────────
 {
   const rows = db.prepare('SELECT * FROM presupuesto_mes').all()
-  console.log(`[migrate] presupuesto_mes: ${rows.length} filas`)
+  console.log(`[migrate] presupuesto_ciclo: ${rows.length} filas`)
   for (const r of rows) {
-    await sql`INSERT INTO presupuesto_mes (mes, created_at, updated_at) VALUES (${r.mes}, ${r.created_at ?? null}, ${r.updated_at ?? null}) ON CONFLICT DO NOTHING`
+    await sql`INSERT INTO presupuesto_ciclo (ciclo, created_at, updated_at) VALUES (${r.mes}, ${r.created_at ?? null}, ${r.updated_at ?? null}) ON CONFLICT DO NOTHING`
   }
 }
 
@@ -106,7 +108,7 @@ console.log('[migrate] Schema PG listo\n')
   const rows = db.prepare('SELECT * FROM presupuesto_ingreso').all()
   console.log(`[migrate] presupuesto_ingreso: ${rows.length} filas`)
   for (const r of rows) {
-    await sql`INSERT INTO presupuesto_ingreso (mes, fuente, monto) VALUES (${r.mes}, ${r.fuente}, ${r.monto}) ON CONFLICT DO NOTHING`
+    await sql`INSERT INTO presupuesto_ingreso (ciclo, fuente, monto) VALUES (${r.mes}, ${r.fuente}, ${r.monto}) ON CONFLICT DO NOTHING`
   }
 }
 
@@ -115,7 +117,7 @@ console.log('[migrate] Schema PG listo\n')
   const rows = db.prepare('SELECT * FROM presupuesto_categoria').all()
   console.log(`[migrate] presupuesto_categoria: ${rows.length} filas`)
   for (const r of rows) {
-    await sql`INSERT INTO presupuesto_categoria (mes, grupo, subcategoria, previsto, fgp) VALUES (${r.mes}, ${r.grupo}, ${r.subcategoria}, ${r.previsto}, ${toBool(r.fgp)}) ON CONFLICT DO NOTHING`
+    await sql`INSERT INTO presupuesto_categoria (ciclo, grupo, subcategoria, previsto, fgp) VALUES (${r.mes}, ${r.grupo}, ${r.subcategoria}, ${r.previsto}, ${toBool(r.fgp)}) ON CONFLICT DO NOTHING`
   }
 }
 
@@ -125,7 +127,7 @@ console.log('[migrate] Schema PG listo\n')
   console.log(`[migrate] presupuesto_fondo: ${rows.length} filas`)
   for (const r of rows) {
     await sql`
-      INSERT INTO presupuesto_fondo (mes, nombre, previsto_aportar, acumulado, objetivo, fecha_meta, vinculado, emoji)
+      INSERT INTO presupuesto_fondo (ciclo, nombre, previsto_aportar, acumulado, objetivo, fecha_meta, vinculado, emoji)
       VALUES (
         ${r.mes}, ${r.nombre},
         ${r.previsto_aportar || 0}, ${r.acumulado || 0},

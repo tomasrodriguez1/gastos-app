@@ -2,27 +2,23 @@ import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 import { calcularTotalPrevisto, esGastoUsdPuro, montoReal } from '../../utils/calculos'
 import { formatCLP, formatFecha, privacyFormat } from '../../utils/formatters'
 import { getSubcategoriaPresupuesto } from '../../utils/mapeo'
+import {
+  obtenerCicloActual,
+  obtenerCicloAnterior,
+  obtenerDiaDelCiclo,
+  obtenerDuracionCiclo,
+} from '../../utils/ciclos'
 
-const DIA_CIERRE = 31
-
-function getMesPrevio(mes) {
-  const [yr, mo] = mes.split('-').map(Number)
-  const prevMo = mo === 1 ? 12 : mo - 1
-  const prevYr = mo === 1 ? yr - 1 : yr
-  return `${prevYr}-${String(prevMo).padStart(2, '0')}`
-}
-
-function getDiaCorte(gastosMes, mes) {
+function getDiaCorte(gastosCiclo, ciclo) {
   const hoy = new Date()
-  const mesHoy = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
 
-  if (mes === mesHoy) {
-    return Math.min(hoy.getDate(), DIA_CIERRE)
+  if (ciclo === obtenerCicloActual(hoy)) {
+    const fechaHoy = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
+    return obtenerDiaDelCiclo(fechaHoy)
   }
 
-  return gastosMes.reduce((max, gasto) => {
-    const dia = Number(gasto.fecha?.split('-')[2] || 0)
-    return Math.max(max, Math.min(dia, DIA_CIERRE))
+  return gastosCiclo.reduce((max, gasto) => {
+    return Math.max(max, obtenerDiaDelCiclo(gasto.fecha))
   }, 0)
 }
 
@@ -50,8 +46,9 @@ function MetricBlock({ label, value, detail, tone = 'text-slate-200' }) {
 export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
   const presupuestoTotal = calcularTotalPrevisto(presupuestoMes)
+  const duracionCiclo = obtenerDuracionCiclo(mes)
   const gastosMes = gastos
-    .filter(gasto => gasto.mes === mes)
+    .filter(gasto => gasto.ciclo_financiero === mes)
     .filter(gasto => !esGastoUsdPuro(gasto))
     .map(gasto => ({ ...gasto, montoCalculado: montoReal(gasto) || 0 }))
     .filter(gasto => gasto.montoCalculado > 0)
@@ -59,37 +56,37 @@ export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
   const diaCorte = getDiaCorte(gastosMes, mes)
   const gastoAcumulado = gastosMes
     .filter(gasto => {
-      const dia = Number(gasto.fecha?.split('-')[2] || 0)
+      const dia = obtenerDiaDelCiclo(gasto.fecha)
       return diaCorte === 0 || dia <= diaCorte
     })
     .reduce((sum, gasto) => sum + gasto.montoCalculado, 0)
 
   const proyeccionCierre = diaCorte > 0
-    ? Math.round((gastoAcumulado / diaCorte) * DIA_CIERRE)
+    ? Math.round((gastoAcumulado / diaCorte) * duracionCiclo)
     : 0
   const desviacionProyectada = proyeccionCierre - presupuestoTotal
   const restante = presupuestoTotal - gastoAcumulado
-  const diasRestantes = diaCorte > 0 ? Math.max(1, DIA_CIERRE - diaCorte + 1) : DIA_CIERRE
+  const diasRestantes = diaCorte > 0 ? Math.max(1, duracionCiclo - diaCorte + 1) : duracionCiclo
   const ritmoDiario = presupuestoTotal > 0 ? Math.floor(restante / diasRestantes) : 0
   const topGastos = [...gastosMes]
     .sort((a, b) => b.montoCalculado - a.montoCalculado)
     .slice(0, 5)
 
-  const pctMes = diaCorte > 0 ? Math.round((diaCorte / DIA_CIERRE) * 100) : 0
+  const pctMes = diaCorte > 0 ? Math.round((diaCorte / duracionCiclo) * 100) : 0
   const pctPresupuesto = presupuestoTotal > 0 && diaCorte > 0
     ? Math.round((gastoAcumulado / presupuestoTotal) * 100)
     : null
   const diferenciaPct = pctPresupuesto !== null ? pctPresupuesto - pctMes : null
 
-  const mesPrevio = getMesPrevio(mes)
+  const mesPrevio = obtenerCicloAnterior(mes)
   const gastoMesPrevio = gastos
-    .filter(g => g.mes === mesPrevio && !esGastoUsdPuro(g))
+    .filter(g => g.ciclo_financiero === mesPrevio && !esGastoUsdPuro(g))
     .filter(g => {
-      const dia = Number(g.fecha?.split('-')[2] || 0)
+      const dia = obtenerDiaDelCiclo(g.fecha)
       return diaCorte === 0 || dia <= diaCorte
     })
     .reduce((sum, g) => sum + montoReal(g), 0)
-  const hayDatosPrevio = gastos.some(g => g.mes === mesPrevio)
+  const hayDatosPrevio = gastos.some(g => g.ciclo_financiero === mesPrevio)
   const deltaMesPrevio = gastoAcumulado - gastoMesPrevio
 
   const sinPresupuesto = presupuestoTotal <= 0
@@ -113,7 +110,7 @@ export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
           Metricas accionables
         </h3>
         <p className="mt-1 text-xs text-slate-600">
-          Corte dia {diaCorte || 0} de {DIA_CIERRE}
+          Corte día {diaCorte || 0} de {duracionCiclo}
         </p>
       </div>
 
@@ -143,17 +140,17 @@ export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
         />
 
         <MetricBlock
-          label="Ritmo del mes"
+          label="Ritmo del ciclo"
           value={
             pctPresupuesto !== null
               ? `${pctPresupuesto}% del presupuesto`
               : diaCorte > 0
-                ? `Día ${diaCorte} de ${DIA_CIERRE}`
+                ? `Día ${diaCorte} de ${duracionCiclo}`
                 : 'Sin datos'
           }
           detail={
             pctPresupuesto !== null
-              ? `Día ${diaCorte}/${DIA_CIERRE} — ${pctMes}% del mes transcurrido`
+              ? `Día ${diaCorte}/${duracionCiclo} — ${pctMes}% del ciclo transcurrido`
               : 'Carga un presupuesto para comparar'
           }
           tone={
@@ -168,7 +165,7 @@ export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
         />
 
         <MetricBlock
-          label={`vs mes anterior${diaCorte > 0 ? ` (día ${diaCorte})` : ''}`}
+          label={`vs ciclo anterior${diaCorte > 0 ? ` (día ${diaCorte})` : ''}`}
           value={
             !hayDatosPrevio
               ? 'Sin datos'
@@ -176,7 +173,7 @@ export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
           }
           detail={
             !hayDatosPrevio
-              ? 'No hay gastos del mes anterior'
+              ? 'No hay gastos del ciclo anterior'
               : isPrivacyModeEnabled
                 ? 'Delta oculto'
                 : `${deltaMesPrevio > 0 ? '+' : ''}${formatCLP(deltaMesPrevio)} vs el mismo período`
@@ -193,12 +190,12 @@ export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
         <div className="rounded-lg border border-slate-700/45 bg-slate-950/25">
           <div className="border-b border-slate-700/45 px-4 py-3">
             <div className="text-xs font-medium uppercase tracking-wider text-slate-500">
-              Top 5 gastos del mes
+              Top 5 gastos del ciclo
             </div>
           </div>
           <div className="divide-y divide-slate-700/35">
             {topGastos.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-slate-500">Sin gastos para este mes.</div>
+              <div className="px-4 py-6 text-sm text-slate-500">Sin gastos para este ciclo.</div>
             ) : topGastos.map(gasto => (
               <div key={gasto.id || `${gasto.fecha}-${gasto.motivo}-${gasto.montoCalculado}`} className="flex items-start justify-between gap-4 px-4 py-3">
                 <div className="min-w-0">

@@ -77,7 +77,7 @@ export function ResumenMes({ gastosMes, presupuestoMes }) {
         sub="Resultado / Ingresos"
       />
       <Card
-        label="Proyección mes"
+        label="Proyección ciclo"
         rawValue={proyeccion}
         color={diferenciaProyeccion > 0 ? 'text-red-400' : 'text-emerald-400'}
         sub="Gastado + resto presupuestado"

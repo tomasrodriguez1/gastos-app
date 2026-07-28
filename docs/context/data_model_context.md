@@ -13,7 +13,8 @@ Tabla única para gastos sincronizados y manuales.
 | `id` | TEXT PK | UUID |
 | `sync_key` | TEXT UNIQUE | `fecha\|motivo` (lowercase) para sync; NULL si manual |
 | `fecha` | TEXT | Fecha del gasto (YYYY-MM-DD) |
-| `mes` | TEXT | Mes contable (YYYY-MM) |
+| `mes` | TEXT | Mes calendario de la fecha real (YYYY-MM), disponible como filtro secundario |
+| `ciclo_financiero` | TEXT | Ciclo presupuestario (YYYY-MM): días 1–28 conservan mes y días 29–31 financian el mes siguiente |
 | `motivo` | TEXT | Descripción |
 | `banco` | TEXT | Banco/medio de pago |
 | `tipos` | JSONB | Array de tipos (catálogo) |
@@ -30,7 +31,7 @@ Tabla única para gastos sincronizados y manuales.
 | `pagado` | BOOLEAN | Marcado como pagado |
 | `created_at`, `updated_at` | TIMESTAMPTZ | Auditoría |
 
-**Índices:** `mes`, `fecha`, `sync_key` (parcial WHERE NOT NULL).
+**Índices:** `ciclo_financiero`, `mes`, `fecha`, `sync_key` (parcial WHERE NOT NULL).
 
 **Reglas de negocio:**
 
@@ -39,16 +40,16 @@ Tabla única para gastos sincronizados y manuales.
 - Filas pure-USD excluidas de totales agregados.
 - UI puede usar `fecha|motivo` como id lógico; PATCH/DELETE usan UUID o `sync_key`.
 
-### Presupuesto (normalizado)
+### Presupuesto por ciclo (normalizado)
 
 | Tabla | Propósito |
 |-------|-----------|
-| `presupuesto_mes` | Cabecera por mes (`mes` PK) |
+| `presupuesto_ciclo` | Cabecera por ciclo financiero (`ciclo` PK) |
 | `presupuesto_ingreso` | Ingresos por fuente |
 | `presupuesto_categoria` | Previsto por grupo/subcategoría + flag `fgp` |
 | `presupuesto_fondo` | Fondos de ahorro con `vinculado` JSON, `fecha_meta`, `emoji` |
 
-**PUT presupuesto:** reemplazo por sección (solo las secciones enviadas se borran/reescriben).
+**PUT presupuesto:** reemplazo por sección dentro del ciclo (solo las secciones enviadas se borran/reescriben).
 
 **`vinculado` JSON:** `{ grupo, subcategoria, desde? }` — cambios propagan a gastos vinculados.
 
@@ -83,15 +84,60 @@ Pares `(gasto_id_a, gasto_id_b)` marcados como "no es duplicado" por el usuario.
 
 Clave-valor genérico (usado en SQLite para tracking de migraciones).
 
+### `reserva_tarjeta`
+
+Saldo reservado (ej. en Mercado Pago) para pagar cada tarjeta. Una fila por `banco` (PK), valor
+`monto` editado a mano por el usuario desde `/tarjeta`.
+
+**Diseño intencional:** es standalone, **no** un `presupuesto_fondo` vinculado. Vincularlo al
+presupuesto (vía `vinculado` + gasto de aporte) duplicaría el gasto: el cargo de la tarjeta ya se
+registra una vez en `gastos`; registrar también un "aporte al fondo" lo contaría dos veces. Por eso
+`reserva_tarjeta` vive fuera del ciclo de presupuesto y no se toca en el UPSERT de sync.
+
+**Semántica de `gastos.split` en esta vista:** monto CLP del cargo que le deben a Tomás (compra
+por terceros). No afecta `montoReal()` ni el presupuesto (deliberado — ver "Qué no debe cambiarse").
+En `/tarjeta`: Por pagar = Σ`monto` (no pagados) · Por cobrar = Σ`split` · Gasto neto = la resta.
+
+**GAP:** `split` no se integra aún al cálculo de presupuesto (`calculos.js`) — es solo display en
+`/tarjeta`. Si se decide que las compras por terceros no deben contar en el presupuesto real,
+falta decidir el mecanismo (¿restar `split` en `montoReal()`? ¿requiere autorización, ver
+CLAUDE.md "Qué no debe cambiarse sin autorización"?).
+
+### Autenticación (WebAuthn / Passkeys)
+
+Ver DEC-009 en `docs/architecture/decisions.md`. Reemplaza `ACCESS_TOKEN` (que se mantiene
+activo en paralelo durante la transición).
+
+| Tabla | Propósito |
+|-------|-----------|
+| `passkey_credentials` | Una fila por passkey registrada: `credential_id` (único), `public_key` (BYTEA), `counter`, `transports`, `device_type`, `backed_up`, `name`, `created_at`, `last_used_at` |
+| `webauthn_challenges` | Challenges de registro/login: `challenge` (único), `type` (`registration`\|`authentication`), `expires_at`, `consumed_at` — de un solo uso, reclamados atómicamente vía `UPDATE ... WHERE consumed_at IS NULL AND expires_at > NOW() RETURNING id` |
+| `auth_sessions` | Sesiones opacas: `token_hash` (SHA-256 del token, único — nunca se guarda el token en texto plano), `expires_at`, `last_used_at`, `revoked_at` |
+
+**Notas de diseño:**
+
+- `passkey_credentials.id` (SERIAL, expuesto al cliente para borrar) es distinto de
+  `credential_id` (WebAuthn, nunca expuesto) — así se cumple "nunca mostrar credential_id ni
+  public_key completos" en la UI.
+- `auth_sessions` no tiene FK a `passkey_credentials`: las sesiones son independientes de la
+  credencial que las creó. Borrar una passkey no revoca sesiones ya emitidas con ella, solo
+  bloquea logins futuros con esa credencial — trade-off aceptado, no es un bug.
+- La tabla genérica `config` (ver arriba) guarda además una fila `clave='webauthn_user_id'` con
+  el handle de usuario WebAuthn (generado una sola vez, reutilizado en cada registro — app
+  single-owner, no hace falta una tabla de usuarios).
+- No se puede eliminar la última passkey (`DELETE /api/auth/passkeys/:id` devuelve `400` si
+  `COUNT(*) <= 1`) — guard server-side, no solo de UI.
+
 ## Relaciones
 
 ```txt
-presupuesto_mes 1──* presupuesto_ingreso
-presupuesto_mes 1──* presupuesto_categoria
-presupuesto_mes 1──* presupuesto_fondo
+presupuesto_ciclo 1──* presupuesto_ingreso
+presupuesto_ciclo 1──* presupuesto_categoria
+presupuesto_ciclo 1──* presupuesto_fondo
 catalogo_grupo 1──* catalogo_subcategoria
 gastos.presupuesto_manual → grupo/subcategoria (JSON, no FK)
 presupuesto_fondo.vinculado → grupo/subcategoria (JSON)
+reserva_tarjeta.banco ~ gastos.banco (convención, no FK)
 ```
 
 ## Máquinas de estado
@@ -100,7 +146,8 @@ No hay estados formales en gastos. `pagado` es booleano. Duplicados tienen confi
 
 ## Permisos / RLS
 
-GAP: no hay Row Level Security. App de usuario único con auth por token a nivel HTTP. PostgreSQL accesible solo desde el servidor.
+GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesión a nivel HTTP
+(`ACCESS_TOKEN` legacy en paralelo — ver DEC-009). PostgreSQL accesible solo desde el servidor.
 
 ## Migraciones relevantes
 
@@ -115,12 +162,13 @@ GAP: no hay Row Level Security. App de usuario único con auth por token a nivel
 | 008 | `desde` en vinculado |
 | 009 | Contextos: Ale → Polola |
 | 010 | duplicado_exclusion |
+| — | `passkey_credentials`, `webauthn_challenges`, `auth_sessions` (PG-only, ver DEC-009) |
 
-**PG:** schema aplicado vía `initSchema()` leyendo `schema.pg.sql`. GAP: sistema de migraciones versionadas para PG.
+**PG:** schema aplicado vía `initSchema()` leyendo `schema.pg.sql`. GAP: sistema de migraciones versionadas para PG — las tablas nuevas siguen el mismo patrón `CREATE TABLE IF NOT EXISTS` que el resto del archivo.
 
 ## Qué no debe romperse
 
 - Unicidad de `sync_key` para deduplicación n8n.
 - Preservación de `presupuesto_manual`, `contexto_override`, `monto_clp_manual`, `monto_presupuesto_manual` en sync.
-- Integridad referencial presupuesto → `presupuesto_mes`.
+- Integridad referencial presupuesto → `presupuesto_ciclo`.
 - Orden de prioridad en `regla_mapeo`.

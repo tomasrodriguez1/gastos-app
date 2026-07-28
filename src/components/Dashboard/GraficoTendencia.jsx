@@ -26,7 +26,7 @@ export function GraficoTendencia({ gastos, mesActual }) {
   return (
     <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
       <h3 className="text-sm font-medium text-slate-400 mb-4 uppercase tracking-wider">
-        Tendencia últimos 6 meses
+        Tendencia últimos 6 ciclos
       </h3>
       <ResponsiveContainer width="100%" height={200}>
         <LineChart data={data} margin={{ left: 8, right: 16, top: 8, bottom: 4 }}>

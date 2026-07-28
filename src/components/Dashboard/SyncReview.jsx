@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { getSubcategoriaPresupuesto } from '../../utils/mapeo'
 import { formatCLP, formatFecha } from '../../utils/formatters'
 import { GRUPOS_PRESUPUESTO } from '../../utils/categorias'
+import { obtenerCicloFinanciero, obtenerMesCalendario } from '../../utils/ciclos'
 
 const TIPOS_DEFAULT = [
   'A medias', 'Ajuste', 'Auto', 'Comida', 'Deporte', 'Deuda', 'Externo',
@@ -75,7 +76,10 @@ function EditPanel({ gasto, catalogos, onGuardar, onCancelar }) {
       delete changes.monto
       delete changes.monto_real
     }
-    if (fecha !== gasto.fecha) changes.mes = fecha.substring(0, 7)
+    if (fecha !== gasto.fecha) {
+      changes.mes = obtenerMesCalendario(fecha)
+      changes.ciclo_financiero = obtenerCicloFinanciero(fecha)
+    }
     onGuardar(changes)
   }
 

@@ -31,7 +31,7 @@ export function FondoFGP({ gastos, mes, presupuestoMes }) {
             <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
               FGP — Fondo Gastos Previstos
             </h3>
-            <p className="text-xs text-slate-600 mt-0.5">Plata reservada para gastos del mes</p>
+            <p className="text-xs text-slate-600 mt-0.5">Plata reservada para gastos del ciclo</p>
           </div>
           <div className="text-right">
             <div className="font-mono-numbers text-lg font-bold text-sky-400">{formatCLP(restante)}</div>
