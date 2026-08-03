@@ -23,6 +23,8 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 | `/analisis` | Análisis histórico: comparador por ciclos, tendencias por categoría, gastos recurrentes |
 | `/gastos` | Tabla de gastos por ciclo (sync + manuales), filtro secundario por mes calendario, asignación presupuestaria y duplicados |
 | `/log` | Log de últimos gastos ingresados (todos los meses), ordenado por `created_at`, resalta lo nuevo desde la última visita, edición inline. También es la bandeja de revisión de gastos `pendiente`/`error_parseo` llegados por `/api/ingesta` (filtro por estado, confirmar individual o en bloque) |
+| `/bandeja` | Bandeja dedicada de gastos `pendiente`/`error_parseo` (filtros por banco/tipo/contexto/búsqueda, confirmar individual o en bloque) — acceso vía `BotonBandeja` |
+| `/agente` | Agente conversacional (F3): captura en lenguaje natural gastos que no llegan por mail (BICE, efectivo, transferencias). Streaming de pasos con `useChat`; el gasto siempre nace `pendiente`, se revisa en `/bandeja` |
 | `/presupuesto` | Editor de presupuesto por ciclo financiero (ingresos, categorías, fondos) |
 | `/tarjeta` | Reconciliación de tarjeta de crédito por banco: gastos no pagados, "por cobrar" (`split`, compras de terceros), y saldo reservado para pagarla |
 | `/passkeys` | Gestión de passkeys: ver, agregar, eliminar (requiere sesión) |
@@ -74,6 +76,26 @@ autenticado con `INGESTA_TOKEN` (no passkey). Gastos nacen en `estado='pendiente
 revisan en `/log`. Detalle completo en `docs/architecture/integrations.md` y modelo de
 `estado` en `docs/context/data_model_context.md`.
 
+## API — Agente conversacional (F3)
+
+`POST /api/agente/chat` — sesión de chat en tiempo real (no un webhook), detrás del gate
+global normal (sesión passkey/`ACCESS_TOKEN`), sin token propio. Usa Vercel AI SDK
+(`streamText` + tool calling) contra OpenAI para extraer fecha/monto/comercio/banco de una
+frase libre, consulta la memoria de comercios (`comercio_mapeo`, ver abajo) antes de
+clasificar con el LLM, y crea el gasto en `estado='pendiente'` con `origen='chat'` — nunca lo
+confirma. Requiere `OPENAI_API_KEY`; sin ella responde 503. Deliberadamente separado de
+Groq (`server/ingesta/groq.js`, que se queda sin tocar) — ver DEC-011 en
+`docs/architecture/decisions.md`.
+
+## Memoria de comercios (F2)
+
+Tabla `comercio_mapeo` (`server/comercios.js`) aprende de cada confirmación humana en
+`/bandeja` o `/log`: al confirmar o corregir un gasto, `PATCH /api/gastos/:id`
+(`server/index.js`) hace upsert best-effort de `tipos`/`contexto`/`presupuesto_manual` por
+comercio normalizado (`src/utils/comercio.js`). Se consulta **antes** del LLM tanto en
+`/api/ingesta` como en `/api/agente/chat` — cascada: memoria (gratis) → LLM → sin
+clasificar. Gestión mínima en `GET/DELETE /api/comercios`, sin UI dedicada todavía.
+
 ## API — Autenticación
 
 Endpoints bajo `/api/auth/*` (detalle completo en `docs/architecture/integrations.md`):
@@ -97,3 +119,6 @@ etc.) no cambió — sigue detrás del mismo gate global, ahora combinado (sesi�
 - GAP: solo el formato de mail `Subject: "Compra con Tarjeta de Crédito"` de Edwards está
   confirmado en `parseEdwardsCompra.js`; otros asuntos dependen del fallback de Groq o caen
   en `error_parseo` para revisión manual.
+- GAP: gastos manuales locales (`gastosLocales`, `POST /api/datos?clave=gastos_manuales`) no
+  pasan por `PATCH /api/gastos/:id`, así que no alimentan la memoria de comercios.
+- GAP: sin UI dedicada para gestionar `comercio_mapeo` (solo `GET/DELETE /api/comercios`).

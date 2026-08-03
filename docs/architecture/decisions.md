@@ -117,6 +117,34 @@ secundario. Los presupuestos históricos mantienen su clave nominal al migrar.
 Consequences: Totales, gráficos, comparaciones, fondos, recurrencias y duplicados agrupan por
 ciclo. El servidor deriva ambos períodos desde `fecha` y no permite editarlos directamente.
 
+## DEC-011 - Dos proveedores LLM: Groq para ingesta de mail, OpenAI para el agente conversacional
+
+Date: 2026-08-02
+Status: active
+Context: F2 (memoria de comercios) + F3 (agente conversacional) agregan una segunda vía de
+captura de gastos, en lenguaje natural, para lo que no llega por mail (BICE, efectivo,
+transferencias). El clasificador existente (`server/ingesta/groq.js`, Groq) es un `fetch`
+directo sin SDK: suficiente para clasificación batch de un `motivo` ya extraído, pero no
+ofrece tool calling estructurado ni streaming de eventos parciales, y el agente necesita
+ambas cosas para (a) decidir dinámicamente si preguntar el banco o crear el gasto, y (b)
+mostrar en el chat qué está haciendo paso a paso ("buscó el comercio", "creó el gasto") en
+vez de una respuesta opaca.
+Decision: El agente conversacional (`server/agente.js`) usa el Vercel AI SDK
+(`ai` + `@ai-sdk/react` + `@ai-sdk/openai`) contra OpenAI, con tool calling
+(`buscar_comercio`, `crear_gasto`) y `streamText().toUIMessageStreamResponse()` consumido en
+el cliente vía `useChat`. `server/ingesta/groq.js` no se migra ni se toca — sigue siendo un
+`fetch` directo a Groq, sin SDK, porque no necesita ninguna de esas dos capacidades y
+migrarlo no aportaría nada. Ambos caminos comparten la misma memoria de comercios
+(`comercio_mapeo`) y el mismo filtro duro contra el catálogo real antes de insertar — el
+LLM nunca es el único guardián del catálogo, en ninguno de los dos proveedores.
+Consequences: Dos API keys distintas en producción (`GROQ_API_KEY`, `OPENAI_API_KEY`), cada
+una opcional de forma independiente — si falta la de OpenAI, solo `/api/agente/chat` queda
+deshabilitado (503), el resto de la app (incluida la ingesta de mail) sigue intacto. Nueva
+dependencia de tres paquetes (`ai`, `@ai-sdk/react`, `@ai-sdk/openai`) que no existía antes
+en el repo. Default de `OPENAI_MODEL`: `gpt-5.6-luna` (familia GPT-5.6, variante más
+rápida/económica — function calling + streaming, 1M de contexto), confirmado contra la
+documentación oficial de OpenAI.
+
 ## GAP: decisions to document
 
 - Elección específica de proveedor PostgreSQL (Railway vs Neon).

@@ -6,6 +6,7 @@ import { AnalisisPage } from './pages/AnalisisPage'
 import { GastosPage } from './pages/GastosPage'
 import { LogPage } from './pages/LogPage'
 import { BandejaPage } from './pages/BandejaPage'
+import { AgentePage } from './pages/AgentePage'
 import { PresupuestoPage } from './pages/PresupuestoPage'
 import { TarjetaPage } from './pages/TarjetaPage'
 import { PasskeysPage } from './pages/PasskeysPage'
@@ -158,6 +159,10 @@ export default function App() {
                 onEliminarGasto={eliminarCualquierGasto}
               />
             }
+          />
+          <Route
+            path="/agente"
+            element={<AgentePage {...sharedProps} />}
           />
           <Route
             path="/presupuesto"

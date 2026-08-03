@@ -124,6 +124,25 @@ CREATE TABLE IF NOT EXISTS regla_mapeo (
 
 CREATE INDEX IF NOT EXISTS idx_regla_prioridad ON regla_mapeo(prioridad) WHERE activa = TRUE;
 
+-- ─── MEMORIA DE COMERCIOS ────────────────────────────────────────────────────
+-- Aprendida de las confirmaciones humanas en /bandeja y /log. Se consulta antes
+-- del LLM al clasificar un gasto nuevo, venga de mail o del agente conversacional.
+-- La clave es el motivo normalizado (ver src/utils/comercio.js).
+
+CREATE TABLE IF NOT EXISTS comercio_mapeo (
+  comercio_normalizado TEXT PRIMARY KEY,
+  comercio_ejemplo     TEXT NOT NULL,
+  tipos                JSONB NOT NULL DEFAULT '[]',
+  contexto             TEXT DEFAULT '',
+  presupuesto_manual   JSONB,
+  banco_habitual       TEXT DEFAULT '',
+  veces_confirmado     INTEGER NOT NULL DEFAULT 1,
+  ultima_confirmacion  TIMESTAMPTZ DEFAULT NOW(),
+  created_at           TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_comercio_veces ON comercio_mapeo(veces_confirmado DESC);
+
 -- ─── DUPLICADOS ──────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS duplicado_exclusion (

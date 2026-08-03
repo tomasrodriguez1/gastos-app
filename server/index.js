@@ -9,7 +9,10 @@ import { toMonto } from './db/numeric.js'
 import { detectarDuplicadosCiclo } from './duplicados.js'
 import { authRouter } from './routes/auth.js'
 import { ingestaRouter } from './ingesta.js'
+import { agenteRouter } from './agente.js'
 import { createAuthMiddleware } from './auth.js'
+import { migrateComercios } from './db/migrate-comercios.js'
+import { aprenderComercio, listarComercios, olvidarComercio } from './comercios.js'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
 
 const app = new Hono()
@@ -19,6 +22,7 @@ const ACCESS_TOKEN = process.env.ACCESS_TOKEN
 
 await migrateFinancialCycles()
 await migrateIngesta()
+await migrateComercios()
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()
 }
@@ -42,6 +46,13 @@ app.route('/api/ingesta', ingestaRouter)
 app.use('*', createAuthMiddleware(ACCESS_TOKEN))
 
 app.use('*', cors({ origin: CORS_ORIGIN }))
+
+// ─── AGENTE CONVERSACIONAL (F3) ──────────────────────────────────────────────
+// A diferencia de /api/ingesta, esto es una sesión de browser autenticada
+// (passkey/ACCESS_TOKEN) — se monta después del gate global y hereda esa auth,
+// sin token propio. Ver server/agente.js.
+
+app.route('/api/agente', agenteRouter)
 
 // ─── GASTOS ──────────────────────────────────────────────────────────────────
 
@@ -98,6 +109,18 @@ app.patch('/api/gastos/:id', async (c) => {
   `
 
   if (rows.length === 0) return c.json({ error: 'Gasto no encontrado' }, 404)
+
+  // Memoria de comercios (F2): aprender de una confirmación humana es un
+  // side-effect best-effort — nunca debe hacer fallar el guardado del gasto
+  // que lo disparó. No aprende de pendientes editados, solo de confirmaciones.
+  if (rows[0].estado === 'confirmado') {
+    try {
+      await aprenderComercio(rows[0])
+    } catch (error) {
+      console.error('[comercios] no se pudo aprender:', error.message)
+    }
+  }
+
   return c.json({ ok: true, gasto: deserializarGasto(rows[0]) })
 })
 
@@ -393,6 +416,21 @@ const tablasCatalogo = {
   bancos: 'catalogo_banco',
   contextos: 'catalogo_contexto',
 }
+
+// ─── MEMORIA DE COMERCIOS (F2) ────────────────────────────────────────────────
+// Gestión mínima para poder corregir/olvidar un mapeo mal aprendido. Sin UI
+// dedicada todavía (candidato a F4) — se consume desde /agente o a mano.
+
+app.get('/api/comercios', async (c) => {
+  return c.json(await listarComercios())
+})
+
+app.delete('/api/comercios/:comercioNormalizado', async (c) => {
+  const comercioNormalizado = decodeURIComponent(c.req.param('comercioNormalizado'))
+  const borrado = await olvidarComercio(comercioNormalizado)
+  if (!borrado) return c.json({ error: 'Comercio no encontrado' }, 404)
+  return c.json({ ok: true })
+})
 
 // ─── REGLAS DE MAPEO ─────────────────────────────────────────────────────────
 

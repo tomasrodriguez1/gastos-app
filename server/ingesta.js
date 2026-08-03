@@ -3,7 +3,10 @@ import sql from './db/client.js'
 import { verifyIngestaToken } from './auth.js'
 import { parseEdwardsCompra } from './ingesta/parseEdwardsCompra.js'
 import * as groqDefault from './ingesta/groq.js'
-import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
+import { obtenerCicloFinanciero } from '../src/utils/ciclos.js'
+import { cargarCatalogos } from './catalogos.js'
+import { buscarComercio } from './comercios.js'
+import { crearGastoPendiente } from './gastos/crear.js'
 
 const BANCOS_POR_DOMINIO = [{ dominio: 'bancoedwards.cl', banco: 'Edwards' }]
 
@@ -17,14 +20,6 @@ function fechaDesdeInternalDate(internalDate) {
   const ms = Number(internalDate)
   if (!Number.isFinite(ms)) return new Date().toISOString().slice(0, 10)
   return new Date(ms).toISOString().slice(0, 10)
-}
-
-async function cargarCatalogos() {
-  const [tipos, contextos] = await Promise.all([
-    sql`SELECT nombre FROM catalogo_tipo ORDER BY orden`,
-    sql`SELECT nombre FROM catalogo_contexto ORDER BY orden`,
-  ])
-  return { tipos: tipos.map(t => t.nombre), contextos: contextos.map(c => c.nombre) }
 }
 
 async function procesarMensaje(msg, catalogos, ia) {
@@ -61,34 +56,46 @@ async function procesarMensaje(msg, catalogos, ia) {
     usd = 0
   }
 
-  const mes = obtenerMesCalendario(fecha)
-  const cicloFinanciero = obtenerCicloFinanciero(fecha)
-
+  // Cascada de clasificación: memoria de comercios (gratis, instantánea) antes
+  // que el LLM. Solo se intenta si el gasto va a quedar pendiente de revisión
+  // — un error_parseo no tiene motivo confiable para buscar ni clasificar.
   let tipos = []
   let contexto = ''
+  let presupuestoManual = null
   if (estado === 'pendiente') {
-    const clasificacion = await ia.clasificarGasto({
-      motivo,
-      banco,
-      tiposDisponibles: catalogos.tipos,
-      contextosDisponibles: catalogos.contextos,
-    })
-    if (clasificacion) {
-      tipos = clasificacion.tipos
-      contexto = clasificacion.contexto
+    const memoria = await buscarComercio(motivo)
+    if (memoria) {
+      tipos = memoria.tipos
+      contexto = memoria.contexto
+      presupuestoManual = memoria.presupuesto_manual
+    } else {
+      const clasificacion = await ia.clasificarGasto({
+        motivo,
+        banco,
+        tiposDisponibles: catalogos.tipos,
+        contextosDisponibles: catalogos.contextos,
+      })
+      if (clasificacion) {
+        tipos = clasificacion.tipos
+        contexto = clasificacion.contexto
+      }
     }
   }
 
-  const gastoId = crypto.randomUUID()
-  await sql`
-    INSERT INTO gastos (
-      id, fecha, mes, ciclo_financiero, motivo, banco, tipos, contexto,
-      monto, monto_real, usd, es_manual, estado, origen, fuente_id, payload_raw, updated_at
-    ) VALUES (
-      ${gastoId}, ${fecha}, ${mes}, ${cicloFinanciero}, ${motivo}, ${banco}, ${tipos}, ${contexto},
-      ${monto}, ${monto}, ${usd}, false, ${estado}, 'mail', ${id}, ${msg}, NOW()
-    )
-  `
+  const { gastoId } = await crearGastoPendiente({
+    fecha,
+    motivo,
+    monto,
+    usd,
+    banco,
+    tipos,
+    contexto,
+    presupuesto_manual: presupuestoManual,
+    estado,
+    origen: 'mail',
+    fuente_id: id,
+    payload_raw: msg,
+  })
 
   return { id, ok: true, gastoId, estado }
 }

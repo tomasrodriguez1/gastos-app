@@ -17,9 +17,12 @@
     "test:e2e": "bun test tests/e2e"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4",
+    "@ai-sdk/react": "^4",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.2",
     "@tailwindcss/vite": "^4.3.0",
+    "ai": "^7",
     "hono": "^4.12.23",
     "postgres": "^3.4.9",
     "react": "^19.2.6",

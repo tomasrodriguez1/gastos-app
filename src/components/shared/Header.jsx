@@ -65,6 +65,17 @@ function IconTarjeta() {
   )
 }
 
+function IconAgente() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <line x1="8" y1="10" x2="8" y2="10.01" />
+      <line x1="12" y1="10" x2="12" y2="10.01" />
+      <line x1="16" y1="10" x2="16" y2="10.01" />
+    </svg>
+  )
+}
+
 function IconLlave() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -140,6 +151,7 @@ export function Sidebar() {
             <NavLink to="/cashflow" className={navClass}>Cashflow</NavLink>
             <NavLink to="/analisis" className={navClass}>Análisis</NavLink>
             <NavLink to="/gastos" className={navClass}>Gastos</NavLink>
+            <NavLink to="/agente" className={navClass}>Agente</NavLink>
             <NavLink to="/tarjeta" className={navClass}>Tarjeta</NavLink>
             <NavLink to="/presupuesto" className={navClass}>Presupuesto</NavLink>
             <NavLink to="/passkeys" className={navClass}>Cuenta</NavLink>
@@ -174,6 +186,10 @@ export function Sidebar() {
           <NavLink to="/gastos" className={mobileNavClass}>
             <IconGastos />
             <span>Gastos</span>
+          </NavLink>
+          <NavLink to="/agente" className={mobileNavClass}>
+            <IconAgente />
+            <span>Agente</span>
           </NavLink>
           <NavLink to="/tarjeta" className={mobileNavClass}>
             <IconTarjeta />

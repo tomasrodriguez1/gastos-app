@@ -99,12 +99,39 @@ Edwards; otros asuntos (pagos, abonos, alertas) caen en `error_parseo` hasta agr
 **GAP:** el workflow de n8n en sí (Gmail trigger, filtros, reintentos) no vive en este repo —
 documentar por separado cuando esté armado.
 
+### `POST /api/agente/chat` (browser → app, F3)
+
+A diferencia de `/api/ingesta`, esto es una sesión interactiva de browser autenticada por el
+gate global normal (sesión passkey o `ACCESS_TOKEN`), no un webhook con token propio.
+
+| Aspecto | Detalle |
+|---------|---------|
+| Dirección | Browser (`/agente`, `useChat` de `@ai-sdk/react`) → servidor |
+| Auth | Gate global (misma sesión que el resto de `/api/*` protegido) |
+| Payload | `{ messages: UIMessage[] }` — historial de chat en formato AI SDK |
+| Respuesta | Stream `UIMessageStreamResponse` (`text/event-stream`) vía `streamText().toUIMessageStreamResponse()` |
+| Tools | `buscar_comercio` (consulta `comercio_mapeo`), `crear_gasto` (inserta vía `crearGastoPendiente`, filtra tipos/contexto contra el catálogo real antes de insertar) |
+| Resultado | Gasto con `estado='pendiente'`, `origen='chat'` — nunca se confirma automáticamente, se revisa en `/bandeja` |
+| Implementación | `server/agente.js` + `server/catalogos.js` + `server/comercios.js` + `server/gastos/crear.js` (compartidos con `server/ingesta.js`) |
+| Modelo default | `gpt-5.6-luna` (familia GPT-5.6, variante más rápida/económica — function calling + streaming, 1M de contexto), configurable vía `OPENAI_MODEL` |
+
 ## AI / OCR
 
 **Groq** (`server/ingesta/groq.js`) — clasificación automática y fallback de extracción para
 gastos ingresados vía `/api/ingesta`. Best-effort: nunca bloquea la ingesta si falla, nunca
 confirma un gasto por sí solo (ver invariante en `server/ingesta.js`). Variable `GROQ_API_KEY`
 (opcional — sin ella, la ingesta sigue funcionando solo con el parser determinista).
+
+**OpenAI** (`server/agente.js`) — agente conversacional F3, con tool calling y streaming.
+Proveedor separado de Groq a propósito (ver DEC-011 en `docs/architecture/decisions.md`):
+Groq es barato y suficiente para clasificación batch sin tool calling; el agente necesita
+tool calling + streaming de pasos en tiempo real, algo que la ingesta de mail no requiere.
+Variable `OPENAI_API_KEY` (opcional a nivel infraestructura — sin ella, solo el endpoint del
+agente queda deshabilitado con 503; el resto de la app funciona igual).
+
+Ambos clasificadores comparten la misma memoria de comercios (`comercio_mapeo`, ver
+`docs/context/data_model_context.md`) como primera etapa de la cascada, antes de llamar a
+cualquiera de los dos proveedores.
 
 ## Email / pagos / bancos
 
@@ -122,6 +149,7 @@ Los datos bancarios llegan indirectamente vía n8n. GAP: detalle de conexiones b
 | `CORS_ORIGIN` | .env | Dev (default localhost:6001) |
 | `INGESTA_TOKEN` | Coolify / .env | Todos (requerida para que `POST /api/ingesta` acepte requests) |
 | `GROQ_API_KEY` | Coolify / .env | Todos (opcional) |
+| `OPENAI_API_KEY` | Coolify / .env | Todos (opcional — sin ella, `/api/agente/chat` responde 503) |
 
 ## Entornos
 

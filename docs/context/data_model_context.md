@@ -30,7 +30,7 @@ Tabla única para gastos sincronizados y manuales.
 | `es_manual` | BOOLEAN | `false`=sync/n8n, `true`=UI manual |
 | `pagado` | BOOLEAN | Marcado como pagado |
 | `estado` | TEXT | `confirmado` (default, todo lo pre-existente) \| `pendiente` \| `error_parseo` \| `descartado` — ver "Bandeja de ingesta" abajo |
-| `origen` | TEXT | `manual` (default) \| `mail` — de dónde entró el gasto |
+| `origen` | TEXT | `manual` (default) \| `mail` \| `chat` (F3, agente conversacional) — de dónde entró el gasto |
 | `fuente_id` | TEXT | Id externo (p.ej. id de mensaje de Gmail) para idempotencia de ingesta; único (parcial WHERE NOT NULL) |
 | `payload_raw` | JSONB | Mensaje/evento crudo tal como llegó a `/api/ingesta`, preservado siempre aunque el parseo falle |
 | `created_at`, `updated_at` | TIMESTAMPTZ | Auditoría |
@@ -96,6 +96,26 @@ Reglas de asignación automática gasto → presupuesto.
 | `contexto`, `tipo`, `banco`, `motivo_regex` | Condiciones (NULL = wildcard) |
 | `grupo_dest`, `subcat_dest` | Destino; `_NONE_` = sin mapeo |
 | `activa` | Soft enable |
+
+### `comercio_mapeo` (F2 — memoria de comercios)
+
+Aprendida de confirmaciones humanas, se consulta **antes** que cualquier LLM en la cascada
+de clasificación (ver `docs/architecture/integrations.md`).
+
+| Campo | Uso |
+|-------|-----|
+| `comercio_normalizado` | PK — motivo normalizado (`src/utils/comercio.js`: mayúsculas, sin tildes, sin prefijos de adquirente/pasarela, sin sufijos numéricos) |
+| `comercio_ejemplo` | Último `motivo` real visto (sin normalizar), para mostrar en UI |
+| `tipos`, `contexto` | Última clasificación confirmada — pisa a la anterior (last-write-wins) |
+| `presupuesto_manual` | `{ grupo, subcategoria }` si alguna vez se forzó a mano para ese comercio; NULL si no |
+| `banco_habitual` | Último banco visto para ese comercio |
+| `veces_confirmado` | Contador acumulativo — señal de confianza en UI, no gatea si se aplica (se aplica desde la 1ª confirmación) |
+| `ultima_confirmacion` | Timestamp de la última vez que se aprendió/actualizó |
+
+Se alimenta desde `PATCH /api/gastos/:id` (`server/index.js`): cuando el UPDATE deja el gasto
+en `estado='confirmado'`, hace upsert best-effort (`server/comercios.js:aprenderComercio`) —
+nunca hace fallar el guardado del gasto. No aprende de gastos `pendiente` editados, solo de
+confirmaciones.
 
 ### `duplicado_exclusion`
 
@@ -185,6 +205,7 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | 010 | duplicado_exclusion |
 | — | `passkey_credentials`, `webauthn_challenges`, `auth_sessions` (PG-only, ver DEC-009) |
 | — | `estado`, `origen`, `fuente_id`, `payload_raw` en `gastos` (PG-only, `server/db/migrate-ingesta.js`) — bandeja de ingesta externa |
+| — | `comercio_mapeo` (PG-only, `server/db/migrate-comercios.js`) — memoria de comercios (F2) |
 
 **PG:** schema aplicado vía `initSchema()` leyendo `schema.pg.sql`. GAP: sistema de migraciones versionadas para PG — las tablas nuevas siguen el mismo patrón `CREATE TABLE IF NOT EXISTS` que el resto del archivo.
 
@@ -194,6 +215,10 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 - Unicidad de `fuente_id` para idempotencia de `/api/ingesta`.
 - Ningún gasto ingresado por `/api/ingesta` debe nacer en `estado='confirmado'` — ni el parser
   determinista ni Groq deben poder saltarse la revisión humana.
+- Ningún gasto creado por el agente conversacional (`/api/agente/chat`, F3) debe nacer en
+  `estado='confirmado'` — el agente solo crea, nunca confirma (ver `server/agente.js`).
+- Ni Groq ni el agente conversacional pueden escribir `tipos`/`contexto` fuera del catálogo
+  real (`catalogo_tipo`/`catalogo_contexto`) — filtro duro server-side en ambos casos.
 - Preservación de `presupuesto_manual`, `contexto_override`, `monto_clp_manual`, `monto_presupuesto_manual` en sync.
 - Integridad referencial presupuesto → `presupuesto_ciclo`.
 - Orden de prioridad en `regla_mapeo`.
