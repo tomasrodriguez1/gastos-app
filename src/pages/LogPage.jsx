@@ -10,6 +10,7 @@ const FILTROS_INIT = {
   soloNoPagados: false,
   busqueda: '',
   contexto: '',
+  estado: '',
 }
 
 const LOG_LAST_VIEWED_KEY = 'logLastViewed'
@@ -73,9 +74,22 @@ export function LogPage({ gastos, gastosLocales, catalogos, onActualizarGasto, o
         const ctx = g.contexto_override || g.contexto
         return ctx === filtros.contexto
       })
+      .filter(g => {
+        if (!filtros.estado) return true
+        return (g.estado || 'confirmado') === filtros.estado
+      })
   }, [todosOrdenados, filtros])
 
   const visibleGastos = filtrados.slice(0, visibles)
+
+  const pendientes = useMemo(() => todosOrdenados.filter(g => g.estado === 'pendiente'), [todosOrdenados])
+  const conErrorParseo = useMemo(() => todosOrdenados.filter(g => g.estado === 'error_parseo'), [todosOrdenados])
+
+  function confirmarVisibles() {
+    visibleGastos
+      .filter(g => g.estado === 'pendiente')
+      .forEach(g => onActualizarGasto(g.id, { estado: 'confirmado' }))
+  }
 
   return (
     <main className="max-w-7xl mx-auto px-3 py-4 sm:px-6 sm:py-6 space-y-4">
@@ -99,13 +113,47 @@ export function LogPage({ gastos, gastosLocales, catalogos, onActualizarGasto, o
         </div>
       )}
 
+      {(pendientes.length > 0 || conErrorParseo.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 rounded-lg bg-slate-800/50 border border-slate-700/50 text-sm">
+          {pendientes.length > 0 && (
+            <button
+              onClick={() => setFiltros(f => ({ ...f, estado: 'pendiente' }))}
+              className="text-amber-400 hover:text-amber-300"
+            >
+              <span className="font-medium">{pendientes.length}</span> pendiente{pendientes.length !== 1 ? 's' : ''} de revisión
+            </button>
+          )}
+          {pendientes.length > 0 && conErrorParseo.length > 0 && <span className="text-slate-600">·</span>}
+          {conErrorParseo.length > 0 && (
+            <button
+              onClick={() => setFiltros(f => ({ ...f, estado: 'error_parseo' }))}
+              className="text-rose-400 hover:text-rose-300"
+            >
+              <span className="font-medium">{conErrorParseo.length}</span> con error de parseo
+            </button>
+          )}
+        </div>
+      )}
+
       <FiltrosGastos
         filtros={filtros}
         onChange={f => { setFiltros(f); setVisibles(PAGE_SIZE) }}
         contextos={contextos}
         bancos={catalogos?.bancos}
         todosTipos={catalogos?.tipos}
+        mostrarEstado
       />
+
+      {filtros.estado === 'pendiente' && visibleGastos.some(g => g.estado === 'pendiente') && (
+        <div className="flex justify-end">
+          <button
+            onClick={confirmarVisibles}
+            className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm font-medium hover:bg-emerald-500/20 transition-colors"
+          >
+            Confirmar todos los visibles
+          </button>
+        </div>
+      )}
 
       <TablaGastos
         gastos={visibleGastos}

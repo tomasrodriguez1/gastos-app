@@ -1,6 +1,12 @@
 import { getCategoriaPresupuesto, getSubcategoriaPresupuesto } from './mapeo'
 import { obtenerDiaDelCiclo, obtenerDuracionCiclo } from './ciclos'
 
+// Gastos pendientes de revisión (ver estado 'pendiente') sin categoría resuelta caen acá en
+// vez de desaparecer de los totales por grupo — la plata ya salió de la cuenta, solo falta
+// clasificarla. Gastos confirmados sin grupo (p.ej. tipos como Ajuste/Turno/Otro, ver
+// mapeo.js) siguen excluidos a propósito — no se tocan.
+export const SIN_CLASIFICAR = 'SIN CLASIFICAR'
+
 export function montoReal(g) {
   if (g.monto_presupuesto_manual != null) return g.monto_presupuesto_manual
   if (g.usd > 0 && !g.monto && g.monto_clp_manual) return g.monto_clp_manual
@@ -17,7 +23,9 @@ export function calcularGastosPorGrupo(gastos, ciclo) {
     .filter(g => !esGastoUsdPuro(g))
     .reduce((acc, g) => {
       const ctx = g.contexto_override || g.contexto || ''
-      const grupo = g.presupuesto_manual?.grupo || getCategoriaPresupuesto(g.tipos || [], ctx)
+      const grupo = g.presupuesto_manual?.grupo
+        || getCategoriaPresupuesto(g.tipos || [], ctx)
+        || (g.estado === 'pendiente' ? SIN_CLASIFICAR : null)
       if (!grupo) return acc
       acc[grupo] = (acc[grupo] || 0) + montoReal(g)
       return acc
@@ -38,7 +46,9 @@ export function getGastosPorSubcategoria(gastos, ciclo, grupo, subcategoria) {
     .filter(g => !esGastoUsdPuro(g))
     .filter(g => {
       const ctx = g.contexto_override || g.contexto || ''
-      const r = g.presupuesto_manual || getSubcategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
+      const r = g.presupuesto_manual
+        || getSubcategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
+        || (g.estado === 'pendiente' ? { grupo: SIN_CLASIFICAR, subcategoria: 'Por revisar' } : null)
       return r && r.grupo === grupo && r.subcategoria === subcategoria
     })
     .sort((a, b) => b.fecha.localeCompare(a.fecha))
@@ -52,7 +62,9 @@ export function calcularGastosPorSubcategoria(gastos, ciclo) {
     .filter(g => !esGastoUsdPuro(g))
     .forEach(g => {
       const ctx = g.contexto_override || g.contexto || ''
-      const r = g.presupuesto_manual || getSubcategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
+      const r = g.presupuesto_manual
+        || getSubcategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
+        || (g.estado === 'pendiente' ? { grupo: SIN_CLASIFICAR, subcategoria: 'Por revisar' } : null)
       if (!r) return
       const { grupo, subcategoria } = r
       if (!result[grupo]) result[grupo] = {}
@@ -162,7 +174,9 @@ export function calcularGastosPorGrupoDesdeArray(gastosArray) {
     .filter(g => !esGastoUsdPuro(g))
     .reduce((acc, g) => {
       const ctx = g.contexto_override || g.contexto || ''
-      const grupo = g.presupuesto_manual?.grupo || getCategoriaPresupuesto(g.tipos || [], ctx)
+      const grupo = g.presupuesto_manual?.grupo
+        || getCategoriaPresupuesto(g.tipos || [], ctx)
+        || (g.estado === 'pendiente' ? SIN_CLASIFICAR : null)
       if (!grupo) return acc
       acc[grupo] = (acc[grupo] || 0) + montoReal(g)
       return acc

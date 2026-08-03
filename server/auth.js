@@ -45,6 +45,13 @@ export function verifyBootstrapSecret(provided) {
   return timingSafeEqualString(provided, PASSKEY_BOOTSTRAP_SECRET)
 }
 
+export const INGESTA_TOKEN = process.env.INGESTA_TOKEN
+
+export function verifyIngestaToken(provided) {
+  if (!INGESTA_TOKEN || !provided) return false
+  return timingSafeEqualString(provided, INGESTA_TOKEN)
+}
+
 /**
  * Procedimiento de recuperación: si PASSKEY_BOOTSTRAP_OVERRIDE_UNTIL es un timestamp ISO
  * futuro, permite volver a usar el secreto de bootstrap aunque ya existan passkeys (p.ej.
@@ -165,7 +172,7 @@ export function rateLimited(c, key, opts) {
 export function createAuthMiddleware(accessToken) {
   return async (c, next) => {
     const path = new URL(c.req.url).pathname
-    if (path.startsWith('/api/auth/')) return next()
+    if (path.startsWith('/api/auth/') || path.startsWith('/api/ingesta')) return next()
 
     if (await checkSession(c)) return next()
 

@@ -59,6 +59,7 @@ export function DashboardPage({ gastos, obtenerPresupuesto, guardarPresupuesto, 
   const avance = previsto > 0 ? Math.round((real / previsto) * 100) : 0
 
   const ultimosGastos = gastosMes.slice(0, 5)
+  const conErrorParseo = gastos.filter(g => g.estado === 'error_parseo').length
 
   return (
     <main className="max-w-7xl mx-auto px-3 py-4 sm:px-6 sm:py-6 space-y-5">
@@ -74,6 +75,16 @@ export function DashboardPage({ gastos, obtenerPresupuesto, guardarPresupuesto, 
           Ver cashflow
         </Link>
       </div>
+
+      {conErrorParseo > 0 && (
+        <Link
+          to="/log"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm hover:bg-rose-500/15 transition-colors"
+        >
+          <span className="font-medium">{conErrorParseo}</span>
+          gasto{conErrorParseo !== 1 ? 's' : ''} con error de parseo esperando revisión manual — revisar en el log
+        </Link>
+      )}
 
       <section className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4">
         <MetricCard label="Ingresos" value={privacyFormat(ingresos, isPrivacyModeEnabled)} detail="Presupuesto del ciclo" tone="text-emerald-400" />

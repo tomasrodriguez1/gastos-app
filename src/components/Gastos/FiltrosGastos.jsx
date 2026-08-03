@@ -1,8 +1,15 @@
 import { useState } from 'react'
 import { BANCOS, TODOS_LOS_TIPOS } from '../../utils/categorias'
 
-export function FiltrosGastos({ filtros, onChange, contextos = [], bancos = BANCOS, todosTipos = TODOS_LOS_TIPOS, mesesCalendario = [] }) {
-  const { banco, tipos, soloNoPagados, busqueda, contexto, mesCalendario } = filtros
+const ESTADOS = [
+  { value: 'pendiente', label: 'Pendiente' },
+  { value: 'confirmado', label: 'Confirmado' },
+  { value: 'error_parseo', label: 'Error de parseo' },
+  { value: 'descartado', label: 'Descartado' },
+]
+
+export function FiltrosGastos({ filtros, onChange, contextos = [], bancos = BANCOS, todosTipos = TODOS_LOS_TIPOS, mesesCalendario = [], mostrarEstado = false }) {
+  const { banco, tipos, soloNoPagados, busqueda, contexto, mesCalendario, estado } = filtros
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
 
   const cantFiltrosActivos = [
@@ -12,6 +19,7 @@ export function FiltrosGastos({ filtros, onChange, contextos = [], bancos = BANC
     busqueda !== '',
     (contexto || '') !== '',
     (mesCalendario || '') !== '',
+    (estado || '') !== '',
   ].filter(Boolean).length
 
   function toggleTipo(tipo) {
@@ -58,6 +66,20 @@ export function FiltrosGastos({ filtros, onChange, contextos = [], bancos = BANC
               <option value="sin-banco">Sin banco</option>
             </select>
           </div>
+
+          {mostrarEstado && (
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-slate-500 uppercase tracking-wider">Estado</label>
+              <select
+                value={estado || ''}
+                onChange={e => onChange({ ...filtros, estado: e.target.value })}
+                className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-sky-500"
+              >
+                <option value="">Todos</option>
+                {ESTADOS.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
+              </select>
+            </div>
+          )}
 
           {contextos.length > 0 && (
             <div className="flex items-center gap-2">

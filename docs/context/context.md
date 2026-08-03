@@ -22,7 +22,7 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 | `/cashflow` | Vista de flujo de caja con sincronización n8n |
 | `/analisis` | Análisis histórico: comparador por ciclos, tendencias por categoría, gastos recurrentes |
 | `/gastos` | Tabla de gastos por ciclo (sync + manuales), filtro secundario por mes calendario, asignación presupuestaria y duplicados |
-| `/log` | Log de últimos gastos ingresados (todos los meses), ordenado por `created_at`, resalta lo nuevo desde la última visita, edición inline |
+| `/log` | Log de últimos gastos ingresados (todos los meses), ordenado por `created_at`, resalta lo nuevo desde la última visita, edición inline. También es la bandeja de revisión de gastos `pendiente`/`error_parseo` llegados por `/api/ingesta` (filtro por estado, confirmar individual o en bloque) |
 | `/presupuesto` | Editor de presupuesto por ciclo financiero (ingresos, categorías, fondos) |
 | `/tarjeta` | Reconciliación de tarjeta de crédito por banco: gastos no pagados, "por cobrar" (`split`, compras de terceros), y saldo reservado para pagarla |
 | `/passkeys` | Gestión de passkeys: ver, agregar, eliminar (requiere sesión) |
@@ -67,6 +67,13 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 - Catálogos y reglas de mapeo en DB, no hardcodeados en cliente.
 - Sync n8n con revisión manual antes de persistir (`SyncReview` modal).
 
+## API — Ingesta externa
+
+`POST /api/ingesta` — n8n empuja mensajes de Gmail (banco Edwards) directo al servidor,
+autenticado con `INGESTA_TOKEN` (no passkey). Gastos nacen en `estado='pendiente'` y se
+revisan en `/log`. Detalle completo en `docs/architecture/integrations.md` y modelo de
+`estado` en `docs/context/data_model_context.md`.
+
 ## API — Autenticación
 
 Endpoints bajo `/api/auth/*` (detalle completo en `docs/architecture/integrations.md`):
@@ -85,3 +92,8 @@ etc.) no cambió — sigue detrás del mismo gate global, ahora combinado (sesi�
   pendiente) — ver `docs/operations/env-vars.md`.
 - GAP: retiro definitivo de `ACCESS_TOKEN` — pendiente de confirmación humana de login
   passkey en producción real (ver `docs/operations/runbook.md`).
+- GAP: workflow de n8n para `/api/ingesta` (Gmail trigger, filtros) — lo arma el usuario,
+  no vive en este repo.
+- GAP: solo el formato de mail `Subject: "Compra con Tarjeta de Crédito"` de Edwards está
+  confirmado en `parseEdwardsCompra.js`; otros asuntos dependen del fallback de Groq o caen
+  en `error_parseo` para revisión manual.
