@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { AlertasPresupuesto } from '../components/Dashboard/AlertasPresupuesto'
+import { BotonBandeja } from '../components/shared/BotonBandeja'
 import { FondosAhorro } from '../components/Dashboard/FondosAhorro'
 import { GraficoEvolucionPresupuesto } from '../components/Dashboard/GraficoEvolucionPresupuesto'
 import { usePrivacyMode } from '../contexts/PrivacyModeContext'
@@ -68,21 +69,24 @@ export function DashboardPage({ gastos, obtenerPresupuesto, guardarPresupuesto, 
           <p className="text-sm text-slate-500">{formatCiclo(ciclo)} · {formatRangoCiclo(ciclo)}</p>
           <h1 className="font-heading text-3xl text-white mt-1">Dashboard</h1>
         </div>
-        <Link
-          to="/cashflow"
-          className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-2 text-sm font-medium text-sky-300 transition-colors hover:bg-sky-500/15"
-        >
-          Ver cashflow
-        </Link>
+        <div className="flex items-center gap-3">
+          <BotonBandeja gastos={gastos} />
+          <Link
+            to="/cashflow"
+            className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-2 text-sm font-medium text-sky-300 transition-colors hover:bg-sky-500/15"
+          >
+            Ver cashflow
+          </Link>
+        </div>
       </div>
 
       {conErrorParseo > 0 && (
         <Link
-          to="/log"
+          to="/bandeja"
           className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm hover:bg-rose-500/15 transition-colors"
         >
           <span className="font-medium">{conErrorParseo}</span>
-          gasto{conErrorParseo !== 1 ? 's' : ''} con error de parseo esperando revisión manual — revisar en el log
+          gasto{conErrorParseo !== 1 ? 's' : ''} con error de parseo esperando revisión manual — revisar en la bandeja
         </Link>
       )}
 

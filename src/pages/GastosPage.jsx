@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { SelectorCiclo } from '../components/shared/SelectorCiclo'
 import { BotonActualizar } from '../components/shared/BotonActualizar'
+import { BotonBandeja } from '../components/shared/BotonBandeja'
 import { FiltrosGastos } from '../components/Gastos/FiltrosGastos'
 import { TablaGastos } from '../components/Gastos/TablaGastos'
 import { FormNuevoGasto } from '../components/Gastos/FormNuevoGasto'
@@ -121,6 +122,7 @@ export function GastosPage({ gastos, gastosLocales, ciclos, mesesCalendario, onA
           >
             Log
           </Link>
+          <BotonBandeja compact gastos={[...gastos, ...gastosLocales]} />
           <button
             onClick={() => setMostrarForm(true)}
             className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-400 text-xs font-medium hover:bg-violet-500/20 transition-all"
@@ -159,6 +161,7 @@ export function GastosPage({ gastos, gastosLocales, ciclos, mesesCalendario, onA
           >
             Log
           </Link>
+          <BotonBandeja gastos={[...gastos, ...gastosLocales]} />
           <button
             onClick={() => setMostrarForm(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-400 text-sm font-medium hover:bg-violet-500/20 transition-all"

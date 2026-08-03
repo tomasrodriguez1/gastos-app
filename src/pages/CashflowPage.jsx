@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { SelectorCiclo } from '../components/shared/SelectorCiclo'
 import { BotonActualizar } from '../components/shared/BotonActualizar'
+import { BotonBandeja } from '../components/shared/BotonBandeja'
 import { ResumenMes } from '../components/Dashboard/ResumenMes'
 import { GraficoBarras } from '../components/Dashboard/GraficoBarras'
 import { GraficoTendencia } from '../components/Dashboard/GraficoTendencia'
@@ -53,6 +54,7 @@ export function CashflowPage({ gastos, ciclos, obtenerPresupuesto, guardarPresup
             </button>
           </div>
           <BotonActualizar onSync={onSync} syncing={syncing} error={syncError} />
+          <BotonBandeja gastos={gastos} />
         </div>
       </div>
 

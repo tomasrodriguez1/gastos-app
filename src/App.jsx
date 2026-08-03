@@ -5,6 +5,7 @@ import { CashflowPage } from './pages/CashflowPage'
 import { AnalisisPage } from './pages/AnalisisPage'
 import { GastosPage } from './pages/GastosPage'
 import { LogPage } from './pages/LogPage'
+import { BandejaPage } from './pages/BandejaPage'
 import { PresupuestoPage } from './pages/PresupuestoPage'
 import { TarjetaPage } from './pages/TarjetaPage'
 import { PasskeysPage } from './pages/PasskeysPage'
@@ -138,6 +139,18 @@ export default function App() {
             path="/log"
             element={
               <LogPage
+                {...sharedProps}
+                gastos={gastos}
+                gastosLocales={gastosLocales}
+                onActualizarGasto={actualizarCualquierGasto}
+                onEliminarGasto={eliminarCualquierGasto}
+              />
+            }
+          />
+          <Route
+            path="/bandeja"
+            element={
+              <BandejaPage
                 {...sharedProps}
                 gastos={gastos}
                 gastosLocales={gastosLocales}
