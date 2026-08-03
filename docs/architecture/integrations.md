@@ -79,11 +79,32 @@ limiting en memoria por IP (ver `docs/architecture/architecture.md` → Riesgos)
 
 ## Webhooks entrantes
 
-Ninguno. La app no recibe webhooks; el cliente llama a n8n saliente.
+### `POST /api/ingesta` (n8n → app)
+
+n8n empuja mensajes de Gmail (banco Edwards, notificaciones de compra) directo al servidor,
+sin pasar por el cliente. Reemplaza para este flujo el patrón anterior de "browser llama al
+webhook n8n" (que sigue existiendo para `useSyncN8n.js`, sin cambios).
+
+| Aspecto | Detalle |
+|---------|---------|
+| Dirección | n8n (Gmail trigger) → servidor |
+| Auth | Header `Authorization: Bearer <INGESTA_TOKEN>` — token dedicado, no passkey ni `ACCESS_TOKEN`. Ver `server/ingesta.js`, `server/auth.js` |
+| Payload | El recurso de mensaje de Gmail tal cual (o array de varios) — `id`, `snippet`, `From`, `Subject`, `internalDate`, etc. También acepta el mensaje envuelto en `{ json: {...} }` (forma natural del modo "Using Fields Below" del nodo HTTP Request de n8n) — se desenvuelve en el servidor |
+| Idempotencia | `id` del mensaje de Gmail = `gastos.fuente_id` (único); reintentos no duplican |
+| Resultado | Gasto con `estado='pendiente'` (o `'error_parseo'` si nada logra extraer los campos) — nunca se confirma automáticamente, queda en la bandeja de `/log` |
+| Implementación | `server/ingesta.js` (endpoint) + `server/ingesta/parseEdwardsCompra.js` (parser determinista) + `server/ingesta/groq.js` (fallback IA) |
+
+**GAP:** solo se confirmó el formato de `Subject: "Compra con Tarjeta de Crédito"` de
+Edwards; otros asuntos (pagos, abonos, alertas) caen en `error_parseo` hasta agregar su patrón.
+**GAP:** el workflow de n8n en sí (Gmail trigger, filtros, reintentos) no vive en este repo —
+documentar por separado cuando esté armado.
 
 ## AI / OCR
 
-No aplica.
+**Groq** (`server/ingesta/groq.js`) — clasificación automática y fallback de extracción para
+gastos ingresados vía `/api/ingesta`. Best-effort: nunca bloquea la ingesta si falla, nunca
+confirma un gasto por sí solo (ver invariante en `server/ingesta.js`). Variable `GROQ_API_KEY`
+(opcional — sin ella, la ingesta sigue funcionando solo con el parser determinista).
 
 ## Email / pagos / bancos
 
@@ -99,6 +120,8 @@ Los datos bancarios llegan indirectamente vía n8n. GAP: detalle de conexiones b
 | `PASSKEY_BOOTSTRAP_SECRET` | Coolify / .env | Todos (solo se usa mientras no exista ninguna passkey) |
 | `VITE_N8N_WEBHOOK_URL` | .env (build time) | Dev + prod |
 | `CORS_ORIGIN` | .env | Dev (default localhost:6001) |
+| `INGESTA_TOKEN` | Coolify / .env | Todos (requerida para que `POST /api/ingesta` acepte requests) |
+| `GROQ_API_KEY` | Coolify / .env | Todos (opcional) |
 
 ## Entornos
 

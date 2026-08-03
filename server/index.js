@@ -4,9 +4,11 @@ import { serveStatic } from 'hono/bun'
 import sql from './db/client.js'
 import { initSchema } from './db/init.js'
 import { migrateFinancialCycles } from './db/migrate-financial-cycles.js'
+import { migrateIngesta } from './db/migrate-ingesta.js'
 import { toMonto } from './db/numeric.js'
 import { detectarDuplicadosCiclo } from './duplicados.js'
 import { authRouter } from './routes/auth.js'
+import { ingestaRouter } from './ingesta.js'
 import { createAuthMiddleware } from './auth.js'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
 
@@ -16,6 +18,7 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:6001'
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN
 
 await migrateFinancialCycles()
+await migrateIngesta()
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()
 }
@@ -25,6 +28,12 @@ if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'producti
 // cada endpoint aplica su propio gate (bootstrap secret o sesión).
 
 app.route('/api/auth', authRouter)
+
+// ─── INGESTA EXTERNA (n8n) ───────────────────────────────────────────────────
+// Montado antes del gate por el mismo motivo que /api/auth/* — usa su propio
+// token (INGESTA_TOKEN), no passkey ni ACCESS_TOKEN. Ver server/ingesta.js.
+
+app.route('/api/ingesta', ingestaRouter)
 
 // ─── GATE GLOBAL: sesión passkey O ACCESS_TOKEN legacy (en paralelo) ────────
 // ACCESS_TOKEN se mantiene activo hasta confirmar login passkey en producción
@@ -63,7 +72,7 @@ app.patch('/api/gastos/:id', async (c) => {
 
   const allowed = [
     'fecha', 'motivo', 'banco', 'tipos', 'contexto', 'monto', 'monto_real',
-    'usd', 'monto_clp_manual', 'split', 'pagado',
+    'usd', 'monto_clp_manual', 'split', 'pagado', 'estado',
     'presupuesto_manual', 'contexto_override', 'monto_presupuesto_manual',
   ]
 

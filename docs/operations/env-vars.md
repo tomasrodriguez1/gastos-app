@@ -18,11 +18,16 @@ Nunca commitear valores reales. Usar `.env.example` como referencia.
 | `CORS_ORIGIN` | API CORS | Dev | No | `http://localhost:6001` | Origen permitido en dev | `server/index.js` |
 | `RUN_SCHEMA_INIT` | DB schema | All | No | `true` | Ejecutar `schema.pg.sql` al arrancar | `server/index.js` |
 | `VITE_N8N_WEBHOOK_URL` | n8n (client) | All | Yes** | `https://n8n.example.com/webhook/gastos` | Webhook para sync de gastos | `src/hooks/useSyncN8n.js` |
+| `INGESTA_TOKEN` | Ingesta externa | All | Yes*** | `your-random-ingesta-token-here` | Token Bearer que valida `POST /api/ingesta` (n8n → app). Sin token configurado, el endpoint rechaza todo | `server/auth.js`, `server/ingesta.js` |
+| `GROQ_API_KEY` | Ingesta externa (IA) | All | No | `gsk_...` | Habilita clasificación automática (tipos/contexto) y fallback de extracción de campos en `/api/ingesta`. Sin ella, la ingesta sigue funcionando solo con el parser determinista | `server/ingesta/groq.js` |
+| `GROQ_MODEL` | Ingesta externa (IA) | All | No | `llama-3.1-8b-instant` | Modelo Groq a usar; confirmar el nombre vigente al desplegar (Groq puede deprecar modelos) | `server/ingesta/groq.js` |
 
 \* Ya no requerida para autenticación humana (passkeys la reemplazan), pero debe seguir
 configurada mientras dure la convivencia — ver DEC-009 y el procedimiento de retiro en
 `runbook.md`.
 \*\* Requerida para usar sync n8n; app funciona sin ella pero sync falla con mensaje de error.
+\*\*\* Requerida para que `POST /api/ingesta` acepte requests; sin ella el endpoint devuelve
+401 siempre (no hay bypass en dev, a diferencia del gate de `ACCESS_TOKEN`).
 
 ## Notas
 
@@ -64,9 +69,16 @@ configurada mientras dure la convivencia — ver DEC-009 y el procedimiento de r
 ### Frontend (Vite)
 - `VITE_N8N_WEBHOOK_URL`
 
+### Ingesta externa (n8n → `POST /api/ingesta`)
+- `INGESTA_TOKEN`
+- `GROQ_API_KEY`
+- `GROQ_MODEL`
+
 ## GAPs
 
 - GAP: variables Coolify específicas del proyecto no documentadas en repo.
 - GAP: confirmar proveedor PG en prod.
 - GAP: dominio real de producción — `PASSKEY_RP_ID`/`PASSKEY_ORIGIN` quedan como placeholder
   hasta definirlo (ver `deployment.md`).
+- GAP: nombre exacto de modelo Groq vigente — confirmar al desplegar, Groq puede deprecar
+  modelos entre releases.

@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS gastos (
   monto_presupuesto_manual NUMERIC,
   es_manual                BOOLEAN DEFAULT FALSE,
   pagado                   BOOLEAN DEFAULT FALSE,
+  estado                   TEXT NOT NULL DEFAULT 'confirmado',
+  origen                   TEXT NOT NULL DEFAULT 'manual',
+  fuente_id                TEXT,
+  payload_raw              JSONB,
   created_at               TIMESTAMPTZ DEFAULT NOW(),
   updated_at               TIMESTAMPTZ DEFAULT NOW()
 );
@@ -28,6 +32,8 @@ CREATE INDEX IF NOT EXISTS idx_gastos_mes ON gastos(mes);
 CREATE INDEX IF NOT EXISTS idx_gastos_ciclo_financiero ON gastos(ciclo_financiero);
 CREATE INDEX IF NOT EXISTS idx_gastos_fecha ON gastos(fecha);
 CREATE INDEX IF NOT EXISTS idx_gastos_sync_key ON gastos(sync_key) WHERE sync_key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_gastos_fuente_id ON gastos(fuente_id) WHERE fuente_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_gastos_estado ON gastos(estado) WHERE estado != 'confirmado';
 
 -- ─── PRESUPUESTO ─────────────────────────────────────────────────────────────
 

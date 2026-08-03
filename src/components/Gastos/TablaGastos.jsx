@@ -47,6 +47,24 @@ function PresupuestoBadge({ g }) {
   )
 }
 
+function EstadoBadge({ estado }) {
+  if (estado === 'pendiente') {
+    return (
+      <span title="Pendiente de revisión — aún no confirmado" className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-400 shrink-0">
+        Por revisar
+      </span>
+    )
+  }
+  if (estado === 'error_parseo') {
+    return (
+      <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-rose-500/20 text-rose-400 shrink-0">
+        Error parseo
+      </span>
+    )
+  }
+  return null
+}
+
 function ContextoBadge({ g }) {
   const ctx = g.contexto_override || g.contexto
   if (!ctx) return null
@@ -130,6 +148,7 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, desta
                     {g.manual && (
                       <span title="Gasto manual" className="text-violet-400 text-xs shrink-0">✎</span>
                     )}
+                    <EstadoBadge estado={g.estado} />
                     <span className="text-slate-200 text-sm truncate" title={g.motivo}>
                       {g.motivo}
                     </span>
@@ -167,6 +186,14 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, desta
                       </>
                     ) : (
                       <>
+                        {onActualizar && (g.estado === 'pendiente' || g.estado === 'error_parseo') && (
+                          <button
+                            onClick={() => onActualizar(g.id, { estado: 'confirmado' })}
+                            className="text-xs px-2 py-0.5 rounded-full border text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+                          >
+                            Confirmar
+                          </button>
+                        )}
                         {onActualizar && (
                           <button
                             onClick={() => onActualizar(g.id, { pagado: !g.pagado })}
@@ -257,6 +284,7 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, desta
                       {g.manual && (
                         <span title="Gasto ingresado manualmente" className="text-violet-400 text-xs shrink-0">✎</span>
                       )}
+                      <EstadoBadge estado={g.estado} />
                       <div className="min-w-0">
                         <div className="truncate" title={g.motivo}>{g.motivo}</div>
                         <ContextoBadge g={g} />
@@ -311,7 +339,15 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, desta
                         </button>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-center gap-1">
+                      <div className="flex items-center justify-center gap-2">
+                        {onActualizar && (g.estado === 'pendiente' || g.estado === 'error_parseo') && (
+                          <button
+                            onClick={() => onActualizar(g.id, { estado: 'confirmado' })}
+                            className="text-xs px-2 py-0.5 rounded-full border text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+                          >
+                            Confirmar
+                          </button>
+                        )}
                         {onActualizar && (
                           <button
                             onClick={() => setEditando(g)}

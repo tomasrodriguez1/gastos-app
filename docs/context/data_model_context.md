@@ -29,9 +29,14 @@ Tabla única para gastos sincronizados y manuales.
 | `monto_presupuesto_manual` | NUMERIC | Override monto presupuestario |
 | `es_manual` | BOOLEAN | `false`=sync/n8n, `true`=UI manual |
 | `pagado` | BOOLEAN | Marcado como pagado |
+| `estado` | TEXT | `confirmado` (default, todo lo pre-existente) \| `pendiente` \| `error_parseo` \| `descartado` — ver "Bandeja de ingesta" abajo |
+| `origen` | TEXT | `manual` (default) \| `mail` — de dónde entró el gasto |
+| `fuente_id` | TEXT | Id externo (p.ej. id de mensaje de Gmail) para idempotencia de ingesta; único (parcial WHERE NOT NULL) |
+| `payload_raw` | JSONB | Mensaje/evento crudo tal como llegó a `/api/ingesta`, preservado siempre aunque el parseo falle |
 | `created_at`, `updated_at` | TIMESTAMPTZ | Auditoría |
 
-**Índices:** `ciclo_financiero`, `mes`, `fecha`, `sync_key` (parcial WHERE NOT NULL).
+**Índices:** `ciclo_financiero`, `mes`, `fecha`, `sync_key` (parcial WHERE NOT NULL),
+`fuente_id` (único, parcial WHERE NOT NULL), `estado` (parcial WHERE != 'confirmado').
 
 **Reglas de negocio:**
 
@@ -39,6 +44,22 @@ Tabla única para gastos sincronizados y manuales.
 - Sync UPSERT preserva overrides manuales con `COALESCE`.
 - Filas pure-USD excluidas de totales agregados.
 - UI puede usar `fecha|motivo` como id lógico; PATCH/DELETE usan UUID o `sync_key`.
+
+### Bandeja de ingesta (`estado`)
+
+Gastos que llegan por `POST /api/ingesta` (ver `docs/architecture/integrations.md`) nacen en
+`estado='pendiente'` — nunca se confirman automáticamente, ni por el parser determinista ni
+por la clasificación de Groq. `/log` es la bandeja donde se revisan y confirman
+(`PATCH /api/gastos/:id` con `{ estado: 'confirmado' }`) o descartan (soft-delete vía
+`{ estado: 'descartado' }`, conserva `payload_raw` para auditoría — distinto de `DELETE`, que
+borra la fila). Si ni el parser ni Groq logran extraer los campos, el gasto queda en
+`estado='error_parseo'` con `monto=0` y el usuario lo completa a mano.
+
+Gastos `pendiente` sin `grupo` resuelto (comercio aún no clasificado) cuentan igual en los
+totales por categoría del Dashboard/Análisis/Presupuesto, agrupados en el bucket sintético
+`SIN CLASIFICAR` (`src/utils/calculos.js`) — la plata ya salió de la cuenta, solo falta la
+categoría. Gastos `confirmado` sin grupo (tipos como `Ajuste`/`Turno`/`Otro`, ver
+`mapeo.js`) siguen excluidos de esos totales a propósito, sin cambios.
 
 ### Presupuesto por ciclo (normalizado)
 
@@ -163,12 +184,16 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | 009 | Contextos: Ale → Polola |
 | 010 | duplicado_exclusion |
 | — | `passkey_credentials`, `webauthn_challenges`, `auth_sessions` (PG-only, ver DEC-009) |
+| — | `estado`, `origen`, `fuente_id`, `payload_raw` en `gastos` (PG-only, `server/db/migrate-ingesta.js`) — bandeja de ingesta externa |
 
 **PG:** schema aplicado vía `initSchema()` leyendo `schema.pg.sql`. GAP: sistema de migraciones versionadas para PG — las tablas nuevas siguen el mismo patrón `CREATE TABLE IF NOT EXISTS` que el resto del archivo.
 
 ## Qué no debe romperse
 
 - Unicidad de `sync_key` para deduplicación n8n.
+- Unicidad de `fuente_id` para idempotencia de `/api/ingesta`.
+- Ningún gasto ingresado por `/api/ingesta` debe nacer en `estado='confirmado'` — ni el parser
+  determinista ni Groq deben poder saltarse la revisión humana.
 - Preservación de `presupuesto_manual`, `contexto_override`, `monto_clp_manual`, `monto_presupuesto_manual` en sync.
 - Integridad referencial presupuesto → `presupuesto_ciclo`.
 - Orden de prioridad en `regla_mapeo`.
