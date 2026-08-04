@@ -26,7 +26,7 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 | `/bandeja` | Bandeja dedicada de gastos `pendiente`/`error_parseo` (filtros por banco/tipo/contexto/búsqueda, confirmar individual o en bloque) — acceso vía `BotonBandeja` |
 | `/agente` | Agente conversacional (F3): captura en lenguaje natural gastos que no llegan por mail (BICE, efectivo, transferencias). Streaming de pasos con `useChat`; el gasto siempre nace `pendiente`, se revisa en `/bandeja` |
 | `/presupuesto` | Editor de presupuesto por ciclo financiero (ingresos, categorías, fondos) |
-| `/tarjeta` | Reconciliación de tarjeta de crédito por banco: gastos no pagados, "por cobrar" (`split`, compras de terceros), y saldo reservado para pagarla |
+| `/tarjeta` | Reconciliación Edwards/BICE en CLP o USD: fondo derivado, falta depositar, conciliación de estado y registro posterior del pago |
 | `/passkeys` | Gestión de passkeys: ver, agregar, eliminar (requiere sesión) |
 
 ## Stack

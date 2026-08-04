@@ -5,8 +5,8 @@ import { obtenerCicloFinanciero, obtenerMesCalendario } from '../utils/ciclos'
 export function useGastosLocales() {
   const [gastosLocales, setGastosLocales] = useState([])
 
-  useEffect(() => {
-    cargarDeDisco('gastos_manuales').then(data => {
+  const recargar = useCallback(() => {
+    return cargarDeDisco('gastos_manuales').then(data => {
       if (data) {
         setGastosLocales(data.map(g => ({
           ...g,
@@ -30,6 +30,8 @@ export function useGastosLocales() {
     })
   }, [])
 
+  useEffect(() => { recargar() }, [recargar])
+
   const agregar = useCallback((gasto) => {
     const ahora = new Date().toISOString()
     const nuevo = {
@@ -41,6 +43,9 @@ export function useGastosLocales() {
       monto_real: gasto.monto_real ?? gasto.monto,
       split: gasto.split ?? 0,
       usd: gasto.usd ?? 0,
+      plata_en_cuenta: gasto.plata_en_cuenta ?? false,
+      en_presupuesto: gasto.en_presupuesto ?? true,
+      conciliado: gasto.conciliado ?? false,
       budget: false,
       manual: true,
       created_at: ahora,
@@ -56,23 +61,23 @@ export function useGastosLocales() {
   }, [])
 
   const actualizar = useCallback((id, changes) => {
-    setGastosLocales(prev => {
-      const next = prev.map(g => {
-        if (g.id !== id) return g
-        const periodos = changes.fecha
-          ? {
-              mes: obtenerMesCalendario(changes.fecha),
-              ciclo_financiero: obtenerCicloFinanciero(changes.fecha),
-            }
-          : {}
-        return { ...g, ...changes, ...periodos }
-      })
-      guardarEnDisco('gastos_manuales', next).catch(() => {
-        setGastosLocales(prev)
-      })
-      return next
+    const anteriores = gastosLocales
+    const next = anteriores.map(g => {
+      if (g.id !== id) return g
+      const periodos = changes.fecha
+        ? {
+            mes: obtenerMesCalendario(changes.fecha),
+            ciclo_financiero: obtenerCicloFinanciero(changes.fecha),
+          }
+        : {}
+      return { ...g, ...changes, ...periodos }
     })
-  }, [])
+    setGastosLocales(next)
+    return guardarEnDisco('gastos_manuales', next).catch(error => {
+      setGastosLocales(anteriores)
+      throw error
+    })
+  }, [gastosLocales])
 
   const eliminar = useCallback((id) => {
     setGastosLocales(prev => {
@@ -82,5 +87,5 @@ export function useGastosLocales() {
     eliminarGastoRemoto(id).catch(() => {})
   }, [])
 
-  return { gastosLocales, agregar, actualizar, eliminar }
+  return { gastosLocales, agregar, actualizar, eliminar, recargar }
 }

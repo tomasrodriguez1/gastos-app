@@ -1,7 +1,7 @@
 import { useCountUp } from '../../hooks/useCountUp'
 import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 import { formatCLP, privacyFormat } from '../../utils/formatters'
-import { calcularTotalIngresos, calcularTotalPrevisto, calcularProyeccionConservadora } from '../../utils/calculos'
+import { calcularTotalIngresos, calcularTotalPrevisto, calcularProyeccionConservadora, montoPresupuestable } from '../../utils/calculos'
 
 function Card({ label, value, rawValue, sub, color = 'text-slate-200', accent }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
@@ -25,7 +25,7 @@ function Card({ label, value, rawValue, sub, color = 'text-slate-200', accent })
 export function ResumenMes({ gastosMes, presupuestoMes }) {
   const totalGastos = gastosMes
     .filter(g => !(g.usd > 0 && !g.monto))
-    .reduce((s, g) => s + (g.monto_real ?? g.monto), 0)
+    .reduce((s, g) => s + montoPresupuestable(g), 0)
   const totalIngresos = calcularTotalIngresos(presupuestoMes)
   const totalPrevisto = calcularTotalPrevisto(presupuestoMes)
   const resultado = totalIngresos - totalGastos

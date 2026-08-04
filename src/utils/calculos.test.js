@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { calcularTotalMes, calcularVelocidadDiaria } from './calculos'
+import {
+  calcularGastosPorGrupo,
+  calcularTotalMes,
+  calcularVelocidadDiaria,
+  montoPresupuestable,
+  SIN_CLASIFICAR,
+} from './calculos'
 
 const gasto = (fecha, ciclo_financiero, monto) => ({
   fecha,
@@ -27,5 +33,22 @@ describe('cálculos por ciclo financiero', () => {
     expect(serie[0].acumulado).toBe(200)
     expect(serie.at(-1).acumulado).toBe(500)
     expect(serie.at(-1).pace).toBe(3100)
+  })
+
+  test('montoPresupuestable excluye, resta split y respeta el override manual', () => {
+    expect(montoPresupuestable({ monto_real: 1000, split: 300 })).toBe(700)
+    expect(montoPresupuestable({ monto_real: 1000, split: 300, monto_presupuesto_manual: 250 })).toBe(250)
+    expect(montoPresupuestable({ monto_real: 1000, en_presupuesto: false })).toBe(0)
+    expect(montoPresupuestable({ monto_real: 1000, estado: 'descartado' })).toBe(0)
+  })
+
+  test('pendientes y errores con monto quedan sin clasificar, salvo si no cuentan en presupuesto', () => {
+    const base = { fecha: '2026-08-10', ciclo_financiero: '2026-08', monto: 100, monto_real: 100, usd: 0, tipos: [] }
+    const resultado = calcularGastosPorGrupo([
+      { ...base, estado: 'pendiente' },
+      { ...base, estado: 'error_parseo', monto: 200, monto_real: 200 },
+      { ...base, estado: 'pendiente', en_presupuesto: false, monto: 500, monto_real: 500 },
+    ], '2026-08')
+    expect(resultado[SIN_CLASIFICAR]).toBe(300)
   })
 })

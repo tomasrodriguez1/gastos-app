@@ -15,22 +15,21 @@ import { useGastosLocales } from './hooks/useGastosLocales'
 import { usePresupuesto } from './hooks/usePresupuesto'
 import { useSyncN8n } from './hooks/useSyncN8n'
 import { useCatalogos } from './hooks/useCatalogos'
-import { useReservaTarjeta } from './hooks/useReservaTarjeta'
+import { useReconciliacionTarjeta } from './hooks/useReconciliacionTarjeta'
 import { cargarReglas } from './utils/mapeo'
-import { cargarDeDisco } from './utils/persistencia'
 import { obtenerCicloActual } from './utils/ciclos'
 
 // Pre-cargar reglas de mapeo al iniciar la app
 cargarReglas()
 
 export default function App() {
-  const { gastos, setGastos, actualizarGasto, eliminarGasto, loading, ciclosDisponibles, mesesCalendarioDisponibles } = useGastos()
+  const { gastos, setGastos, actualizarGasto, eliminarGasto, recargar: recargarGastos, loading, ciclosDisponibles, mesesCalendarioDisponibles } = useGastos()
+
+  const { gastosLocales, agregar, actualizar: actualizarLocal, eliminar, recargar: recargarLocales } = useGastosLocales()
 
   async function refetchGastos() {
-    const data = await cargarDeDisco('gastos')
-    if (data?.length) setGastos(data)
+    await Promise.all([recargarGastos(), recargarLocales()])
   }
-  const { gastosLocales, agregar, actualizar: actualizarLocal, eliminar } = useGastosLocales()
 
   function eliminarCualquierGasto(id) {
     if (gastosLocales.some(g => g.id === id)) eliminar(id)
@@ -38,13 +37,13 @@ export default function App() {
   }
 
   function actualizarCualquierGasto(id, changes) {
-    if (gastosLocales.some(g => g.id === id)) actualizarLocal(id, changes)
-    else actualizarGasto(id, changes)
+    if (gastosLocales.some(g => g.id === id)) return actualizarLocal(id, changes)
+    return actualizarGasto(id, changes)
   }
   const { obtenerCiclo, guardar, copiarCicloAnterior, cargado: presupuestoCargado, errorGuardado } = usePresupuesto()
   const { sincronizar, syncing, syncError, pendingSync, confirmarSync, cancelarSync } = useSyncN8n(setGastos)
   const catalogos = useCatalogos()
-  const { reservas, guardarReserva } = useReservaTarjeta()
+  const reconciliacion = useReconciliacionTarjeta()
 
   if (loading || !presupuestoCargado) {
     return (
@@ -179,8 +178,7 @@ export default function App() {
               <TarjetaPage
                 {...sharedProps}
                 gastos={todoLosGastos}
-                reservas={reservas}
-                onGuardarReserva={guardarReserva}
+                reconciliacion={reconciliacion}
                 onActualizarGasto={actualizarCualquierGasto}
               />
             }

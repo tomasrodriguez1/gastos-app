@@ -29,6 +29,9 @@ Tabla única para gastos sincronizados y manuales.
 | `monto_presupuesto_manual` | NUMERIC | Override monto presupuestario |
 | `es_manual` | BOOLEAN | `false`=sync/n8n, `true`=UI manual |
 | `pagado` | BOOLEAN | Marcado como pagado |
+| `plata_en_cuenta` | BOOLEAN | El importe completo del gasto ya está reservado en el fondo de pago de TC |
+| `en_presupuesto` | BOOLEAN | Si el gasto impacta las agregaciones presupuestarias |
+| `conciliado` | BOOLEAN | El movimiento fue incluido en un estado de cuenta cuyo total cuadró |
 | `estado` | TEXT | `confirmado` (default, todo lo pre-existente) \| `pendiente` \| `error_parseo` \| `descartado` — ver "Bandeja de ingesta" abajo |
 | `origen` | TEXT | `manual` (default) \| `mail` \| `chat` (F3, agente conversacional) — de dónde entró el gasto |
 | `fuente_id` | TEXT | Id externo (p.ej. id de mensaje de Gmail) para idempotencia de ingesta; único (parcial WHERE NOT NULL) |
@@ -40,7 +43,7 @@ Tabla única para gastos sincronizados y manuales.
 
 **Reglas de negocio:**
 
-- Monto efectivo siempre vía `montoReal()` en `src/utils/calculos.js`.
+- Monto efectivo siempre vía `montoReal()` en `src/utils/calculos.js`; el impacto presupuestario usa `montoPresupuestable()` para aplicar `en_presupuesto` y `split` sin alterar ese monto base.
 - Sync UPSERT preserva overrides manuales con `COALESCE`.
 - Filas pure-USD excluidas de totales agregados.
 - UI puede usar `fecha|motivo` como id lógico; PATCH/DELETE usan UUID o `sync_key`.
@@ -127,8 +130,9 @@ Clave-valor genérico (usado en SQLite para tracking de migraciones).
 
 ### `reserva_tarjeta`
 
-Saldo reservado (ej. en Mercado Pago) para pagar cada tarjeta. Una fila por `banco` (PK), valor
-`monto` editado a mano por el usuario desde `/tarjeta`.
+Saldo manual legacy reservado para cada tarjeta. Una fila por `banco` (PK), valor `monto`
+editable desde `/tarjeta`. Desde F5 se conserva solo como referencia de transición: no participa
+en los totales derivados desde `gastos.plata_en_cuenta`.
 
 **Diseño intencional:** es standalone, **no** un `presupuesto_fondo` vinculado. Vincularlo al
 presupuesto (vía `vinculado` + gasto de aporte) duplicaría el gasto: el cargo de la tarjeta ya se
@@ -139,10 +143,14 @@ registra una vez en `gastos`; registrar también un "aporte al fondo" lo contar�
 por terceros). No afecta `montoReal()` ni el presupuesto (deliberado — ver "Qué no debe cambiarse").
 En `/tarjeta`: Por pagar = Σ`monto` (no pagados) · Por cobrar = Σ`split` · Gasto neto = la resta.
 
-**GAP:** `split` no se integra aún al cálculo de presupuesto (`calculos.js`) — es solo display en
-`/tarjeta`. Si se decide que las compras por terceros no deben contar en el presupuesto real,
-falta decidir el mecanismo (¿restar `split` en `montoReal()`? ¿requiere autorización, ver
-CLAUDE.md "Qué no debe cambiarse sin autorización"?).
+**F5:** `split` reduce únicamente el impacto presupuestario mediante `montoPresupuestable()` y
+no reduce la deuda de tarjeta. Un `monto_presupuesto_manual` explícito tiene prioridad para evitar
+restar el split dos veces.
+
+La reconciliación se limita a Edwards y BICE y mantiene CLP/USD separados. `conciliado=true`
+representa que el gasto formó parte de un estado cuadrado; `pagado=true` se asigna después, cuando
+el pago efectivamente salió. Fondo actual y falta depositar siguen incluyendo conciliados mientras
+no estén pagados.
 
 ### Autenticación (WebAuthn / Passkeys)
 
@@ -183,7 +191,8 @@ reserva_tarjeta.banco ~ gastos.banco (convención, no FK)
 
 ## Máquinas de estado
 
-No hay estados formales en gastos. `pagado` es booleano. Duplicados tienen confianza (alta/media/baja) calculada, no persistida.
+La tarjeta usa dos etapas booleanas: `conciliado` y luego `pagado`. Duplicados tienen confianza
+(alta/media/baja) calculada, no persistida.
 
 ## Permisos / RLS
 
@@ -206,6 +215,7 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | — | `passkey_credentials`, `webauthn_challenges`, `auth_sessions` (PG-only, ver DEC-009) |
 | — | `estado`, `origen`, `fuente_id`, `payload_raw` en `gastos` (PG-only, `server/db/migrate-ingesta.js`) — bandeja de ingesta externa |
 | — | `comercio_mapeo` (PG-only, `server/db/migrate-comercios.js`) — memoria de comercios (F2) |
+| — | `plata_en_cuenta`, `en_presupuesto`, `conciliado` en `gastos` (PG-only, `server/db/migrate-tarjeta-reconciliacion.js`) — reconciliación F5 |
 
 **PG:** schema aplicado vía `initSchema()` leyendo `schema.pg.sql`. GAP: sistema de migraciones versionadas para PG — las tablas nuevas siguen el mismo patrón `CREATE TABLE IF NOT EXISTS` que el resto del archivo.
 

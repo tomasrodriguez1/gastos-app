@@ -25,12 +25,19 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-luna'
 
 function promptSistema(catalogos, hoy) {
   return [
-    'Sos un agente que ayuda a registrar gastos personales en español (Chile) a partir de una frase libre.',
+    'Sos un agente que ayuda a registrar gastos personales en español (Chile) a partir de una frase libre o de fotos de boletas/vouchers/comprobantes.',
     `Hoy es ${hoy}. Si el usuario dice "ayer", "el viernes pasado", etc., calculá la fecha real y respondé siempre en formato YYYY-MM-DD.`,
     'Modismos chilenos de plata: "1 luca" = 1.000 pesos, "2 palos" = 2.000.000 de pesos.',
     '',
+    'Sobre imágenes: si el usuario adjunta una o más fotos, cada una es habitualmente una boleta o',
+    'comprobante de un gasto distinto — extraé fecha/monto/comercio de cada imagen igual que si te lo',
+    'hubiera escrito, y llamá a crear_gasto una vez por cada gasto distinto que identifiques. Solo',
+    'tratá varias fotos como un único gasto si el texto del usuario lo indica explícitamente (p.ej.',
+    '"estas dos fotos son de la misma compra"). Si una imagen está borrosa o le falta un dato clave,',
+    'preguntá puntualmente por ese dato en vez de adivinar el monto — ahí sí no asumas.',
+    '',
     'Flujo a seguir:',
-    '1. Extraé de lo que el usuario ya escribió todo lo que puedas: fecha, monto (o USD), comercio/motivo, banco.',
+    '1. Extraé de lo que el usuario ya escribió o de las imágenes adjuntas todo lo que puedas: fecha, monto (o USD), comercio/motivo, banco.',
     '2. Llamá a la tool buscar_comercio con el comercio para ver si ya lo conocés de confirmaciones anteriores del usuario.',
     '3. Si buscar_comercio no encontró nada, elegí vos mismo tipos y contexto — SOLO valores que existan en estas listas, nunca inventes uno nuevo:',
     `   Tipos válidos: ${JSON.stringify(catalogos.tipos)}`,
@@ -136,7 +143,7 @@ agenteRouter.post('/chat', async (c) => {
   const result = streamText({
     model: openai(OPENAI_MODEL),
     system: promptSistema(catalogos, hoy),
-    messages: convertToModelMessages(messages),
+    messages: await convertToModelMessages(messages),
     tools: {
       buscar_comercio: buscarComercioTool,
       crear_gasto: crearGastoToolFactory(catalogos),

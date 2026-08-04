@@ -13,6 +13,14 @@ export function montoReal(g) {
   return g.monto_real ?? g.monto
 }
 
+// Importe que impacta el presupuesto. La deuda de tarjeta usa `monto` y no
+// este helper: split y en_presupuesto solo modifican el gasto propio.
+export function montoPresupuestable(g) {
+  if (g.estado === 'descartado' || g.en_presupuesto === false) return 0
+  if (g.monto_presupuesto_manual != null) return g.monto_presupuesto_manual
+  return Math.max(0, (montoReal(g) || 0) - (g.split || 0))
+}
+
 export function esGastoUsdPuro(g) {
   return g.usd > 0 && !g.monto && !g.monto_clp_manual
 }
@@ -21,13 +29,14 @@ export function calcularGastosPorGrupo(gastos, ciclo) {
   return gastos
     .filter(g => g.ciclo_financiero === ciclo)
     .filter(g => !esGastoUsdPuro(g))
+    .filter(g => g.estado !== 'descartado' && g.en_presupuesto !== false)
     .reduce((acc, g) => {
       const ctx = g.contexto_override || g.contexto || ''
       const grupo = g.presupuesto_manual?.grupo
-        || getCategoriaPresupuesto(g.tipos || [], ctx)
-        || (g.estado === 'pendiente' ? SIN_CLASIFICAR : null)
+        || getCategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
+        || (g.estado === 'pendiente' || g.estado === 'error_parseo' ? SIN_CLASIFICAR : null)
       if (!grupo) return acc
-      acc[grupo] = (acc[grupo] || 0) + montoReal(g)
+      acc[grupo] = (acc[grupo] || 0) + montoPresupuestable(g)
       return acc
     }, {})
 }
@@ -36,7 +45,7 @@ export function calcularTotalMes(gastos, ciclo) {
   return gastos
     .filter(g => g.ciclo_financiero === ciclo)
     .filter(g => !esGastoUsdPuro(g))
-    .reduce((sum, g) => sum + montoReal(g), 0)
+    .reduce((sum, g) => sum + montoPresupuestable(g), 0)
 }
 
 // Returns all gastos that map to a specific grupo + subcategoria in the given mes
@@ -44,11 +53,12 @@ export function getGastosPorSubcategoria(gastos, ciclo, grupo, subcategoria) {
   return gastos
     .filter(g => g.ciclo_financiero === ciclo)
     .filter(g => !esGastoUsdPuro(g))
+    .filter(g => g.estado !== 'descartado' && g.en_presupuesto !== false)
     .filter(g => {
       const ctx = g.contexto_override || g.contexto || ''
       const r = g.presupuesto_manual
         || getSubcategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
-        || (g.estado === 'pendiente' ? { grupo: SIN_CLASIFICAR, subcategoria: 'Por revisar' } : null)
+        || (g.estado === 'pendiente' || g.estado === 'error_parseo' ? { grupo: SIN_CLASIFICAR, subcategoria: 'Por revisar' } : null)
       return r && r.grupo === grupo && r.subcategoria === subcategoria
     })
     .sort((a, b) => b.fecha.localeCompare(a.fecha))
@@ -60,15 +70,16 @@ export function calcularGastosPorSubcategoria(gastos, ciclo) {
   gastos
     .filter(g => g.ciclo_financiero === ciclo)
     .filter(g => !esGastoUsdPuro(g))
+    .filter(g => g.estado !== 'descartado' && g.en_presupuesto !== false)
     .forEach(g => {
       const ctx = g.contexto_override || g.contexto || ''
       const r = g.presupuesto_manual
         || getSubcategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
-        || (g.estado === 'pendiente' ? { grupo: SIN_CLASIFICAR, subcategoria: 'Por revisar' } : null)
+        || (g.estado === 'pendiente' || g.estado === 'error_parseo' ? { grupo: SIN_CLASIFICAR, subcategoria: 'Por revisar' } : null)
       if (!r) return
       const { grupo, subcategoria } = r
       if (!result[grupo]) result[grupo] = {}
-      result[grupo][subcategoria] = (result[grupo][subcategoria] || 0) + montoReal(g)
+      result[grupo][subcategoria] = (result[grupo][subcategoria] || 0) + montoPresupuestable(g)
     })
   return result
 }
@@ -126,7 +137,7 @@ export function calcularUltimosMeses(gastos, cicloActual, cantidad = 6) {
     const mesStr = `${y}-${String(m).padStart(2, '0')}`
     const total = gastos
       .filter(g => g.ciclo_financiero === mesStr && !esGastoUsdPuro(g))
-      .reduce((s, g) => s + montoReal(g), 0)
+      .reduce((s, g) => s + montoPresupuestable(g), 0)
     meses.push({ mes: mesStr, total })
   }
   return meses
@@ -154,7 +165,7 @@ export function calcularVelocidadDiaria(gastos, ciclo, presupuestoTotal) {
     .filter(g => g.ciclo_financiero === ciclo && !esGastoUsdPuro(g))
     .forEach(g => {
       const d = obtenerDiaDelCiclo(g.fecha)
-      porFecha[d] = (porFecha[d] || 0) + montoReal(g)
+      porFecha[d] = (porFecha[d] || 0) + montoPresupuestable(g)
     })
   let acumulado = 0
   return Array.from({ length: diasEnMes }, (_, i) => {
@@ -172,13 +183,14 @@ export function calcularVelocidadDiaria(gastos, ciclo, presupuestoTotal) {
 export function calcularGastosPorGrupoDesdeArray(gastosArray) {
   return gastosArray
     .filter(g => !esGastoUsdPuro(g))
+    .filter(g => g.estado !== 'descartado' && g.en_presupuesto !== false)
     .reduce((acc, g) => {
       const ctx = g.contexto_override || g.contexto || ''
       const grupo = g.presupuesto_manual?.grupo
-        || getCategoriaPresupuesto(g.tipos || [], ctx)
-        || (g.estado === 'pendiente' ? SIN_CLASIFICAR : null)
+        || getCategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
+        || (g.estado === 'pendiente' || g.estado === 'error_parseo' ? SIN_CLASIFICAR : null)
       if (!grupo) return acc
-      acc[grupo] = (acc[grupo] || 0) + montoReal(g)
+      acc[grupo] = (acc[grupo] || 0) + montoPresupuestable(g)
       return acc
     }, {})
 }
@@ -215,7 +227,9 @@ export function calcularComparadorMensual(gastos, mes, ventana = 6) {
     m = obtenerMesAnterior(m)
     mesesVentana.push(m)
   }
-  const mesesConDatos = mesesVentana.filter(mv => gastos.some(g => g.ciclo_financiero === mv && !esGastoUsdPuro(g)))
+  const mesesConDatos = mesesVentana.filter(mv => gastos.some(g =>
+    g.ciclo_financiero === mv && !esGastoUsdPuro(g) && montoPresupuestable(g) !== 0
+  ))
   const sumaPorGrupo = {}
   mesesConDatos.forEach(mv => {
     Object.entries(calcularGastosPorGrupo(gastos, mv)).forEach(([grupo, v]) => {
@@ -279,7 +293,7 @@ export function calcularAcumuladoFondo(gastos, vinculado) {
       const r = g.presupuesto_manual || getSubcategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
       if (!r) return sum
       if (r.grupo === vinculado.grupo && r.subcategoria === vinculado.subcategoria) {
-        return sum + montoReal(g)
+        return sum + montoPresupuestable(g)
       }
       return sum
     }, 0)

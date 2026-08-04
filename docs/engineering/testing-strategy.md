@@ -23,6 +23,7 @@
 | `detectarRecurrentes` | Media | Heurísticas complejas |
 | Presupuesto PUT por sección | Media | Borrado parcial de secciones |
 | Asignación de ciclo 29–28 | Alta | Define filtros, totales, gráficos y comparaciones presupuestarias |
+| Reconciliación de tarjeta | Alta | Un cierre parcial o un total mezclado puede marcar deuda incorrectamente |
 | Auth passkey (registro, login, sesión, última passkey) | Alta | Cubierto — ver `server/routes/auth.test.js` y `tests/e2e/passkey.spec.js` |
 
 ## Qué puede testearse manualmente al inicio
@@ -76,6 +77,8 @@ confirmar que ese comportamiento de limpieza sigue intacto si se modifican los t
    inválido → 401 en el resto de la API (en prod).
 6. Fechas 1–28 quedan en el ciclo nominal; fechas 29–31 pasan al ciclo siguiente, incluido el cambio de año.
 7. Cambiar `fecha` recalcula `mes` calendario y `ciclo_financiero` sin alterar montos, categorías, cuentas ni overrides.
+8. `en_presupuesto=false` y `split` solo modifican agregaciones presupuestarias, nunca la deuda de tarjeta.
+9. Conciliar y pagar verifican banco, moneda, total e IDs dentro de una única transacción; un descuadre no modifica filas.
 
 ## Criterios mínimos antes de merge
 

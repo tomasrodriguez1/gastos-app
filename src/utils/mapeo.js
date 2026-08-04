@@ -57,8 +57,8 @@ export function getSubcategoriaPresupuesto(tipos, contexto, banco) {
   return getSubcategoriaPresupuestoFallback(tipos, contexto, banco)
 }
 
-export function getCategoriaPresupuesto(tipos, contexto) {
-  const r = getSubcategoriaPresupuesto(tipos, contexto, '')
+export function getCategoriaPresupuesto(tipos, contexto, banco = '') {
+  const r = getSubcategoriaPresupuesto(tipos, contexto, banco)
   return r?.grupo ?? null
 }
 

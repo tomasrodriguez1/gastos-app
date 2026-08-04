@@ -30,6 +30,8 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos }) {
   const [tipos, setTipos] = useState(gasto.tipos ?? [])
   const [contexto, setContexto] = useState(gasto.contexto ?? '')
   const [pagado, setPagado] = useState(!!gasto.pagado)
+  const [plataEnCuenta, setPlataEnCuenta] = useState(!!gasto.plata_en_cuenta)
+  const [enPresupuesto, setEnPresupuesto] = useState(gasto.en_presupuesto !== false)
 
   // Presupuesto overrides
   const [contextoOverride, setContextoOverride] = useState(gasto.contexto_override ?? '')
@@ -64,6 +66,8 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos }) {
       monto: montoNum,
       monto_real: montoNum,
       pagado: pagado ? 1 : 0,
+      plata_en_cuenta: plataEnCuenta,
+      en_presupuesto: enPresupuesto,
       contexto_override: contextoOverride || null,
       presupuesto_manual: grupo && subcategoria ? { grupo, subcategoria } : null,
       monto_presupuesto_manual: Number(montoParcial) > 0 ? Number(montoParcial) : null,
@@ -228,9 +232,45 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos }) {
             </button>
           </div>
 
+          <div className="flex items-center justify-between bg-slate-700/20 rounded-lg px-4 py-2.5">
+            <div>
+              <div className="text-sm text-slate-400">Plata en cuenta</div>
+              <div className="text-xs text-slate-600">El importe completo ya está reservado</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPlataEnCuenta(value => !value)}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${
+                plataEnCuenta
+                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                  : 'bg-slate-700/50 text-slate-500 border-slate-600/50'
+              }`}
+            >
+              {plataEnCuenta ? 'Reservado' : 'Falta depositar'}
+            </button>
+          </div>
+
           {/* Divider presupuesto */}
           <div className="border-t border-slate-700/50 pt-4 space-y-4">
             <p className="text-xs text-slate-600 uppercase tracking-wider">Asignación presupuesto</p>
+
+            <div className="flex items-center justify-between bg-slate-700/20 rounded-lg px-4 py-2.5">
+              <div>
+                <div className="text-sm text-slate-400">En presupuesto</div>
+                <div className="text-xs text-slate-600">Cuenta en totales y categorías presupuestarias</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEnPresupuesto(value => !value)}
+                className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${
+                  enPresupuesto
+                    ? 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+                    : 'bg-slate-700/50 text-slate-500 border-slate-600/50'
+                }`}
+              >
+                {enPresupuesto ? 'Incluido' : 'Excluido'}
+              </button>
+            </div>
 
             {/* Contexto override */}
             <div>

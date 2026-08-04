@@ -5,14 +5,14 @@ import {
   getGastosPorSubcategoria,
   calcularTotalIngresos,
   calcularTotalPrevisto,
-  montoReal,
+  montoPresupuestable,
   semaforo,
   colorSemaforo,
 } from '../../utils/calculos'
 
 function ModalTransaccionesSubcat({ grupo, sub, gastos, mes, onCerrar }) {
   const items = getGastosPorSubcategoria(gastos, mes, grupo, sub)
-  const total = items.reduce((s, g) => s + montoReal(g), 0)
+  const total = items.reduce((s, g) => s + montoPresupuestable(g), 0)
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -50,7 +50,7 @@ function ModalTransaccionesSubcat({ grupo, sub, gastos, mes, onCerrar }) {
                   <tr key={g.id} className="hover:bg-white/[0.02]">
                     <td className="px-6 py-3 text-slate-500 font-mono-numbers tabular-nums text-xs">{g.fecha}</td>
                     <td className="px-6 py-3 text-slate-300">{g.motivo}</td>
-                    <td className="px-6 py-3 text-right font-mono-numbers tabular-nums text-slate-200">{formatCLP(montoReal(g))}</td>
+                    <td className="px-6 py-3 text-right font-mono-numbers tabular-nums text-slate-200">{formatCLP(montoPresupuestable(g))}</td>
                   </tr>
                 ))}
               </tbody>

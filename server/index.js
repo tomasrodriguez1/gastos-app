@@ -10,8 +10,10 @@ import { detectarDuplicadosCiclo } from './duplicados.js'
 import { authRouter } from './routes/auth.js'
 import { ingestaRouter } from './ingesta.js'
 import { agenteRouter } from './agente.js'
+import { tarjetaRouter } from './tarjeta.js'
 import { createAuthMiddleware } from './auth.js'
 import { migrateComercios } from './db/migrate-comercios.js'
+import { migrateTarjetaReconciliacion } from './db/migrate-tarjeta-reconciliacion.js'
 import { aprenderComercio, listarComercios, olvidarComercio } from './comercios.js'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
 
@@ -23,6 +25,7 @@ const ACCESS_TOKEN = process.env.ACCESS_TOKEN
 await migrateFinancialCycles()
 await migrateIngesta()
 await migrateComercios()
+await migrateTarjetaReconciliacion()
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()
 }
@@ -53,6 +56,7 @@ app.use('*', cors({ origin: CORS_ORIGIN }))
 // sin token propio. Ver server/agente.js.
 
 app.route('/api/agente', agenteRouter)
+app.route('/api/tarjeta', tarjetaRouter)
 
 // ─── GASTOS ──────────────────────────────────────────────────────────────────
 
@@ -84,6 +88,7 @@ app.patch('/api/gastos/:id', async (c) => {
   const allowed = [
     'fecha', 'motivo', 'banco', 'tipos', 'contexto', 'monto', 'monto_real',
     'usd', 'monto_clp_manual', 'split', 'pagado', 'estado',
+    'plata_en_cuenta', 'en_presupuesto',
     'presupuesto_manual', 'contexto_override', 'monto_presupuesto_manual',
   ]
 
@@ -175,7 +180,8 @@ app.post('/api/datos', async (c) => {
         await tx`
           INSERT INTO gastos (id, sync_key, fecha, mes, ciclo_financiero, motivo, banco, tipos, contexto,
             monto, monto_real, usd, monto_clp_manual, split, presupuesto_manual,
-            contexto_override, monto_presupuesto_manual, pagado, es_manual, updated_at)
+            contexto_override, monto_presupuesto_manual, pagado, plata_en_cuenta,
+            en_presupuesto, conciliado, es_manual, updated_at)
           VALUES (
             ${crypto.randomUUID()}, ${syncKey},
             ${g.fecha}, ${mesCalendario}, ${cicloFinanciero}, ${g.motivo},
@@ -184,7 +190,8 @@ app.post('/api/datos', async (c) => {
             ${g.monto_clp_manual ?? null}, ${g.split || 0},
             ${g.presupuesto_manual ?? null},
             ${g.contexto_override ?? null}, ${g.monto_presupuesto_manual ?? null},
-            ${g.pagado ? true : false}, false, NOW()
+            ${g.pagado ? true : false}, ${g.plata_en_cuenta ? true : false},
+            ${g.en_presupuesto !== false}, ${g.conciliado ? true : false}, false, NOW()
           )
           ON CONFLICT(sync_key) DO UPDATE SET
             fecha = EXCLUDED.fecha,
@@ -225,7 +232,8 @@ app.post('/api/datos', async (c) => {
         await tx`
           INSERT INTO gastos (id, sync_key, fecha, mes, ciclo_financiero, motivo, banco, tipos, contexto,
             monto, monto_real, usd, monto_clp_manual, split, presupuesto_manual,
-            contexto_override, monto_presupuesto_manual, pagado, es_manual, updated_at)
+            contexto_override, monto_presupuesto_manual, pagado, plata_en_cuenta,
+            en_presupuesto, conciliado, es_manual, updated_at)
           VALUES (
             ${id}, NULL,
             ${g.fecha}, ${mesCalendario}, ${cicloFinanciero}, ${g.motivo || ''},
@@ -234,7 +242,8 @@ app.post('/api/datos', async (c) => {
             ${g.monto_clp_manual ?? null}, ${g.split || 0},
             ${g.presupuesto_manual ?? null},
             ${g.contexto_override ?? null}, ${g.monto_presupuesto_manual ?? null},
-            ${g.pagado ? true : false}, true, NOW()
+            ${g.pagado ? true : false}, ${g.plata_en_cuenta ? true : false},
+            ${g.en_presupuesto !== false}, ${g.conciliado ? true : false}, true, NOW()
           )
           ON CONFLICT(id) DO UPDATE SET
             fecha = EXCLUDED.fecha,
@@ -253,6 +262,9 @@ app.post('/api/datos', async (c) => {
             contexto_override = EXCLUDED.contexto_override,
             monto_presupuesto_manual = EXCLUDED.monto_presupuesto_manual,
             pagado = EXCLUDED.pagado,
+            plata_en_cuenta = EXCLUDED.plata_en_cuenta,
+            en_presupuesto = EXCLUDED.en_presupuesto,
+            conciliado = EXCLUDED.conciliado,
             updated_at = NOW()
         `
       }
@@ -519,6 +531,9 @@ function deserializarGasto(row) {
     monto_presupuesto_manual: toMonto(row.monto_presupuesto_manual),
     es_manual: row.es_manual === true,
     pagado: row.pagado === true,
+    plata_en_cuenta: row.plata_en_cuenta === true,
+    en_presupuesto: row.en_presupuesto !== false,
+    conciliado: row.conciliado === true,
   }
 }
 
@@ -526,7 +541,7 @@ function serializarCampoGasto(campo, valor) {
   if (valor === undefined) return null
   if (campo === 'tipos') return Array.isArray(valor) ? valor : []
   if (campo === 'presupuesto_manual') return valor || null
-  if (campo === 'pagado') return valor ? true : false
+  if (campo === 'pagado' || campo === 'plata_en_cuenta' || campo === 'en_presupuesto') return valor ? true : false
   return valor
 }
 

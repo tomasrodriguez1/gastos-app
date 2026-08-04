@@ -10,8 +10,8 @@ export function useGastos() {
   const [gastos, setGastos] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    cargarDeDisco('gastos')
+  const recargar = useCallback(() => {
+    return cargarDeDisco('gastos')
       .then(data => {
         if (data?.length) {
           setGastos(data)
@@ -37,14 +37,17 @@ export function useGastos() {
       .catch(() => setLoading(false))
   }, [])
 
+  useEffect(() => { recargar() }, [recargar])
+
   const actualizarGasto = useCallback((_id, changes) => {
     let prevGastos = []
     setGastos(prev => {
       prevGastos = prev
       return prev.map(g => makeId(g) === _id ? { ...g, ...changes } : g)
     })
-    actualizarGastoRemoto(_id, changes).catch(() => {
+    return actualizarGastoRemoto(_id, changes).catch(error => {
       setGastos(prevGastos)
+      throw error
     })
   }, [])
 
@@ -56,5 +59,5 @@ export function useGastos() {
   const ciclosDisponibles = [...new Set(gastos.map(g => g.ciclo_financiero).filter(Boolean))].sort().reverse()
   const mesesCalendarioDisponibles = [...new Set(gastos.map(g => g.mes).filter(Boolean))].sort().reverse()
 
-  return { gastos, setGastos, actualizarGasto, eliminarGasto, loading, ciclosDisponibles, mesesCalendarioDisponibles }
+  return { gastos, setGastos, actualizarGasto, eliminarGasto, recargar, loading, ciclosDisponibles, mesesCalendarioDisponibles }
 }

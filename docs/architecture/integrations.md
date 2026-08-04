@@ -52,10 +52,27 @@ Principales grupos:
 - Gastos CRUD + sync-keys + duplicados
 - Presupuesto por ciclo financiero (`GET /api/presupuesto/ciclos`, `GET/PUT /api/presupuesto/:ciclo`)
 - Gastos por ciclo (`GET /api/gastos?ciclo=YYYY-MM`) con filtro calendario secundario combinable (`&mes=YYYY-MM`)
-- Reserva de tarjeta (`GET/PUT /api/reserva-tarjeta`) — saldo reservado por banco para pagar la TC, standalone respecto al presupuesto (ver `data_model_context.md`)
+- Reconciliación de tarjeta (`GET /api/tarjeta/resumen`, `POST /api/tarjeta/conciliar|desconciliar|pagar`) — totales derivados y operaciones atómicas para Edwards/BICE
+- Reserva de tarjeta legacy (`GET/PUT /api/reserva-tarjeta`) — referencia manual de transición, fuera de los cálculos derivados
 - Catálogos CRUD
 - Reglas de mapeo CRUD + test
 - Autenticación (`/api/auth/*`) — ver detalle abajo
+
+### Reconciliación de tarjetas (F5)
+
+Limitada a Edwards y BICE; CLP y USD se calculan y validan por separado. Todos los endpoints
+quedan detrás del gate global normal.
+
+| Endpoint | Payload | Efecto |
+|----------|---------|--------|
+| `GET /api/tarjeta/resumen` | — | Totales globales/por banco y desglose por categoría derivados de gastos no pagados/no descartados |
+| `POST /api/tarjeta/conciliar` | `{ banco, moneda, total_estado, gasto_ids }` | Verifica el total seleccionado y marca `conciliado=true` atómicamente |
+| `POST /api/tarjeta/desconciliar` | `{ banco, moneda, gasto_ids }` | Revierte la conciliación mientras ningún movimiento esté pagado |
+| `POST /api/tarjeta/pagar` | `{ banco, moneda, total_pagado, gasto_ids }` | Verifica movimientos previamente conciliados y marca `pagado=true` atómicamente |
+
+Los descuadres responden `409` con `total_calculado` y `diferencia`, sin cambios parciales.
+CLP se compara en pesos enteros y USD en centavos. `split` es CLP y no reduce la deuda de la
+tarjeta; solo modifica `por_cobrar` y el impacto presupuestario.
 
 ### Autenticación (`/api/auth/*`)
 
@@ -108,12 +125,13 @@ gate global normal (sesión passkey o `ACCESS_TOKEN`), no un webhook con token p
 |---------|---------|
 | Dirección | Browser (`/agente`, `useChat` de `@ai-sdk/react`) → servidor |
 | Auth | Gate global (misma sesión que el resto de `/api/*` protegido) |
-| Payload | `{ messages: UIMessage[] }` — historial de chat en formato AI SDK |
+| Payload | `{ messages: UIMessage[] }` — historial de chat en formato AI SDK. Cada mensaje puede traer `parts` de tipo `file` (imágenes, como data URL) además de `text` — el frontend permite adjuntar varias fotos en un mismo envío |
 | Respuesta | Stream `UIMessageStreamResponse` (`text/event-stream`) vía `streamText().toUIMessageStreamResponse()` |
 | Tools | `buscar_comercio` (consulta `comercio_mapeo`), `crear_gasto` (inserta vía `crearGastoPendiente`, filtra tipos/contexto contra el catálogo real antes de insertar) |
 | Resultado | Gasto con `estado='pendiente'`, `origen='chat'` — nunca se confirma automáticamente, se revisa en `/bandeja` |
 | Implementación | `server/agente.js` + `server/catalogos.js` + `server/comercios.js` + `server/gastos/crear.js` (compartidos con `server/ingesta.js`) |
-| Modelo default | `gpt-5.6-luna` (familia GPT-5.6, variante más rápida/económica — function calling + streaming, 1M de contexto), configurable vía `OPENAI_MODEL` |
+| Modelo default | `gpt-5.6-luna` (familia GPT-5.6, variante más rápida/económica — function calling + streaming + visión, 1M de contexto), configurable vía `OPENAI_MODEL`. Si se cambia el modelo, verificar que siga soportando input de imágenes |
+| Imágenes | El usuario puede adjuntar una o más fotos de boletas/vouchers en el mismo mensaje. `convertToModelMessages` las pasa al modelo sin transformación adicional — la conversión a `FileUIPart`/data URL ocurre en el cliente (`src/pages/AgentePage.jsx`). El prompt instruye a tratar cada imagen como un gasto potencialmente distinto y a preguntar (no asumir) si el monto de una foto no se lee con claridad |
 
 ## AI / OCR
 

@@ -98,7 +98,7 @@ export function detectarRecurrentes(gastos, mesActual = obtenerCicloActual()) {
 
     const ctx = ultimoCargo.contexto_override || ultimoCargo.contexto || ''
     const grupo = ultimoCargo.presupuesto_manual?.grupo
-      || getCategoriaPresupuesto(ultimoCargo.tipos || [], ctx)
+      || getCategoriaPresupuesto(ultimoCargo.tipos || [], ctx, ultimoCargo.banco || '')
       || null
 
     recurrentes.push({
