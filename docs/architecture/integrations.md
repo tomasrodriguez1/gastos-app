@@ -127,9 +127,9 @@ gate global normal (sesión passkey o `ACCESS_TOKEN`), no un webhook con token p
 | Auth | Gate global (misma sesión que el resto de `/api/*` protegido) |
 | Payload | `{ messages: UIMessage[] }` — historial de chat en formato AI SDK. Cada mensaje puede traer `parts` de tipo `file` (imágenes, como data URL) además de `text` — el frontend permite adjuntar varias fotos en un mismo envío |
 | Respuesta | Stream `UIMessageStreamResponse` (`text/event-stream`) vía `streamText().toUIMessageStreamResponse()` |
-| Tools | `buscar_comercio` (consulta `comercio_mapeo`), `crear_gasto` (inserta vía `crearGastoPendiente`, filtra tipos/contexto contra el catálogo real antes de insertar) |
-| Resultado | Gasto con `estado='pendiente'`, `origen='chat'` — nunca se confirma automáticamente, se revisa en `/bandeja` |
-| Implementación | `server/agente.js` + `server/catalogos.js` + `server/comercios.js` + `server/gastos/crear.js` (compartidos con `server/ingesta.js`) |
+| Tools | `buscar_comercio` (consulta `comercio_mapeo`), `crear_gasto` (inserta vía `crearGastoPendiente`, filtra tipos/contexto contra el catálogo real antes de insertar), `buscar_gastos_pendientes` (busca/lista gastos `pendiente`/`error_parseo` de cualquier origen), `editar_gasto` (corrige campos de un gasto encontrado así — sin `estado` en su schema de entrada, y con chequeo server-side de que siga `pendiente`/`error_parseo` antes de tocarlo) |
+| Resultado | Gasto con `estado='pendiente'`, `origen='chat'` — crear y editar nunca confirman automáticamente, se revisan en `/bandeja` (embebida también en `/agente`) |
+| Implementación | `server/agente.js` + `server/catalogos.js` + `server/comercios.js` + `server/gastos/crear.js` + `server/gastos/actualizar.js` + `server/gastos/pendientes.js` + `server/gastos/serializacion.js` (compartidos con `server/ingesta.js` y `PATCH /api/gastos/:id`) |
 | Modelo default | `gpt-5.6-luna` (familia GPT-5.6, variante más rápida/económica — function calling + streaming + visión, 1M de contexto), configurable vía `OPENAI_MODEL`. Si se cambia el modelo, verificar que siga soportando input de imágenes |
 | Imágenes | El usuario puede adjuntar una o más fotos de boletas/vouchers en el mismo mensaje. `convertToModelMessages` las pasa al modelo sin transformación adicional — la conversión a `FileUIPart`/data URL ocurre en el cliente (`src/pages/AgentePage.jsx`). El prompt instruye a tratar cada imagen como un gasto potencialmente distinto y a preguntar (no asumir) si el monto de una foto no se lee con claridad |
 

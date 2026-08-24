@@ -13,6 +13,16 @@ const ETIQUETAS = {
     input: (input) => `Creando el gasto: ${input?.motivo ?? ''}…`,
     output: (output) => output?.resumen ?? 'Gasto creado — pendiente de revisión en /bandeja',
   },
+  'tool-buscar_gastos_pendientes': {
+    input: (input) => `Buscando en la bandeja${input?.busqueda ? ` "${input.busqueda}"` : ''}…`,
+    output: (output) => (output?.total > 0
+      ? `Encontré ${output.total} gasto${output.total === 1 ? '' : 's'} pendiente${output.total === 1 ? '' : 's'}`
+      : 'No hay gastos pendientes que coincidan'),
+  },
+  'tool-editar_gasto': {
+    input: () => 'Editando el gasto…',
+    output: (output) => output?.error ?? (output?.resumen ?? 'Gasto actualizado'),
+  },
 }
 
 export function PasoAgente({ part }) {

@@ -24,7 +24,7 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 | `/gastos` | Tabla de gastos por ciclo (sync + manuales), filtro secundario por mes calendario, asignación presupuestaria y duplicados |
 | `/log` | Log de últimos gastos ingresados (todos los meses), ordenado por `created_at`, resalta lo nuevo desde la última visita, edición inline. También es la bandeja de revisión de gastos `pendiente`/`error_parseo` llegados por `/api/ingesta` (filtro por estado, confirmar individual o en bloque) |
 | `/bandeja` | Bandeja dedicada de gastos `pendiente`/`error_parseo` (filtros por banco/tipo/contexto/búsqueda, confirmar individual o en bloque) — acceso vía `BotonBandeja` |
-| `/agente` | Agente conversacional (F3): captura en lenguaje natural gastos que no llegan por mail (BICE, efectivo, transferencias). Streaming de pasos con `useChat`; el gasto siempre nace `pendiente`, se revisa en `/bandeja` |
+| `/agente` | Agente conversacional (F3): captura en lenguaje natural gastos que no llegan por mail (BICE, efectivo, transferencias) y también corrige gastos ya pendientes (de mail o de chat) a pedido del usuario. Streaming de pasos con `useChat`; crear y editar siempre dejan el gasto en `pendiente`, nunca confirma. La bandeja (`BandejaLista`, compartida con `/bandeja`) se ve embebida en la misma página, colapsable. La conversación también es accesible desde **cualquier otra página** vía un botón flotante (`AgenteFlotante`) que abre la misma conversación en un panel deslizable, sin navegar — ver más abajo |
 | `/presupuesto` | Editor de presupuesto por ciclo financiero (ingresos, categorías, fondos) |
 | `/tarjeta` | Reconciliación Edwards/BICE en CLP o USD: fondo derivado, falta depositar, conciliación de estado y registro posterior del pago |
 | `/passkeys` | Gestión de passkeys: ver, agregar, eliminar (requiere sesión) |
@@ -87,6 +87,26 @@ confirma. Requiere `OPENAI_API_KEY`; sin ella responde 503. Deliberadamente sepa
 Groq (`server/ingesta/groq.js`, que se queda sin tocar) — ver DEC-011 en
 `docs/architecture/decisions.md`.
 
+Además de crear, el agente puede **corregir** un gasto que ya quedó pendiente — de cualquier
+origen (mail o chat) — con dos tools adicionales: `buscar_gastos_pendientes` (busca/lista por
+texto en `motivo`/`banco` sobre gastos `pendiente`/`error_parseo`) y `editar_gasto` (aplica
+cambios de campo sobre un `gastoId` encontrado así, reusando el mismo camino que
+`PATCH /api/gastos/:id` vía `server/gastos/actualizar.js`). `editar_gasto` no tiene `estado`
+en su schema de entrada — no puede confirmarlo aunque se lo pidan — y su `execute` chequea
+server-side que el gasto siga `pendiente`/`error_parseo` antes de tocar nada, rechazando
+cualquier intento sobre uno ya `confirmado`. La bandeja (`src/components/Bandeja/BandejaLista.jsx`,
+la misma que usa `/bandeja`) se muestra embebida y colapsable arriba del chat en `/agente`.
+
+**Acceso global (frontend):** la conversación vive en `AgenteChatProvider`
+(`src/contexts/AgenteChatContext.jsx`), montado una vez en `App.jsx` envolviendo toda la app —
+es una sola conversación compartida, no una por página. `AgentePage` (página completa) y
+`AgenteFlotante` (botón flotante + panel deslizable, visible en todas las rutas salvo
+`/agente` mismo) consumen ambos el mismo estado vía `useAgenteChat()` y renderizan la misma UI
+de chat (`src/components/Agente/AgenteChat.jsx`) — escribir en uno y mirar el otro muestra la
+misma conversación. El panel flotante no embebe la tabla de bandeja completa (un `TablaGastos`
+angosto se ve mal — cambia de layout por *viewport width*, no por ancho de contenedor); en su
+lugar linkea a `/bandeja` vía `BotonBandeja`.
+
 ## Memoria de comercios (F2)
 
 Tabla `comercio_mapeo` (`server/comercios.js`) aprende de cada confirmación humana en
@@ -122,3 +142,6 @@ etc.) no cambió — sigue detrás del mismo gate global, ahora combinado (sesi�
 - GAP: gastos manuales locales (`gastosLocales`, `POST /api/datos?clave=gastos_manuales`) no
   pasan por `PATCH /api/gastos/:id`, así que no alimentan la memoria de comercios.
 - GAP: sin UI dedicada para gestionar `comercio_mapeo` (solo `GET/DELETE /api/comercios`).
+- GAP: las tools `buscar_gastos_pendientes`/`editar_gasto` del agente (F3) solo ven gastos ya
+  sincronizados a Postgres — no pueden buscar ni editar `gastosLocales` (gastos manuales
+  guardados solo en `localStorage` del browser), porque el agente corre server-side.

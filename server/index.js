@@ -14,8 +14,10 @@ import { tarjetaRouter } from './tarjeta.js'
 import { createAuthMiddleware } from './auth.js'
 import { migrateComercios } from './db/migrate-comercios.js'
 import { migrateTarjetaReconciliacion } from './db/migrate-tarjeta-reconciliacion.js'
-import { aprenderComercio, listarComercios, olvidarComercio } from './comercios.js'
+import { listarComercios, olvidarComercio } from './comercios.js'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
+import { deserializarGasto } from './gastos/serializacion.js'
+import { actualizarGasto } from './gastos/actualizar.js'
 
 const app = new Hono()
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001
@@ -85,48 +87,12 @@ app.patch('/api/gastos/:id', async (c) => {
   const id = decodeURIComponent(c.req.param('id'))
   const changes = await c.req.json()
 
-  const allowed = [
-    'fecha', 'motivo', 'banco', 'tipos', 'contexto', 'monto', 'monto_real',
-    'usd', 'monto_clp_manual', 'split', 'pagado', 'estado',
-    'plata_en_cuenta', 'en_presupuesto',
-    'presupuesto_manual', 'contexto_override', 'monto_presupuesto_manual',
-  ]
+  const resultado = await actualizarGasto(id, changes)
+  if (resultado.error === 'sin_campos') return c.json({ error: 'No hay campos válidos' }, 400)
+  if (resultado.error === 'fecha_invalida') return c.json({ error: resultado.message }, 400)
+  if (resultado.error === 'no_encontrado') return c.json({ error: 'Gasto no encontrado' }, 404)
 
-  const fields = Object.keys(changes).filter(k => allowed.includes(k))
-  if (fields.length === 0) return c.json({ error: 'No hay campos válidos' }, 400)
-
-  const updates = {}
-  for (const f of fields) updates[f] = serializarCampoGasto(f, changes[f])
-  if (fields.includes('fecha')) {
-    try {
-      updates.mes = obtenerMesCalendario(changes.fecha)
-      updates.ciclo_financiero = obtenerCicloFinanciero(changes.fecha)
-    } catch (error) {
-      return c.json({ error: error.message }, 400)
-    }
-  }
-
-  const rows = await sql`
-    UPDATE gastos
-    SET ${sql(updates)}, updated_at = NOW()
-    WHERE id = ${id} OR sync_key = ${id}
-    RETURNING *
-  `
-
-  if (rows.length === 0) return c.json({ error: 'Gasto no encontrado' }, 404)
-
-  // Memoria de comercios (F2): aprender de una confirmación humana es un
-  // side-effect best-effort — nunca debe hacer fallar el guardado del gasto
-  // que lo disparó. No aprende de pendientes editados, solo de confirmaciones.
-  if (rows[0].estado === 'confirmado') {
-    try {
-      await aprenderComercio(rows[0])
-    } catch (error) {
-      console.error('[comercios] no se pudo aprender:', error.message)
-    }
-  }
-
-  return c.json({ ok: true, gasto: deserializarGasto(rows[0]) })
+  return c.json({ ok: true, gasto: resultado.gasto })
 })
 
 app.get('/api/gastos/duplicados', async (c) => {
@@ -511,39 +477,6 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-
-function deserializarGasto(row) {
-  const tipos = Array.isArray(row.tipos)
-    ? row.tipos
-    : (typeof row.tipos === 'string' ? JSON.parse(row.tipos || '[]') : [])
-  const presupuesto_manual = typeof row.presupuesto_manual === 'string'
-    ? JSON.parse(row.presupuesto_manual)
-    : (row.presupuesto_manual ?? null)
-  return {
-    ...row,
-    tipos,
-    presupuesto_manual,
-    monto: toMonto(row.monto),
-    monto_real: toMonto(row.monto_real),
-    usd: toMonto(row.usd),
-    monto_clp_manual: toMonto(row.monto_clp_manual),
-    split: toMonto(row.split),
-    monto_presupuesto_manual: toMonto(row.monto_presupuesto_manual),
-    es_manual: row.es_manual === true,
-    pagado: row.pagado === true,
-    plata_en_cuenta: row.plata_en_cuenta === true,
-    en_presupuesto: row.en_presupuesto !== false,
-    conciliado: row.conciliado === true,
-  }
-}
-
-function serializarCampoGasto(campo, valor) {
-  if (valor === undefined) return null
-  if (campo === 'tipos') return Array.isArray(valor) ? valor : []
-  if (campo === 'presupuesto_manual') return valor || null
-  if (campo === 'pagado' || campo === 'plata_en_cuenta' || campo === 'en_presupuesto') return valor ? true : false
-  return valor
-}
 
 async function leerPresupuestoCiclo(ciclo) {
   const [cicloFila] = await sql`SELECT ciclo FROM presupuesto_ciclo WHERE ciclo = ${ciclo}`

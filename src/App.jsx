@@ -10,6 +10,8 @@ import { AgentePage } from './pages/AgentePage'
 import { PresupuestoPage } from './pages/PresupuestoPage'
 import { TarjetaPage } from './pages/TarjetaPage'
 import { PasskeysPage } from './pages/PasskeysPage'
+import { AgenteChatProvider } from './contexts/AgenteChatContext'
+import { AgenteFlotante } from './components/Agente/AgenteFlotante'
 import { useGastos } from './hooks/useGastos'
 import { useGastosLocales } from './hooks/useGastosLocales'
 import { usePresupuesto } from './hooks/usePresupuesto'
@@ -85,107 +87,118 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
-      <Sidebar />
-      <div className="pb-16 md:pb-0 md:pl-64">
-        {errorGuardado && (
-          <div className="bg-red-500/20 border-b border-red-500/30 text-red-400 text-sm px-6 py-2 text-center">
-            {errorGuardado} — recargá la página y volvé a intentarlo
-          </div>
-        )}
-        <Routes>
-          <Route
-            path="/"
-            element={<DashboardPage {...sharedProps} gastos={todoLosGastos} />}
-          />
-          <Route
-            path="/cashflow"
-            element={
-              <CashflowPage
-                {...sharedProps}
-                gastos={todoLosGastos}
-                onSync={sincronizar}
-                syncing={syncing}
-                syncError={syncError}
-                pendingSync={pendingSync}
-                onConfirmarSync={confirmarSync}
-                onCancelarSync={cancelarSync}
-              />
-            }
-          />
-          <Route
-            path="/analisis"
-            element={<AnalisisPage {...sharedProps} gastos={todoLosGastos} />}
-          />
-          <Route
-            path="/gastos"
-            element={
-              <GastosPage
-                {...sharedProps}
-                gastos={gastos}
-                gastosLocales={gastosLocales}
-                onAgregarGasto={agregar}
-                onEliminarGasto={eliminarCualquierGasto}
-                onActualizarGasto={actualizarCualquierGasto}
-                onSync={sincronizar}
-                syncing={syncing}
-                syncError={syncError}
-                pendingSync={pendingSync}
-                onConfirmarSync={confirmarSync}
-                onCancelarSync={cancelarSync}
-              />
-            }
-          />
-          <Route
-            path="/log"
-            element={
-              <LogPage
-                {...sharedProps}
-                gastos={gastos}
-                gastosLocales={gastosLocales}
-                onActualizarGasto={actualizarCualquierGasto}
-                onEliminarGasto={eliminarCualquierGasto}
-              />
-            }
-          />
-          <Route
-            path="/bandeja"
-            element={
-              <BandejaPage
-                {...sharedProps}
-                gastos={gastos}
-                gastosLocales={gastosLocales}
-                onActualizarGasto={actualizarCualquierGasto}
-                onEliminarGasto={eliminarCualquierGasto}
-              />
-            }
-          />
-          <Route
-            path="/agente"
-            element={<AgentePage {...sharedProps} />}
-          />
-          <Route
-            path="/presupuesto"
-            element={
-              <PresupuestoPage
-                {...sharedProps}
-                gastos={todoLosGastos}
-              />
-            }
-          />
-          <Route
-            path="/tarjeta"
-            element={
-              <TarjetaPage
-                {...sharedProps}
-                gastos={todoLosGastos}
-                reconciliacion={reconciliacion}
-                onActualizarGasto={actualizarCualquierGasto}
-              />
-            }
-          />
-          <Route path="/passkeys" element={<PasskeysPage />} />
-        </Routes>
-      </div>
+      <AgenteChatProvider onRefetchGastos={refetchGastos}>
+        <Sidebar />
+        <AgenteFlotante gastos={gastos} gastosLocales={gastosLocales} />
+        <div className="pb-16 md:pb-0 md:pl-64">
+          {errorGuardado && (
+            <div className="bg-red-500/20 border-b border-red-500/30 text-red-400 text-sm px-6 py-2 text-center">
+              {errorGuardado} — recargá la página y volvé a intentarlo
+            </div>
+          )}
+          <Routes>
+            <Route
+              path="/"
+              element={<DashboardPage {...sharedProps} gastos={todoLosGastos} />}
+            />
+            <Route
+              path="/cashflow"
+              element={
+                <CashflowPage
+                  {...sharedProps}
+                  gastos={todoLosGastos}
+                  onSync={sincronizar}
+                  syncing={syncing}
+                  syncError={syncError}
+                  pendingSync={pendingSync}
+                  onConfirmarSync={confirmarSync}
+                  onCancelarSync={cancelarSync}
+                />
+              }
+            />
+            <Route
+              path="/analisis"
+              element={<AnalisisPage {...sharedProps} gastos={todoLosGastos} />}
+            />
+            <Route
+              path="/gastos"
+              element={
+                <GastosPage
+                  {...sharedProps}
+                  gastos={gastos}
+                  gastosLocales={gastosLocales}
+                  onAgregarGasto={agregar}
+                  onEliminarGasto={eliminarCualquierGasto}
+                  onActualizarGasto={actualizarCualquierGasto}
+                  onSync={sincronizar}
+                  syncing={syncing}
+                  syncError={syncError}
+                  pendingSync={pendingSync}
+                  onConfirmarSync={confirmarSync}
+                  onCancelarSync={cancelarSync}
+                />
+              }
+            />
+            <Route
+              path="/log"
+              element={
+                <LogPage
+                  {...sharedProps}
+                  gastos={gastos}
+                  gastosLocales={gastosLocales}
+                  onActualizarGasto={actualizarCualquierGasto}
+                  onEliminarGasto={eliminarCualquierGasto}
+                />
+              }
+            />
+            <Route
+              path="/bandeja"
+              element={
+                <BandejaPage
+                  {...sharedProps}
+                  gastos={gastos}
+                  gastosLocales={gastosLocales}
+                  onActualizarGasto={actualizarCualquierGasto}
+                  onEliminarGasto={eliminarCualquierGasto}
+                />
+              }
+            />
+            <Route
+              path="/agente"
+              element={
+                <AgentePage
+                  {...sharedProps}
+                  gastos={gastos}
+                  gastosLocales={gastosLocales}
+                  onActualizarGasto={actualizarCualquierGasto}
+                  onEliminarGasto={eliminarCualquierGasto}
+                />
+              }
+            />
+            <Route
+              path="/presupuesto"
+              element={
+                <PresupuestoPage
+                  {...sharedProps}
+                  gastos={todoLosGastos}
+                />
+              }
+            />
+            <Route
+              path="/tarjeta"
+              element={
+                <TarjetaPage
+                  {...sharedProps}
+                  gastos={todoLosGastos}
+                  reconciliacion={reconciliacion}
+                  onActualizarGasto={actualizarCualquierGasto}
+                />
+              }
+            />
+            <Route path="/passkeys" element={<PasskeysPage />} />
+          </Routes>
+        </div>
+      </AgenteChatProvider>
     </div>
   )
 }

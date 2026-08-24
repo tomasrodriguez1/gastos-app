@@ -20,6 +20,8 @@ import { z } from 'zod'
 import { cargarCatalogos } from './catalogos.js'
 import { buscarComercio } from './comercios.js'
 import { crearGastoPendiente } from './gastos/crear.js'
+import { actualizarGasto, obtenerGastoPorId } from './gastos/actualizar.js'
+import { listarPendientes } from './gastos/pendientes.js'
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-luna'
 
@@ -47,6 +49,16 @@ function promptSistema(catalogos, hoy) {
     '5. Llamá a la tool crear_gasto con todo lo que tengas. El gasto queda "pendiente" — vos NUNCA lo confirmás ni lo das por aprobado, eso lo hace la persona en su bandeja de revisión.',
     '',
     'Si algo queda ambiguo y no se resuelve con una pregunta puntual, usá tu mejor criterio, avisá qué asumiste, y creá el gasto igual — total queda pendiente de revisión.',
+    '',
+    'Corregir un gasto que ya quedó pendiente: si el usuario te pide arreglar algo de un gasto',
+    'anterior (propio o llegado por mail — "el almuerzo de ayer en realidad fue 8 lucas", "cambiale',
+    'el banco al de Falabella"), primero llamá a buscar_gastos_pendientes (con texto de búsqueda si',
+    'lo tenés, o sin texto para ver los últimos) para encontrar el gastoId correcto. Si hay más de',
+    'un candidato razonable, preguntá cuál es antes de tocar nada. Después llamá a editar_gasto con',
+    'ese gastoId y SOLO los campos que cambian. Igual que crear_gasto, editar_gasto NUNCA confirma',
+    'el gasto — sigue pendiente hasta que la persona lo confirme en su bandeja. Solo podés editar',
+    'gastos que sigan pendientes o en error_parseo; si ya fue confirmado, avisale que ya no se',
+    'puede tocar desde acá.',
   ].join('\n')
 }
 
@@ -121,6 +133,86 @@ function crearGastoToolFactory(catalogos) {
   })
 }
 
+const buscarPendientesTool = tool({
+  description:
+    'Busca o lista gastos que ya están en la bandeja esperando revisión (estado pendiente o ' +
+    'error_parseo), sin importar si llegaron por mail o por chat. Usarla para encontrar el ' +
+    'gastoId correcto antes de llamar a editar_gasto.',
+  inputSchema: z.object({
+    busqueda: z.string().default('').describe('Texto para filtrar por comercio/motivo o banco. Vacío para ver los más recientes'),
+  }),
+  execute: async ({ busqueda }) => {
+    const pendientes = await listarPendientes({ busqueda })
+    return {
+      total: pendientes.length,
+      gastos: pendientes.map(g => ({
+        gastoId: g.id,
+        fecha: g.fecha,
+        motivo: g.motivo,
+        monto: g.monto,
+        usd: g.usd,
+        banco: g.banco,
+        tipos: g.tipos,
+        contexto: g.contexto,
+        estado: g.estado,
+        origen: g.origen,
+      })),
+    }
+  },
+})
+
+function editarGastoToolFactory(catalogos) {
+  return tool({
+    description:
+      'Corrige campos de un gasto que ya está pendiente o en error_parseo (encontrado con ' +
+      'buscar_gastos_pendientes). Nunca puede confirmarlo ni tocar uno ya confirmado — eso sigue ' +
+      'siendo un acto humano en /bandeja.',
+    inputSchema: z.object({
+      gastoId: z.string().describe('El id del gasto a editar, obtenido de buscar_gastos_pendientes'),
+      fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Nueva fecha en formato YYYY-MM-DD, solo si cambia'),
+      motivo: z.string().optional().describe('Nuevo comercio o descripción, solo si cambia'),
+      monto: z.number().optional().describe('Nuevo monto en pesos chilenos, solo si cambia'),
+      usd: z.number().optional().describe('Nuevo monto en dólares, solo si cambia'),
+      banco: z.string().optional().describe('Nuevo banco o medio de pago, solo si cambia'),
+      tipos: z.array(z.string()).optional().describe('Nuevos tipos — solo valores que existan en el catálogo, solo si cambian'),
+      contexto: z.string().optional().describe('Nuevo contexto — solo un valor que exista en el catálogo, solo si cambia'),
+    }),
+    execute: async ({ gastoId, ...cambios }) => {
+      const actual = await obtenerGastoPorId(gastoId)
+      if (!actual) return { error: 'No encontré ningún gasto con ese id.' }
+      if (actual.estado !== 'pendiente' && actual.estado !== 'error_parseo') {
+        return { error: 'Ese gasto ya no está pendiente — no lo puedo editar desde acá, hace falta corregirlo a mano en /bandeja o /log.' }
+      }
+
+      const changes = {}
+      for (const [campo, valor] of Object.entries(cambios)) {
+        if (valor === undefined) continue
+        if (campo === 'tipos') {
+          const filtrados = valor.filter(t => catalogos.tipos.includes(t))
+          if (filtrados.length) changes.tipos = filtrados
+          continue
+        }
+        if (campo === 'contexto') {
+          if (catalogos.contextos.includes(valor)) changes.contexto = valor
+          continue
+        }
+        changes[campo] = valor
+      }
+
+      if (Object.keys(changes).length === 0) return { error: 'No me diste ningún cambio válido para aplicar.' }
+
+      const resultado = await actualizarGasto(gastoId, changes)
+      if (resultado.error) return { error: 'No pude editar el gasto.' }
+
+      return {
+        ok: true,
+        gastoId,
+        resumen: `Gasto actualizado: ${resultado.gasto.motivo} — sigue pendiente de revisión en /bandeja.`,
+      }
+    },
+  })
+}
+
 export const agenteRouter = new Hono()
 
 agenteRouter.post('/chat', async (c) => {
@@ -147,8 +239,10 @@ agenteRouter.post('/chat', async (c) => {
     tools: {
       buscar_comercio: buscarComercioTool,
       crear_gasto: crearGastoToolFactory(catalogos),
+      buscar_gastos_pendientes: buscarPendientesTool,
+      editar_gasto: editarGastoToolFactory(catalogos),
     },
-    stopWhen: stepCountIs(6),
+    stopWhen: stepCountIs(8),
   })
 
   return result.toUIMessageStreamResponse()
