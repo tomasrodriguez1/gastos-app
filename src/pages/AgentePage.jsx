@@ -65,6 +65,16 @@ export function AgentePage({ onRefetchGastos }) {
     })
   }
 
+  function handlePaste(e) {
+    const imagenes = Array.from(e.clipboardData?.items || [])
+      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+      .map(item => item.getAsFile())
+      .filter(Boolean)
+    if (imagenes.length === 0) return
+    e.preventDefault()
+    agregarArchivos(imagenes)
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     const texto = input.trim()
@@ -87,7 +97,7 @@ export function AgentePage({ onRefetchGastos }) {
       <div>
         <h1 className="text-lg font-heading text-white">Agente</h1>
         <p className="text-xs text-slate-500">
-          Contame un gasto en una frase — "12 lucas almuerzo con la polola BICE" — o mandá fotos de boletas (podés adjuntar varias juntas). Queda pendiente en la bandeja, nunca se confirma solo.
+          Contame un gasto en una frase — "12 lucas almuerzo con la polola BICE" — o mandá fotos de boletas (podés adjuntar, pegar con Ctrl+V o mandar varias juntas). Queda pendiente en la bandeja, nunca se confirma solo.
         </p>
       </div>
 
@@ -190,6 +200,7 @@ export function AgentePage({ onRefetchGastos }) {
         <input
           value={input}
           onChange={e => setInput(e.target.value)}
+          onPaste={handlePaste}
           placeholder="12 lucas almuerzo con la polola BICE"
           className="flex-1 rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-200 px-3 py-2 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/50"
         />
