@@ -23,6 +23,12 @@ const ETIQUETAS = {
     input: () => 'Editando el gasto…',
     output: (output) => output?.error ?? (output?.resumen ?? 'Gasto actualizado'),
   },
+  'tool-registrar_saldos_reserva': {
+    input: () => 'Registrando saldos de reservas…',
+    output: (output) => (output?.resultados || [])
+      .map(r => r.error ? `⚠ ${r.error}` : r.resumen)
+      .join(' · ') || 'Sin lecturas registradas',
+  },
 }
 
 export function PasoAgente({ part }) {

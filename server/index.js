@@ -15,6 +15,9 @@ import { createAuthMiddleware } from './auth.js'
 import { migrateComercios } from './db/migrate-comercios.js'
 import { migrateTarjetaReconciliacion } from './db/migrate-tarjeta-reconciliacion.js'
 import { migrateAgenteHistorial } from './db/migrate-agente-historial.js'
+import { migrateFondoUso } from './db/migrate-fondo-uso.js'
+import { migrateReservas } from './db/migrate-reservas.js'
+import { reservaRouter } from './reservas.js'
 import { listarComercios, olvidarComercio } from './comercios.js'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
 import { deserializarGasto } from './gastos/serializacion.js'
@@ -30,6 +33,8 @@ await migrateIngesta()
 await migrateComercios()
 await migrateTarjetaReconciliacion()
 await migrateAgenteHistorial()
+await migrateFondoUso()
+await migrateReservas()
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()
 }
@@ -61,6 +66,7 @@ app.use('*', cors({ origin: CORS_ORIGIN }))
 
 app.route('/api/agente', agenteRouter)
 app.route('/api/tarjeta', tarjetaRouter)
+app.route('/api/reservas', reservaRouter)
 
 // ─── GASTOS ──────────────────────────────────────────────────────────────────
 
@@ -149,7 +155,7 @@ app.post('/api/datos', async (c) => {
           INSERT INTO gastos (id, sync_key, fecha, mes, ciclo_financiero, motivo, banco, tipos, contexto,
             monto, monto_real, usd, monto_clp_manual, split, presupuesto_manual,
             contexto_override, monto_presupuesto_manual, pagado, plata_en_cuenta,
-            en_presupuesto, conciliado, es_manual, updated_at)
+            en_presupuesto, conciliado, financiado_por, es_manual, updated_at)
           VALUES (
             ${crypto.randomUUID()}, ${syncKey},
             ${g.fecha}, ${mesCalendario}, ${cicloFinanciero}, ${g.motivo},
@@ -159,7 +165,8 @@ app.post('/api/datos', async (c) => {
             ${g.presupuesto_manual ?? null},
             ${g.contexto_override ?? null}, ${g.monto_presupuesto_manual ?? null},
             ${g.pagado ? true : false}, ${g.plata_en_cuenta ? true : false},
-            ${g.en_presupuesto !== false}, ${g.conciliado ? true : false}, false, NOW()
+            ${g.en_presupuesto !== false}, ${g.conciliado ? true : false},
+            ${g.financiado_por || null}, false, NOW()
           )
           ON CONFLICT(sync_key) DO UPDATE SET
             fecha = EXCLUDED.fecha,
@@ -177,6 +184,7 @@ app.post('/api/datos', async (c) => {
             contexto_override = COALESCE(gastos.contexto_override, EXCLUDED.contexto_override),
             monto_clp_manual = COALESCE(gastos.monto_clp_manual, EXCLUDED.monto_clp_manual),
             monto_presupuesto_manual = COALESCE(gastos.monto_presupuesto_manual, EXCLUDED.monto_presupuesto_manual),
+            financiado_por = COALESCE(gastos.financiado_por, EXCLUDED.financiado_por),
             updated_at = NOW()
         `
       }
@@ -201,7 +209,7 @@ app.post('/api/datos', async (c) => {
           INSERT INTO gastos (id, sync_key, fecha, mes, ciclo_financiero, motivo, banco, tipos, contexto,
             monto, monto_real, usd, monto_clp_manual, split, presupuesto_manual,
             contexto_override, monto_presupuesto_manual, pagado, plata_en_cuenta,
-            en_presupuesto, conciliado, es_manual, updated_at)
+            en_presupuesto, conciliado, financiado_por, es_manual, updated_at)
           VALUES (
             ${id}, NULL,
             ${g.fecha}, ${mesCalendario}, ${cicloFinanciero}, ${g.motivo || ''},
@@ -211,7 +219,8 @@ app.post('/api/datos', async (c) => {
             ${g.presupuesto_manual ?? null},
             ${g.contexto_override ?? null}, ${g.monto_presupuesto_manual ?? null},
             ${g.pagado ? true : false}, ${g.plata_en_cuenta ? true : false},
-            ${g.en_presupuesto !== false}, ${g.conciliado ? true : false}, true, NOW()
+            ${g.en_presupuesto !== false}, ${g.conciliado ? true : false},
+            ${g.financiado_por || null}, true, NOW()
           )
           ON CONFLICT(id) DO UPDATE SET
             fecha = EXCLUDED.fecha,
@@ -233,6 +242,7 @@ app.post('/api/datos', async (c) => {
             plata_en_cuenta = EXCLUDED.plata_en_cuenta,
             en_presupuesto = EXCLUDED.en_presupuesto,
             conciliado = EXCLUDED.conciliado,
+            financiado_por = EXCLUDED.financiado_por,
             updated_at = NOW()
         `
       }
@@ -295,7 +305,10 @@ app.post('/api/presupuesto/:ciclo/copiar-anterior', async (c) => {
   const prevData = await leerPresupuestoCiclo(cicloPrevio)
   if (!prevData) return c.json({ error: 'No hay presupuesto en el ciclo anterior' }, 404)
 
-  await guardarPresupuestoCicloDB(ciclo, prevData)
+  const fondosActivos = Object.fromEntries(
+    Object.entries(prevData.fondos || {}).filter(([, fondo]) => fondo.estado !== 'cerrado')
+  )
+  await guardarPresupuestoCicloDB(ciclo, { ...prevData, fondos: fondosActivos })
   return c.json({ ok: true })
 })
 
@@ -486,7 +499,7 @@ async function leerPresupuestoCiclo(ciclo) {
 
   const ingresoRows = await sql`SELECT fuente, monto FROM presupuesto_ingreso WHERE ciclo = ${ciclo}`
   const categoriaRows = await sql`SELECT grupo, subcategoria, previsto, fgp FROM presupuesto_categoria WHERE ciclo = ${ciclo} ORDER BY grupo, subcategoria`
-  const fondoRows = await sql`SELECT nombre, previsto_aportar, acumulado, objetivo, fecha_meta, vinculado, emoji FROM presupuesto_fondo WHERE ciclo = ${ciclo}`
+  const fondoRows = await sql`SELECT nombre, previsto_aportar, acumulado, objetivo, fecha_meta, vinculado, emoji, estado FROM presupuesto_fondo WHERE ciclo = ${ciclo}`
 
   const ingresos = {}
   for (const r of ingresoRows) ingresos[r.fuente] = toMonto(r.monto)
@@ -509,6 +522,7 @@ async function leerPresupuestoCiclo(ciclo) {
       previsto_aportar: toMonto(r.previsto_aportar),
       acumulado: toMonto(r.acumulado),
       objetivo: toMonto(r.objetivo),
+      estado: r.estado === 'cerrado' ? 'cerrado' : 'activo',
       ...(r.emoji && { emoji: r.emoji }),
       ...(r.fecha_meta && { fecha_meta: r.fecha_meta }),
       ...(vinculado && { vinculado }),
@@ -569,13 +583,15 @@ async function guardarPresupuestoCicloDB(ciclo, datos) {
     if (datos.fondos !== undefined) {
       await tx`DELETE FROM presupuesto_fondo WHERE ciclo = ${ciclo}`
       for (const [nombre, fData] of Object.entries(datos.fondos)) {
+        const estadoFondo = fData.estado === 'cerrado' ? 'cerrado' : 'activo'
         await tx`
-          INSERT INTO presupuesto_fondo (ciclo, nombre, previsto_aportar, acumulado, objetivo, fecha_meta, vinculado, emoji)
+          INSERT INTO presupuesto_fondo (ciclo, nombre, previsto_aportar, acumulado, objetivo, fecha_meta, vinculado, emoji, estado)
           VALUES (
             ${ciclo}, ${nombre},
             ${fData.previsto_aportar || 0}, ${fData.acumulado || 0},
             ${fData.objetivo || null}, ${fData.fecha_meta || null},
-            ${fData.vinculado || null}, ${fData.emoji || null}
+            ${fData.vinculado || null}, ${fData.emoji || null},
+            ${estadoFondo}
           )
         `
         if (fData.vinculado?.grupo && fData.vinculado?.subcategoria) {
@@ -596,6 +612,15 @@ async function guardarPresupuestoCicloDB(ciclo, datos) {
             cambio.vinculadoAnterior,
             cambio.vinculadoNuevo
           )
+        }
+        if (cambio?.nombreAnterior && cambio?.nombreNuevo && cambio.nombreAnterior !== cambio.nombreNuevo) {
+          const renamed = await tx`
+            UPDATE gastos
+            SET financiado_por = ${cambio.nombreNuevo}, updated_at = NOW()
+            WHERE financiado_por = ${cambio.nombreAnterior}
+            RETURNING id
+          `
+          gastosActualizados += renamed.length
         }
       }
     }

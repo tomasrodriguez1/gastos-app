@@ -82,6 +82,7 @@ export default function App() {
     copiarCicloAnterior,
     catalogos,
     onAgregarGasto: agregar,
+    onActualizarGasto: actualizarCualquierGasto,
     onRefetchGastos: refetchGastos,
   }
 

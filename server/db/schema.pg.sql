@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS gastos (
   plata_en_cuenta          BOOLEAN NOT NULL DEFAULT FALSE,
   en_presupuesto           BOOLEAN NOT NULL DEFAULT TRUE,
   conciliado               BOOLEAN NOT NULL DEFAULT FALSE,
+  financiado_por           TEXT,
   estado                   TEXT NOT NULL DEFAULT 'confirmado',
   origen                   TEXT NOT NULL DEFAULT 'manual',
   fuente_id                TEXT,
@@ -37,6 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_gastos_fecha ON gastos(fecha);
 CREATE INDEX IF NOT EXISTS idx_gastos_sync_key ON gastos(sync_key) WHERE sync_key IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_gastos_fuente_id ON gastos(fuente_id) WHERE fuente_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_gastos_estado ON gastos(estado) WHERE estado != 'confirmado';
+CREATE INDEX IF NOT EXISTS idx_gastos_financiado_por ON gastos(financiado_por) WHERE financiado_por IS NOT NULL;
 
 -- ─── PRESUPUESTO ─────────────────────────────────────────────────────────────
 
@@ -74,6 +76,7 @@ CREATE TABLE IF NOT EXISTS presupuesto_fondo (
   fecha_meta       TEXT,
   vinculado        JSONB,
   emoji            TEXT DEFAULT '💰',
+  estado           TEXT NOT NULL DEFAULT 'activo',
   UNIQUE(ciclo, nombre)
 );
 
@@ -196,6 +199,46 @@ CREATE TABLE IF NOT EXISTS reserva_tarjeta (
   monto      NUMERIC NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ─── RESERVAS DE AHORRO (F6) ─────────────────────────────────────────────────
+-- Bolsillos de ahorro externos (ej. Mercado Pago: mantención auto, patente,
+-- vacaciones, plata para terceros). NO es lo mismo que reserva_tarjeta (arriba):
+-- reserva_tarjeta es un valor único por banco sin historial, standalone porque
+-- ya cuenta el cargo de tarjeta en `gastos`. `reserva` es un catálogo persistente
+-- con historial de saldos (`reserva_saldo`), también standalone y por el mismo
+-- motivo — no se fusiona con presupuesto_fondo (per-ciclo, se recrea cada mes).
+-- Ver docs/context/data_model_context.md.
+
+CREATE TABLE IF NOT EXISTS reserva (
+  id          SERIAL PRIMARY KEY,
+  nombre      TEXT NOT NULL UNIQUE,
+  emoji       TEXT DEFAULT '💰',
+  vinculado   JSONB NOT NULL,        -- {grupo, subcategoria?} — subcategoria ausente = todo el grupo cuenta
+  tasa_anual  NUMERIC DEFAULT 0.03,  -- crecimiento estimado (MP ~3% anual); 0 si no aplica
+  activa      BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reserva_activa ON reserva(activa) WHERE activa = TRUE;
+
+-- Snapshots del saldo real vs esperado. UNIQUE(reserva_id, fecha) permite
+-- "corregir" una lectura del mismo día vía upsert simple, sin tabla ni tool de
+-- corrección aparte.
+CREATE TABLE IF NOT EXISTS reserva_saldo (
+  id             SERIAL PRIMARY KEY,
+  reserva_id     INTEGER NOT NULL REFERENCES reserva(id) ON DELETE CASCADE,
+  fecha          TEXT NOT NULL CHECK (fecha ~ '^\d{4}-\d{2}-\d{2}$'),
+  monto_leido    NUMERIC NOT NULL,
+  monto_esperado NUMERIC,   -- NULL = primera lectura de la reserva, sin línea base
+  diferencia     NUMERIC,   -- monto_leido - monto_esperado
+  origen         TEXT NOT NULL DEFAULT 'foto_agente' CHECK (origen IN ('foto_agente', 'manual')),
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (reserva_id, fecha)
+);
+
+CREATE INDEX IF NOT EXISTS idx_reserva_saldo_reserva_fecha ON reserva_saldo(reserva_id, fecha DESC);
 
 -- ─── AUTENTICACIÓN (WebAuthn / Passkeys) ────────────────────────────────────
 -- Reemplaza ACCESS_TOKEN. Ver docs/architecture/decisions.md DEC-009.

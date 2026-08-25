@@ -26,6 +26,7 @@ export function deserializarGasto(row) {
     plata_en_cuenta: row.plata_en_cuenta === true,
     en_presupuesto: row.en_presupuesto !== false,
     conciliado: row.conciliado === true,
+    financiado_por: row.financiado_por || null,
   }
 }
 
@@ -34,5 +35,6 @@ export function serializarCampoGasto(campo, valor) {
   if (campo === 'tipos') return Array.isArray(valor) ? valor : []
   if (campo === 'presupuesto_manual') return valor || null
   if (campo === 'pagado' || campo === 'plata_en_cuenta' || campo === 'en_presupuesto') return valor ? true : false
+  if (campo === 'financiado_por') return valor || null
   return valor
 }

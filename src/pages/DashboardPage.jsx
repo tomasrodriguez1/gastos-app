@@ -47,7 +47,7 @@ function MontoMovimiento({ gasto, isPrivacyModeEnabled }) {
   )
 }
 
-export function DashboardPage({ gastos, obtenerPresupuesto, guardarPresupuesto, catalogos, onAgregarGasto, onRefetchGastos }) {
+export function DashboardPage({ gastos, obtenerPresupuesto, guardarPresupuesto, catalogos, onAgregarGasto, onRefetchGastos, onActualizarGasto }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
   const ciclo = obtenerCicloActual()
   const presupuestoMes = obtenerPresupuesto(ciclo)
@@ -112,6 +112,7 @@ export function DashboardPage({ gastos, obtenerPresupuesto, guardarPresupuesto, 
         gastos={gastos}
         onAgregarGasto={onAgregarGasto}
         onRefetchGastos={onRefetchGastos}
+        onActualizarGasto={onActualizarGasto}
       />
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">

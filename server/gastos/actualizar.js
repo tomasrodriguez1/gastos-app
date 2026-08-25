@@ -11,7 +11,7 @@ import { aprenderComercio } from '../comercios.js'
 const CAMPOS_EDITABLES = [
   'fecha', 'motivo', 'banco', 'tipos', 'contexto', 'monto', 'monto_real',
   'usd', 'monto_clp_manual', 'split', 'pagado', 'estado',
-  'plata_en_cuenta', 'en_presupuesto',
+  'plata_en_cuenta', 'en_presupuesto', 'financiado_por',
   'presupuesto_manual', 'contexto_override', 'monto_presupuesto_manual',
 ]
 

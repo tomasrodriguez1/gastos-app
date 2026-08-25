@@ -79,6 +79,7 @@ confirmar que ese comportamiento de limpieza sigue intacto si se modifican los t
 7. Cambiar `fecha` recalcula `mes` calendario y `ciclo_financiero` sin alterar montos, categorías, cuentas ni overrides.
 8. `en_presupuesto=false` y `split` solo modifican agregaciones presupuestarias, nunca la deuda de tarjeta.
 9. Conciliar y pagar verifican banco, moneda, total e IDs dentro de una única transacción; un descuadre no modifica filas.
+10. Un gasto con `financiado_por` baja el saldo del fondo y no entra en `montoDelCiclo()` / totales del ciclo; el análisis histórico puede incluirlo con `incluirFinanciados: true`. Archivar (`estado=cerrado`) no borra el fondo ni los usos.
 
 ## Criterios mínimos antes de merge
 

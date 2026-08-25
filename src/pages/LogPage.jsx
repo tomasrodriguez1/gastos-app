@@ -16,7 +16,7 @@ const FILTROS_INIT = {
 const LOG_LAST_VIEWED_KEY = 'logLastViewed'
 const PAGE_SIZE = 50
 
-export function LogPage({ gastos, gastosLocales, catalogos, onActualizarGasto, onEliminarGasto }) {
+export function LogPage({ gastos, gastosLocales, catalogos, onActualizarGasto, onEliminarGasto, obtenerPresupuesto, ciclos = [] }) {
   const [filtros, setFiltros] = useState(FILTROS_INIT)
   const [visibles, setVisibles] = useState(PAGE_SIZE)
 
@@ -52,6 +52,14 @@ export function LogPage({ gastos, gastosLocales, catalogos, onActualizarGasto, o
     })
     return [...set].sort()
   }, [todosOrdenados])
+
+  const nombresFondos = useMemo(() => {
+    const set = new Set()
+    for (const ciclo of ciclos) {
+      Object.keys(obtenerPresupuesto?.(ciclo)?.fondos || {}).forEach(n => set.add(n))
+    }
+    return [...set]
+  }, [ciclos, obtenerPresupuesto])
 
   const filtrados = useMemo(() => {
     return todosOrdenados
@@ -161,6 +169,7 @@ export function LogPage({ gastos, gastosLocales, catalogos, onActualizarGasto, o
         onActualizar={onActualizarGasto}
         catalogos={catalogos}
         destacarIds={nuevosIds}
+        nombresFondos={nombresFondos}
       />
 
       {visibles < filtrados.length && (

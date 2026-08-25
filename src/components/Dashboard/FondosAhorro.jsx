@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { formatCLP } from '../../utils/formatters'
 import { GRUPOS_PRESUPUESTO } from '../../utils/categorias'
-import { calcularAcumuladoFondo } from '../../utils/calculos'
+import { calcularAcumuladoFondo, calcularSaldoFondo, esGastoUsdPuro, listarUsosFondo, montoUsoFondo } from '../../utils/calculos'
 import { resolverDesdeVinculado, vinculadoCambioUbicacion } from '../../utils/fondos'
 
 const ICONS_DEFAULT = { 'Mantenimiento Auto': '🔧', 'Patente Auto': '📋', 'Viajes': '✈️' }
@@ -256,19 +256,36 @@ function FormFondo({
   )
 }
 
-function TarjetaFondo({ nombre, fondo, onAportar, onEliminar, onEditar, acumuladoAuto, onCrearGasto, mes }) {
+function gastosVinculables(gastos, mes) {
+  const delCiclo = []
+  const otros = []
+  for (const g of gastos) {
+    if (esGastoUsdPuro(g) || g.estado === 'descartado' || g.financiado_por) continue
+    if (g.ciclo_financiero === mes) delCiclo.push(g)
+    else otros.push(g)
+  }
+  const porFecha = (a, b) => (b.fecha || '').localeCompare(a.fecha || '')
+  return [...delCiclo.sort(porFecha), ...otros.sort(porFecha)].slice(0, 40)
+}
+
+function TarjetaFondo({
+  nombre, fondo, onAportar, onEliminar, onEditar, onCrearGasto, onActualizarGasto,
+  onArchivar, onReabrir, mes, gastos = [], gruposPresupuesto = GRUPOS_PRESUPUESTO,
+}) {
   const [modo, setModo] = useState(null)
   const [monto, setMonto] = useState('')
-  // Form state for auto-fondo "aportar"
-  const [formAporte, setFormAporte] = useState(null) // null = cerrado
+  const [formAporte, setFormAporte] = useState(null)
+  const [formUso, setFormUso] = useState(null)
   const [confirmEliminar, setConfirmEliminar] = useState(false)
 
-  const esAuto = acumuladoAuto !== undefined
-  const acumulado = esAuto ? acumuladoAuto : (fondo.acumulado || 0)
+  const cerrado = fondo.estado === 'cerrado'
+  const esAuto = Boolean(fondo.vinculado)
+  const { aportes, usado, saldo } = calcularSaldoFondo(fondo, nombre, gastos)
+  const usos = listarUsosFondo(gastos, nombre)
   const objetivo = fondo.objetivo || 0
   const aportar = fondo.previsto_aportar || 0
-  const pct = objetivo > 0 ? Math.min((acumulado / objetivo) * 100, 100) : 0
-  const faltante = Math.max(objetivo - acumulado, 0)
+  const pct = objetivo > 0 ? Math.min((aportes / objetivo) * 100, 100) : 0
+  const faltante = Math.max(objetivo - aportes, 0)
   const mesesRestantes = aportar > 0 && faltante > 0 ? Math.ceil(faltante / aportar) : null
   const mesesHasta = mesesHastaMeta(fondo.fecha_meta, mes)
   const aporteNecesario = objetivo > 0 && faltante > 0 && mesesHasta != null && mesesHasta > 0
@@ -277,11 +294,29 @@ function TarjetaFondo({ nombre, fondo, onAportar, onEliminar, onEditar, acumulad
   const metaVencida = objetivo > 0 && faltante > 0 && fondo.fecha_meta && mesesHasta != null && mesesHasta <= 0
   const aporteInsuficiente = aporteNecesario != null && aporteNecesario > aportar
   const emoji = fondo.emoji || ICONS_DEFAULT[nombre] || '💰'
+  const grupos = Object.keys(gruposPresupuesto)
+  const candidatos = gastosVinculables(gastos, mes)
 
   const hoy = new Date().toISOString().slice(0, 10)
 
   function abrirFormAporte() {
+    setFormUso(null)
+    setModo(null)
     setFormAporte({ monto: '', motivo: `Aporte ${nombre}`, fecha: hoy })
+  }
+
+  function abrirFormUso() {
+    setFormAporte(null)
+    setModo(null)
+    setFormUso({
+      tipo: 'existente',
+      gastoId: '',
+      monto: '',
+      motivo: '',
+      fecha: hoy,
+      grupo: '',
+      subcategoria: '',
+    })
   }
 
   function handleCrearGasto(e) {
@@ -305,9 +340,41 @@ function TarjetaFondo({ nombre, fondo, onAportar, onEliminar, onEditar, acumulad
     e.preventDefault()
     const valor = Number(monto)
     if (isNaN(valor) || valor < 0) return
-    onAportar(nombre, acumulado + valor)
+    onAportar(nombre, aportes + valor)
     setModo(null)
     setMonto('')
+  }
+
+  function handleUsar(e) {
+    e.preventDefault()
+    if (!formUso) return
+    if (formUso.tipo === 'existente') {
+      if (!formUso.gastoId || !onActualizarGasto) return
+      onActualizarGasto(formUso.gastoId, { financiado_por: nombre })
+      setFormUso(null)
+      return
+    }
+    const valor = Number(formUso.monto)
+    if (!valor || valor <= 0 || !onCrearGasto) return
+    onCrearGasto({
+      fecha: formUso.fecha,
+      motivo: formUso.motivo || `Uso ${nombre}`,
+      monto: valor,
+      monto_real: valor,
+      tipos: [],
+      banco: '',
+      contexto: '',
+      presupuesto_manual: formUso.grupo && formUso.subcategoria
+        ? { grupo: formUso.grupo, subcategoria: formUso.subcategoria }
+        : null,
+      financiado_por: nombre,
+    })
+    setFormUso(null)
+  }
+
+  function handleDesvincularUso(gastoId) {
+    if (!onActualizarGasto) return
+    onActualizarGasto(gastoId, { financiado_por: null })
   }
 
   return (
@@ -333,37 +400,60 @@ function TarjetaFondo({ nombre, fondo, onAportar, onEliminar, onEditar, acumulad
           >
             ✎
           </button>
-          {esAuto ? (
+          {!cerrado && (
+            <>
+              {esAuto ? (
+                <button
+                  onClick={() => formAporte ? setFormAporte(null) : abrirFormAporte()}
+                  className={`text-xs px-2 py-1 rounded-lg border transition-colors font-medium ${
+                    formAporte
+                      ? 'bg-slate-600/50 text-slate-400 border-slate-600'
+                      : 'bg-sky-500/10 text-sky-400 border-sky-500/30 hover:bg-sky-500/20'
+                  }`}>
+                  + Aportar
+                </button>
+              ) : (
+                <button onClick={() => { setFormUso(null); setModo(modo ? null : 'aportar') }}
+                  className={`text-xs px-2 py-1 rounded-lg border transition-colors font-medium ${
+                    modo
+                      ? 'bg-slate-600/50 text-slate-400 border-slate-600'
+                      : 'bg-sky-500/10 text-sky-400 border-sky-500/30 hover:bg-sky-500/20'
+                  }`}>
+                  + Aportar
+                </button>
+              )}
+              <button
+                onClick={() => formUso ? setFormUso(null) : abrirFormUso()}
+                className={`text-xs px-2 py-1 rounded-lg border transition-colors font-medium ${
+                  formUso
+                    ? 'bg-slate-600/50 text-slate-400 border-slate-600'
+                    : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+                }`}
+              >
+                Usar
+              </button>
+            </>
+          )}
+          {cerrado ? (
             <button
-              onClick={() => formAporte ? setFormAporte(null) : abrirFormAporte()}
-              className={`text-xs px-2 py-1 rounded-lg border transition-colors font-medium ${
-                formAporte
-                  ? 'bg-slate-600/50 text-slate-400 border-slate-600'
-                  : 'bg-sky-500/10 text-sky-400 border-sky-500/30 hover:bg-sky-500/20'
-              }`}>
-              + Aportar
+              onClick={() => onReabrir(nombre)}
+              className="text-xs px-2 py-1 rounded-lg border bg-slate-700/50 text-slate-400 border-slate-600/50 hover:border-sky-500/40 hover:text-sky-300 transition-colors"
+            >
+              Reabrir
             </button>
           ) : (
-            <button onClick={() => modo ? setModo(null) : setModo('aportar')}
-              className={`text-xs px-2 py-1 rounded-lg border transition-colors font-medium ${
-                modo
-                  ? 'bg-slate-600/50 text-slate-400 border-slate-600'
-                  : 'bg-sky-500/10 text-sky-400 border-sky-500/30 hover:bg-sky-500/20'
-              }`}>
-              + Aportar
+            <button onClick={() => setConfirmEliminar(true)}
+              className="text-xs px-2 py-1 rounded-lg border border-slate-700/50 text-slate-700 hover:text-red-400 hover:border-red-500/30 transition-colors">
+              ×
             </button>
           )}
-          <button onClick={() => setConfirmEliminar(true)}
-            className="text-xs px-2 py-1 rounded-lg border border-slate-700/50 text-slate-700 hover:text-red-400 hover:border-red-500/30 transition-colors">
-            ×
-          </button>
         </div>
       </div>
 
       {/* Confirm eliminar */}
       {confirmEliminar && (
         <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
-          <span className="text-xs text-red-400">¿Eliminar este fondo?</span>
+          <span className="text-xs text-red-400">¿Eliminar este fondo? Si ya lo usaste, archivá para conservar el historial.</span>
           <div className="flex gap-2">
             <button onClick={() => setConfirmEliminar(false)} className="text-xs text-slate-400 hover:text-slate-200">Cancelar</button>
             <button onClick={() => onEliminar(nombre)} className="text-xs text-red-400 font-medium hover:text-red-300">Eliminar</button>
@@ -431,20 +521,137 @@ function TarjetaFondo({ nombre, fondo, onAportar, onEliminar, onEditar, acumulad
           </div>
           {Number(monto) > 0 && (
             <div className="text-xs text-slate-500 px-1">
-              Saldo nuevo: <span className="font-mono-numbers text-slate-300">{formatCLP(acumulado + Number(monto))}</span>
+              Saldo nuevo: <span className="font-mono-numbers text-slate-300">{formatCLP(aportes + Number(monto))}</span>
             </div>
           )}
+        </form>
+      )}
+
+      {formUso && (
+        <form onSubmit={handleUsar} className="space-y-2 pt-1 border-t border-slate-700/40">
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setFormUso(f => ({ ...f, tipo: 'existente' }))}
+              className={`flex-1 px-2 py-1 rounded-lg text-xs border transition-colors ${
+                formUso.tipo === 'existente'
+                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                  : 'text-slate-500 border-slate-700/50 hover:text-slate-300'
+              }`}
+            >
+              Gasto existente
+            </button>
+            <button
+              type="button"
+              onClick={() => setFormUso(f => ({ ...f, tipo: 'nuevo' }))}
+              className={`flex-1 px-2 py-1 rounded-lg text-xs border transition-colors ${
+                formUso.tipo === 'nuevo'
+                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                  : 'text-slate-500 border-slate-700/50 hover:text-slate-300'
+              }`}
+            >
+              Nuevo gasto
+            </button>
+          </div>
+          {formUso.tipo === 'existente' ? (
+            candidatos.length === 0 ? (
+              <p className="text-xs text-slate-500">No hay gastos sin financiar para vincular. Creá uno nuevo o marcá uno desde Editar gasto.</p>
+            ) : (
+              <select
+                value={formUso.gastoId}
+                onChange={e => setFormUso(f => ({ ...f, gastoId: e.target.value }))}
+                required
+                className="w-full bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-amber-500"
+              >
+                <option value="">Elegí un gasto…</option>
+                {candidatos.map(g => (
+                  <option key={g.id} value={g.id}>
+                    {g.fecha} · {g.motivo} · {formatCLP(g.monto_real ?? g.monto ?? 0)}
+                  </option>
+                ))}
+              </select>
+            )
+          ) : (
+            <>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={formUso.monto}
+                  onChange={e => setFormUso(f => ({ ...f, monto: e.target.value }))}
+                  placeholder="Monto"
+                  autoFocus
+                  required
+                  className="flex-1 bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-1.5 text-sm font-mono-numbers text-slate-200 placeholder-slate-600 outline-none focus:border-amber-500"
+                />
+                <input
+                  type="date"
+                  value={formUso.fecha}
+                  onChange={e => setFormUso(f => ({ ...f, fecha: e.target.value }))}
+                  className="bg-slate-700/60 border border-slate-600 rounded-lg px-2 py-1.5 text-sm text-slate-300 outline-none focus:border-amber-500"
+                />
+              </div>
+              <input
+                type="text"
+                value={formUso.motivo}
+                onChange={e => setFormUso(f => ({ ...f, motivo: e.target.value }))}
+                placeholder={`Uso ${nombre}`}
+                className="w-full bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-300 placeholder-slate-600 outline-none focus:border-amber-500"
+              />
+              <div className="flex gap-2">
+                <select
+                  value={formUso.grupo}
+                  onChange={e => setFormUso(f => ({ ...f, grupo: e.target.value, subcategoria: '' }))}
+                  className="flex-1 bg-slate-700/60 border border-slate-600 rounded-lg px-2 py-1.5 text-sm text-slate-200 outline-none focus:border-amber-500"
+                >
+                  <option value="">Categoría</option>
+                  {grupos.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+                {formUso.grupo && (
+                  <select
+                    value={formUso.subcategoria}
+                    onChange={e => setFormUso(f => ({ ...f, subcategoria: e.target.value }))}
+                    className="flex-1 bg-slate-700/60 border border-slate-600 rounded-lg px-2 py-1.5 text-sm text-slate-200 outline-none focus:border-amber-500"
+                  >
+                    <option value="">Subcategoría</option>
+                    {(gruposPresupuesto[formUso.grupo] || []).map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                )}
+              </div>
+              {fondo.vinculado && formUso.grupo === fondo.vinculado.grupo && formUso.subcategoria === fondo.vinculado.subcategoria && (
+                <p className="text-xs text-amber-400">Si lo asignás a la línea de ahorro, no va a la categoría del gasto real.</p>
+              )}
+            </>
+          )}
+          {Number(formUso.monto) > saldo && formUso.tipo === 'nuevo' && (
+            <p className="text-xs text-amber-400">El uso supera el saldo ({formatCLP(saldo)}).</p>
+          )}
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setFormUso(null)}
+              className="flex-1 px-3 py-1.5 rounded-lg text-xs text-slate-400 border border-slate-600/50 hover:bg-slate-700 transition-colors">
+              Cancelar
+            </button>
+            <button type="submit"
+              className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 transition-colors">
+              {formUso.tipo === 'existente' ? 'Vincular gasto' : 'Registrar uso'}
+            </button>
+          </div>
         </form>
       )}
 
       {/* Balance */}
       <div className="space-y-1">
         <div className="flex items-end justify-between">
-          <span className="font-mono-numbers text-lg font-bold text-sky-400">{formatCLP(acumulado)}</span>
+          <span className="font-mono-numbers text-lg font-bold text-sky-400">{formatCLP(saldo)}</span>
           {objetivo > 0 && (
             <span className="font-mono-numbers text-xs text-slate-500">/ {formatCLP(objetivo)}</span>
           )}
         </div>
+        {usado > 0 && (
+          <div className="text-xs text-slate-500">
+            Usado <span className="font-mono-numbers text-amber-400/90">{formatCLP(usado)}</span>
+            <span className="text-slate-600"> · ahorrado {formatCLP(aportes)}</span>
+          </div>
+        )}
         {objetivo > 0 && (
           <>
             <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
@@ -452,7 +659,7 @@ function TarjetaFondo({ nombre, fondo, onAportar, onEliminar, onEditar, acumulad
                 style={{ width: `${pct}%`, backgroundColor: pct >= 100 ? '#22c55e' : pct >= 60 ? '#38bdf8' : '#818cf8' }} />
             </div>
             <div className="flex justify-between text-xs text-slate-600">
-              <span>{Math.round(pct)}%</span>
+              <span>{Math.round(pct)}% ahorrado</span>
               {faltante > 0 && <span>Faltan {formatCLP(faltante)}</span>}
             </div>
           </>
@@ -496,19 +703,57 @@ function TarjetaFondo({ nombre, fondo, onAportar, onEliminar, onEditar, acumulad
           {mesesRestantes != null && !fondo.fecha_meta && (
             <span className="text-xs text-slate-500">~{mesesRestantes} {mesesRestantes === 1 ? 'ciclo' : 'ciclos'}</span>
           )}
-          {pct >= 100 && <span className="text-xs text-emerald-400 font-medium">Completado</span>}
+          {pct >= 100 && <span className="text-xs text-emerald-400 font-medium">Meta alcanzada</span>}
+          {cerrado && <span className="text-xs text-slate-500 font-medium">Archivado</span>}
         </div>
       </div>
+
+      {usos.length > 0 && (
+        <div className="pt-1 border-t border-slate-700/40 space-y-1.5">
+          <div className="text-[10px] uppercase tracking-wider text-slate-600">Usos</div>
+          {usos.slice(0, 5).map(g => (
+            <div key={g.id} className="flex items-center justify-between gap-2 text-xs">
+              <span className="truncate text-slate-400" title={g.motivo}>{g.fecha} · {g.motivo}</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="font-mono-numbers text-amber-400/90">{formatCLP(montoUsoFondo(g))}</span>
+                {!cerrado && onActualizarGasto && (
+                  <button
+                    type="button"
+                    onClick={() => handleDesvincularUso(g.id)}
+                    className="text-slate-600 hover:text-red-400"
+                    title="Dejar de financiar con este fondo"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!cerrado && (
+        <button
+          type="button"
+          onClick={() => onArchivar(nombre)}
+          className="w-full text-[11px] text-slate-600 hover:text-slate-400 transition-colors"
+        >
+          Archivar fondo
+        </button>
+      )}
     </div>
   )
 }
 
-export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalogos, gastos = [], onAgregarGasto, onRefetchGastos }) {
+export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalogos, gastos = [], onAgregarGasto, onRefetchGastos, onActualizarGasto }) {
   const [creando, setCreando] = useState(false)
   const [editando, setEditando] = useState(null) // nombre del fondo
   const [guardando, setGuardando] = useState(false)
   const [errorLocal, setErrorLocal] = useState(null)
+  const [mostrarCerrados, setMostrarCerrados] = useState(false)
   const fondos = presupuestoMes?.fondos || {}
+  const fondosActivos = Object.entries(fondos).filter(([, f]) => f.estado !== 'cerrado')
+  const fondosCerrados = Object.entries(fondos).filter(([, f]) => f.estado === 'cerrado')
 
   async function guardarFondos(nuevosFondos, fondoCambios = null) {
     setErrorLocal(null)
@@ -551,7 +796,7 @@ export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalo
       setErrorLocal(`Ya existe un fondo llamado «${nombre}».`)
       return
     }
-    const ok = await guardarFondos({ ...fondos, [nombre]: resto })
+    const ok = await guardarFondos({ ...fondos, [nombre]: { ...resto, estado: 'activo' } })
     if (ok) setCreando(false)
   }
 
@@ -571,9 +816,12 @@ export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalo
 
     const nuevosFondos = { ...fondos }
     if (nombreAnterior !== nombre) delete nuevosFondos[nombreAnterior]
-    nuevosFondos[nombre] = resto
+    nuevosFondos[nombre] = { ...fondoPrevio, ...resto, estado: fondoPrevio.estado || 'activo' }
 
     const fondoCambios = []
+    if (nombre !== nombreAnterior) {
+      fondoCambios.push({ nombreAnterior, nombreNuevo: nombre })
+    }
     if (
       datos.vinculadoAnterior &&
       resto.vinculado &&
@@ -595,6 +843,34 @@ export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalo
     if (ok) setEditando(null)
   }
 
+  async function handleArchivar(nombre) {
+    await guardarFondos({ ...fondos, [nombre]: { ...fondos[nombre], estado: 'cerrado' } })
+  }
+
+  async function handleReabrir(nombre) {
+    await guardarFondos({ ...fondos, [nombre]: { ...fondos[nombre], estado: 'activo' } })
+  }
+
+  function renderTarjeta(nombre, f) {
+    return (
+      <TarjetaFondo
+        key={nombre}
+        nombre={nombre}
+        fondo={f}
+        mes={mes}
+        gastos={gastos}
+        gruposPresupuesto={catalogos?.gruposPresupuesto}
+        onAportar={handleAportar}
+        onEliminar={handleEliminar}
+        onEditar={() => setEditando(nombre)}
+        onCrearGasto={onAgregarGasto}
+        onActualizarGasto={onActualizarGasto}
+        onArchivar={handleArchivar}
+        onReabrir={handleReabrir}
+      />
+    )
+  }
+
   return (
     <>
       <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
@@ -612,23 +888,29 @@ export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalo
             + Nuevo fondo
           </button>
         </div>
-        {Object.keys(fondos).length === 0 ? (
-          <p className="text-sm text-slate-600 text-center py-4">No hay fondos. Creá uno con el botón de arriba.</p>
+        {fondosActivos.length === 0 ? (
+          <p className="text-sm text-slate-600 text-center py-4">
+            {fondosCerrados.length > 0 ? 'No hay fondos activos. Reabrí uno archivado o creá uno nuevo.' : 'No hay fondos. Creá uno con el botón de arriba.'}
+          </p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {Object.entries(fondos).map(([nombre, f]) => (
-              <TarjetaFondo
-                key={nombre}
-                nombre={nombre}
-                fondo={f}
-                mes={mes}
-                onAportar={handleAportar}
-                onEliminar={handleEliminar}
-                onEditar={() => setEditando(nombre)}
-                acumuladoAuto={f.vinculado ? calcularAcumuladoFondo(gastos, f.vinculado) : undefined}
-                onCrearGasto={onAgregarGasto}
-              />
-            ))}
+            {fondosActivos.map(([nombre, f]) => renderTarjeta(nombre, f))}
+          </div>
+        )}
+        {fondosCerrados.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-slate-700/40">
+            <button
+              type="button"
+              onClick={() => setMostrarCerrados(v => !v)}
+              className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              {mostrarCerrados ? 'Ocultar archivados' : `Mostrar ${fondosCerrados.length} fondo${fondosCerrados.length === 1 ? '' : 's'} archivado${fondosCerrados.length === 1 ? '' : 's'}`}
+            </button>
+            {mostrarCerrados && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-3 opacity-80">
+                {fondosCerrados.map(([nombre, f]) => renderTarjeta(nombre, f))}
+              </div>
+            )}
           </div>
         )}
       </div>

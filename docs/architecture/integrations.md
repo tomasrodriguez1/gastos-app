@@ -133,12 +133,25 @@ gate global normal (sesión passkey o `ACCESS_TOKEN`), no un webhook con token p
 | Modelo default | `gpt-5.6-luna` (familia GPT-5.6, variante más rápida/económica — function calling + streaming + visión, 1M de contexto), configurable vía `OPENAI_MODEL`. Si se cambia el modelo, verificar que siga soportando input de imágenes |
 | Imágenes | El usuario puede adjuntar una o más fotos de boletas/vouchers en el mismo mensaje. `convertToModelMessages` las pasa al modelo sin transformación adicional — la conversión a `FileUIPart`/data URL ocurre en el cliente (`src/pages/AgentePage.jsx`). El prompt instruye a tratar cada imagen como un gasto potencialmente distinto y a preguntar (no asumir) si el monto de una foto no se lee con claridad |
 
+`POST /api/agente/transcribir` — transcribe una nota de voz grabada en el navegador
+(`MediaRecorder`, botón de micrófono en `AgenteChat.jsx`) vía Groq Whisper
+(`server/agente/transcripcion.js`). Recibe `multipart/form-data` con el campo `audio` (límite de
+20MB vía `hono/body-limit`), devuelve `{ texto }`. El texto se trata en el cliente exactamente
+como si el usuario lo hubiera escrito: llena el input del chat, **no se envía solo** — el usuario
+lo revisa/edita y aprieta "Enviar". A diferencia de la clasificación best-effort de
+`server/ingesta/groq.js`, acá un fallo se propaga como error explícito (503 sin `GROQ_API_KEY`,
+502 si Groq falla) porque el usuario está esperando activamente el resultado. Requiere
+`GROQ_API_KEY` (la misma que clasificación); modelo configurable vía `GROQ_WHISPER_MODEL`
+(default `whisper-large-v3-turbo`).
+
 ## AI / OCR
 
-**Groq** (`server/ingesta/groq.js`) — clasificación automática y fallback de extracción para
-gastos ingresados vía `/api/ingesta`. Best-effort: nunca bloquea la ingesta si falla, nunca
-confirma un gasto por sí solo (ver invariante en `server/ingesta.js`). Variable `GROQ_API_KEY`
-(opcional — sin ella, la ingesta sigue funcionando solo con el parser determinista).
+**Groq** (`server/ingesta/groq.js`, `server/agente/transcripcion.js`) — dos usos: clasificación
+automática y fallback de extracción para gastos ingresados vía `/api/ingesta` (best-effort, nunca
+bloquea la ingesta ni confirma un gasto por sí solo — ver invariante en `server/ingesta.js`), y
+transcripción de notas de voz del chat del agente (`POST /api/agente/transcribir`, no
+best-effort: un fallo se muestra al usuario). Variable `GROQ_API_KEY` (opcional — sin ella, la
+ingesta sigue funcionando solo con el parser determinista, y el botón de nota de voz responde 503).
 
 **OpenAI** (`server/agente.js`) — agente conversacional F3, con tool calling y streaming.
 Proveedor separado de Groq a propósito (ver DEC-011 en `docs/architecture/decisions.md`):
@@ -166,7 +179,8 @@ Los datos bancarios llegan indirectamente vía n8n. GAP: detalle de conexiones b
 | `VITE_N8N_WEBHOOK_URL` | .env (build time) | Dev + prod |
 | `CORS_ORIGIN` | .env | Dev (default localhost:6001) |
 | `INGESTA_TOKEN` | Coolify / .env | Todos (requerida para que `POST /api/ingesta` acepte requests) |
-| `GROQ_API_KEY` | Coolify / .env | Todos (opcional) |
+| `GROQ_API_KEY` | Coolify / .env | Todos (opcional — clasificación de ingesta y transcripción de voz) |
+| `GROQ_WHISPER_MODEL` | Coolify / .env | Todos (opcional, default `whisper-large-v3-turbo`) |
 | `OPENAI_API_KEY` | Coolify / .env | Todos (opcional — sin ella, `/api/agente/chat` responde 503) |
 
 ## Entornos

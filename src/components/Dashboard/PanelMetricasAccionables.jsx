@@ -1,5 +1,5 @@
 import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
-import { calcularTotalPrevisto, esGastoUsdPuro, montoPresupuestable } from '../../utils/calculos'
+import { calcularTotalPrevisto, esGastoUsdPuro, montoDelCiclo } from '../../utils/calculos'
 import { formatCLP, formatFecha, privacyFormat } from '../../utils/formatters'
 import { getSubcategoriaPresupuesto } from '../../utils/mapeo'
 import {
@@ -50,7 +50,7 @@ export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
   const gastosMes = gastos
     .filter(gasto => gasto.ciclo_financiero === mes)
     .filter(gasto => !esGastoUsdPuro(gasto))
-    .map(gasto => ({ ...gasto, montoCalculado: montoPresupuestable(gasto) || 0 }))
+    .map(gasto => ({ ...gasto, montoCalculado: montoDelCiclo(gasto) || 0 }))
     .filter(gasto => gasto.montoCalculado > 0)
 
   const diaCorte = getDiaCorte(gastosMes, mes)
@@ -85,7 +85,7 @@ export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
       const dia = obtenerDiaDelCiclo(g.fecha)
       return diaCorte === 0 || dia <= diaCorte
     })
-    .reduce((sum, g) => sum + montoPresupuestable(g), 0)
+    .reduce((sum, g) => sum + montoDelCiclo(g), 0)
   const hayDatosPrevio = gastos.some(g => g.ciclo_financiero === mesPrevio)
   const deltaMesPrevio = gastoAcumulado - gastoMesPrevio
 

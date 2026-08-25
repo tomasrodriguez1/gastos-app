@@ -14,7 +14,7 @@ import { PanelMetricasAccionables } from '../components/Dashboard/PanelMetricasA
 import { AlertasPresupuesto } from '../components/Dashboard/AlertasPresupuesto'
 import { obtenerCicloActual, obtenerCicloAnterior } from '../utils/ciclos'
 
-export function CashflowPage({ gastos, ciclos, obtenerPresupuesto, guardarPresupuesto, onSync, syncing, syncError, pendingSync, onConfirmarSync, onCancelarSync, catalogos, onAgregarGasto, onRefetchGastos }) {
+export function CashflowPage({ gastos, ciclos, obtenerPresupuesto, guardarPresupuesto, onSync, syncing, syncError, pendingSync, onConfirmarSync, onCancelarSync, catalogos, onAgregarGasto, onRefetchGastos, onActualizarGasto }) {
   const [ciclo, setCiclo] = useState(obtenerCicloActual)
   const [vista, setVista] = useState('ciclo')
   const presupuestoMes = obtenerPresupuesto(ciclo)
@@ -72,7 +72,7 @@ export function CashflowPage({ gastos, ciclos, obtenerPresupuesto, guardarPresup
             <AlertasPresupuesto gastos={gastos} mes={ciclo} presupuestoMes={presupuestoMes} />
           </div>
 
-          <FondosAhorro presupuestoMes={presupuestoMes} mes={ciclo} onGuardarPresupuesto={guardarPresupuesto} catalogos={catalogos} gastos={gastos} onAgregarGasto={onAgregarGasto} onRefetchGastos={onRefetchGastos} />
+          <FondosAhorro presupuestoMes={presupuestoMes} mes={ciclo} onGuardarPresupuesto={guardarPresupuesto} catalogos={catalogos} gastos={gastos} onAgregarGasto={onAgregarGasto} onRefetchGastos={onRefetchGastos} onActualizarGasto={onActualizarGasto} />
 
           <SemaforoCategorias
             gastos={gastos}

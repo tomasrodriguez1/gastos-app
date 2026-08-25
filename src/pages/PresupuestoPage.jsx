@@ -9,7 +9,7 @@ function generarCiclosFuturos(cantidad = 6) {
   return Array.from({ length: cantidad }, (_, index) => desplazarPeriodo(actual, index))
 }
 
-export function PresupuestoPage({ gastos, ciclos, obtenerPresupuesto, guardarPresupuesto, copiarCicloAnterior, catalogos, onAgregarGasto, onRefetchGastos }) {
+export function PresupuestoPage({ gastos, ciclos, obtenerPresupuesto, guardarPresupuesto, copiarCicloAnterior, catalogos, onAgregarGasto, onRefetchGastos, onActualizarGasto }) {
   const cicloActual = obtenerCicloActual()
   const ciclosConFuturos = [...new Set([...generarCiclosFuturos(6), ...ciclos])].sort().reverse()
 
@@ -82,6 +82,7 @@ export function PresupuestoPage({ gastos, ciclos, obtenerPresupuesto, guardarPre
         gastos={gastos}
         onAgregarGasto={onAgregarGasto}
         onRefetchGastos={onRefetchGastos}
+        onActualizarGasto={onActualizarGasto}
       />
     </main>
   )

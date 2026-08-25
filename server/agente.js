@@ -14,6 +14,7 @@
 // pasos, que el flujo de clasificación batch de mails no requiere.
 
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { streamText, tool, stepCountIs, convertToModelMessages, generateId } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { z } from 'zod'
@@ -29,10 +30,12 @@ import {
   listarConversaciones,
   obtenerConversacion,
 } from './agente/historial.js'
+import { transcribir } from './agente/transcripcion.js'
+import { cargarReservasActivas, registrarSaldo } from './reservas.js'
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-luna'
 
-function promptSistema(catalogos, hoy) {
+function promptSistema(catalogos, hoy, reservas) {
   return [
     'Sos un agente que ayuda a registrar gastos personales en español (Chile) a partir de una frase libre o de fotos de boletas/vouchers/comprobantes.',
     `Hoy es ${hoy}. Si el usuario dice "ayer", "el viernes pasado", etc., calculá la fecha real y respondé siempre en formato YYYY-MM-DD.`,
@@ -82,6 +85,20 @@ function promptSistema(catalogos, hoy) {
     'gasto — sigue pendiente hasta que la persona lo confirme en su bandeja. Solo podés editar',
     'gastos que sigan pendientes o en error_parseo; si ya fue confirmado, avisale que ya no se',
     'puede tocar desde acá.',
+    '',
+    'Saldos de reservas de ahorro (bolsillos externos, ej. Mercado Pago — mantención auto, patente,',
+    'vacaciones, plata para terceros): si el usuario adjunta una foto que muestra saldos de',
+    '"bolsillos"/reservas (no una boleta de compra), tu tarea es distinta a la de un gasto — extraé',
+    'cada nombre de bolsillo visible y su monto, y mapealo por nombre a una de estas reservas',
+    'activas (nunca inventes una reserva que no esté en la lista; si no reconocés el match,',
+    'preguntá o decí explícitamente que no la reconociste):',
+    `   Reservas activas: ${JSON.stringify(reservas.map(r => ({ id: r.id, nombre: r.nombre, emoji: r.emoji })))}`,
+    'Mostrale al usuario un resumen de qué leíste (reserva → monto) y esperá su confirmación',
+    'explícita en el turno siguiente — igual que con crear_gasto — antes de llamar a',
+    'registrar_saldos_reserva. Si el usuario corrige un monto antes de confirmar, actualizá el',
+    'resumen y volvé a preguntar. registrar_saldos_reserva es idempotente por fecha: si ya se',
+    'registró un saldo hoy y el usuario da un número distinto, se corrige solo, sin que hagas nada',
+    'especial — no hace falta ninguna tool de corrección aparte.',
   ].join('\n')
 }
 
@@ -246,9 +263,63 @@ function editarGastoToolFactory(catalogos) {
   })
 }
 
+// Registra saldo(s) de reserva leídos de una foto. A diferencia de crear_gasto,
+// escribe directo (sin estado 'pendiente' en DB) — nunca escribe a `gastos` ni
+// a `presupuesto_*`, solo lee de ahí para calcular el esperado, y es corregible
+// con un simple upsert por (reserva, fecha). La garantía de "el usuario vio el
+// número antes de que cuente" no es un gate de DB acá sino el mismo patrón
+// conversacional de crear_gasto: el prompt le pide al modelo mostrar el resumen
+// y esperar confirmación explícita antes de llamar a esta tool.
+function registrarSaldosReservaToolFactory(reservas) {
+  return tool({
+    description:
+      'Registra el/los saldo(s) leído(s) de una o más reservas (bolsillos de ahorro) para hoy o ' +
+      'la fecha indicada, y calcula si calzan contra lo esperado según los gastos de su categoría ' +
+      'vinculada. Idempotente por (reserva, fecha): un segundo llamado el mismo día corrige el anterior.',
+    inputSchema: z.object({
+      lecturas: z.array(z.object({
+        reservaId: z.number().int().describe('Id de la reserva, tomado de la lista de reservas activas'),
+        monto: z.number().describe('Saldo leído en la foto, en pesos chilenos'),
+        fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Fecha del saldo mostrado (normalmente hoy)'),
+      })).min(1).describe('Una entrada por cada bolsillo/reserva reconocido en la(s) foto(s)'),
+    }),
+    execute: async ({ lecturas }) => {
+      const resultados = []
+      for (const { reservaId, monto, fecha } of lecturas) {
+        const reserva = reservas.find(r => r.id === reservaId)
+        if (!reserva) {
+          resultados.push({ reservaId, error: 'No reconocí esa reserva.' })
+          continue
+        }
+        const r = await registrarSaldo({ reservaId, monto, fecha })
+        if (r.error) {
+          resultados.push({ reservaId, error: r.error })
+          continue
+        }
+        resultados.push({
+          reservaId,
+          nombre: reserva.nombre,
+          monto_leido: monto,
+          monto_esperado: r.montoEsperado,
+          diferencia: r.diferencia,
+          no_calza: r.noCalza,
+          resumen: r.montoEsperado == null
+            ? `${reserva.emoji} ${reserva.nombre}: primera lectura, sin línea base.`
+            : `${reserva.emoji} ${reserva.nombre}: leído $${monto} vs esperado $${Math.round(r.montoEsperado)}` +
+              (r.noCalza ? ` — ⚠ no calza (dif. $${Math.round(r.diferencia)})` : ' — cuadra'),
+        })
+      }
+      return { resultados }
+    },
+  })
+}
+
 export const agenteRouter = new Hono()
 
-agenteRouter.post('/chat', async (c) => {
+agenteRouter.post(
+  '/chat',
+  bodyLimit({ maxSize: 20 * 1024 * 1024, onError: (c) => c.json({ error: 'Mensaje demasiado grande (¿muchas fotos?)' }, 413) }),
+  async (c) => {
   if (!process.env.OPENAI_API_KEY) {
     return c.json({ error: 'Agente no configurado: falta OPENAI_API_KEY' }, 503)
   }
@@ -276,18 +347,19 @@ agenteRouter.post('/chat', async (c) => {
     await asegurarTitulo(conversacionId, texto)
   }
 
-  const catalogos = await cargarCatalogos()
+  const [catalogos, reservas] = await Promise.all([cargarCatalogos(), cargarReservasActivas()])
   const hoy = new Date().toISOString().slice(0, 10)
 
   const result = streamText({
     model: openai(OPENAI_MODEL),
-    system: promptSistema(catalogos, hoy),
+    system: promptSistema(catalogos, hoy, reservas),
     messages: await convertToModelMessages(messages),
     tools: {
       buscar_comercio: buscarComercioTool,
       crear_gasto: crearGastoToolFactory(catalogos),
       buscar_gastos_pendientes: buscarPendientesTool,
       editar_gasto: editarGastoToolFactory(catalogos),
+      registrar_saldos_reserva: registrarSaldosReservaToolFactory(reservas),
     },
     stopWhen: stepCountIs(8),
   })
@@ -299,7 +371,40 @@ agenteRouter.post('/chat', async (c) => {
       await guardarMensaje(conversacionId, responseMessage)
     },
   })
-})
+  },
+)
+
+// Transcripción de notas de voz (F3) — el texto resultante se trata en el
+// cliente exactamente como si el usuario lo hubiera escrito: llena el input
+// del chat, no se envía solo. Límite de body explícito porque no hay ninguno
+// configurado a nivel global y un audio en base64/multipart puede ser grande.
+agenteRouter.post(
+  '/transcribir',
+  bodyLimit({ maxSize: 20 * 1024 * 1024, onError: (c) => c.json({ error: 'Audio demasiado grande' }, 413) }),
+  async (c) => {
+    if (!process.env.GROQ_API_KEY) {
+      return c.json({ error: 'Transcripción no configurada: falta GROQ_API_KEY' }, 503)
+    }
+
+    let formData
+    try {
+      formData = await c.req.formData()
+    } catch {
+      return c.json({ error: 'Body inválido' }, 400)
+    }
+    const audio = formData.get('audio')
+    if (!(audio instanceof Blob) || audio.size === 0) {
+      return c.json({ error: 'Falta el audio' }, 400)
+    }
+
+    try {
+      const { texto } = await transcribir(audio)
+      return c.json({ texto })
+    } catch {
+      return c.json({ error: 'No se pudo transcribir el audio' }, 502)
+    }
+  },
+)
 
 agenteRouter.get('/conversaciones', async (c) => {
   const conversaciones = await listarConversaciones()

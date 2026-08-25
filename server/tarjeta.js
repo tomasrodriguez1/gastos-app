@@ -40,7 +40,7 @@ function desdeUnidades(valor, moneda) {
   return valor / (moneda === 'USD' ? 100 : 1)
 }
 
-function resolverCategoria(row, reglas) {
+export function resolverCategoria(row, reglas) {
   const manual = presupuestoManualDe(row)
   if (manual?.grupo && manual?.subcategoria) return manual
 

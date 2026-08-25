@@ -21,11 +21,27 @@ export function montoPresupuestable(g) {
   return Math.max(0, (montoReal(g) || 0) - (g.split || 0))
 }
 
+export function esFinanciadoPorFondo(g) {
+  return Boolean(g?.financiado_por)
+}
+
+// Importe que come el sobre del ciclo (sueldo vs gasto). Los usos de un fondo
+// de ahorro ya se apartaron en ciclos anteriores: cuentan en categorías, no acá.
+export function montoDelCiclo(g) {
+  if (esFinanciadoPorFondo(g)) return 0
+  return montoPresupuestable(g)
+}
+
+function montoAgregado(g, incluirFinanciados) {
+  return incluirFinanciados ? montoPresupuestable(g) : montoDelCiclo(g)
+}
+
 export function esGastoUsdPuro(g) {
   return g.usd > 0 && !g.monto && !g.monto_clp_manual
 }
 
-export function calcularGastosPorGrupo(gastos, ciclo) {
+export function calcularGastosPorGrupo(gastos, ciclo, opciones = {}) {
+  const incluirFinanciados = opciones.incluirFinanciados === true
   return gastos
     .filter(g => g.ciclo_financiero === ciclo)
     .filter(g => !esGastoUsdPuro(g))
@@ -36,7 +52,9 @@ export function calcularGastosPorGrupo(gastos, ciclo) {
         || getCategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
         || (g.estado === 'pendiente' || g.estado === 'error_parseo' ? SIN_CLASIFICAR : null)
       if (!grupo) return acc
-      acc[grupo] = (acc[grupo] || 0) + montoPresupuestable(g)
+      const monto = montoAgregado(g, incluirFinanciados)
+      if (!monto) return acc
+      acc[grupo] = (acc[grupo] || 0) + monto
       return acc
     }, {})
 }
@@ -45,7 +63,7 @@ export function calcularTotalMes(gastos, ciclo) {
   return gastos
     .filter(g => g.ciclo_financiero === ciclo)
     .filter(g => !esGastoUsdPuro(g))
-    .reduce((sum, g) => sum + montoPresupuestable(g), 0)
+    .reduce((sum, g) => sum + montoDelCiclo(g), 0)
 }
 
 // Returns all gastos that map to a specific grupo + subcategoria in the given mes
@@ -78,8 +96,10 @@ export function calcularGastosPorSubcategoria(gastos, ciclo) {
         || (g.estado === 'pendiente' || g.estado === 'error_parseo' ? { grupo: SIN_CLASIFICAR, subcategoria: 'Por revisar' } : null)
       if (!r) return
       const { grupo, subcategoria } = r
+      const monto = montoDelCiclo(g)
+      if (!monto) return
       if (!result[grupo]) result[grupo] = {}
-      result[grupo][subcategoria] = (result[grupo][subcategoria] || 0) + montoPresupuestable(g)
+      result[grupo][subcategoria] = (result[grupo][subcategoria] || 0) + monto
     })
   return result
 }
@@ -151,7 +171,7 @@ export function calcularTendenciaPorGrupo(gastos, cicloActual, cantidad = 6) {
     let m = mo - i, y = yr
     while (m <= 0) { m += 12; y-- }
     const mesStr = `${y}-${String(m).padStart(2, '0')}`
-    const porGrupo = calcularGastosPorGrupo(gastos, mesStr)
+    const porGrupo = calcularGastosPorGrupo(gastos, mesStr, { incluirFinanciados: true })
     Object.keys(porGrupo).forEach(g => grupos.add(g))
     meses.push({ mes: mesStr, ...porGrupo })
   }
@@ -165,7 +185,7 @@ export function calcularVelocidadDiaria(gastos, ciclo, presupuestoTotal) {
     .filter(g => g.ciclo_financiero === ciclo && !esGastoUsdPuro(g))
     .forEach(g => {
       const d = obtenerDiaDelCiclo(g.fecha)
-      porFecha[d] = (porFecha[d] || 0) + montoPresupuestable(g)
+      porFecha[d] = (porFecha[d] || 0) + montoDelCiclo(g)
     })
   let acumulado = 0
   return Array.from({ length: diasEnMes }, (_, i) => {
@@ -190,7 +210,9 @@ export function calcularGastosPorGrupoDesdeArray(gastosArray) {
         || getCategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
         || (g.estado === 'pendiente' || g.estado === 'error_parseo' ? SIN_CLASIFICAR : null)
       if (!grupo) return acc
-      acc[grupo] = (acc[grupo] || 0) + montoPresupuestable(g)
+      const monto = montoDelCiclo(g)
+      if (!monto) return acc
+      acc[grupo] = (acc[grupo] || 0) + monto
       return acc
     }, {})
 }
@@ -218,8 +240,8 @@ function promedioArr(valores) {
 // Compara un mes contra el anterior y contra el promedio de los `ventana` meses previos (solo meses con datos).
 export function calcularComparadorMensual(gastos, mes, ventana = 6) {
   const mesAnterior = obtenerMesAnterior(mes)
-  const actualPorGrupo = calcularGastosPorGrupo(gastos, mes)
-  const anteriorPorGrupo = calcularGastosPorGrupo(gastos, mesAnterior)
+  const actualPorGrupo = calcularGastosPorGrupo(gastos, mes, { incluirFinanciados: true })
+  const anteriorPorGrupo = calcularGastosPorGrupo(gastos, mesAnterior, { incluirFinanciados: true })
 
   const mesesVentana = []
   let m = mes
@@ -232,7 +254,7 @@ export function calcularComparadorMensual(gastos, mes, ventana = 6) {
   ))
   const sumaPorGrupo = {}
   mesesConDatos.forEach(mv => {
-    Object.entries(calcularGastosPorGrupo(gastos, mv)).forEach(([grupo, v]) => {
+    Object.entries(calcularGastosPorGrupo(gastos, mv, { incluirFinanciados: true })).forEach(([grupo, v]) => {
       sumaPorGrupo[grupo] = (sumaPorGrupo[grupo] || 0) + v
     })
   })
@@ -283,10 +305,12 @@ export function calcularTendenciasCategorias(gastos, mesHasta, cantidad = 6) {
 }
 
 // Sum of gastos assigned to a specific grupo/subcategoria, optionally from vinculado.desde onwards.
+// Los usos de un fondo (financiado_por) nunca son aportes, aunque caigan en la misma línea.
 export function calcularAcumuladoFondo(gastos, vinculado) {
   if (!vinculado) return 0
   return gastos
     .filter(g => !esGastoUsdPuro(g))
+    .filter(g => !esFinanciadoPorFondo(g))
     .filter(g => !vinculado.desde || g.ciclo_financiero >= vinculado.desde)
     .reduce((sum, g) => {
       const ctx = g.contexto_override || g.contexto || ''
@@ -297,4 +321,29 @@ export function calcularAcumuladoFondo(gastos, vinculado) {
       }
       return sum
     }, 0)
+}
+
+export function montoUsoFondo(g) {
+  if (g.estado === 'descartado' || esGastoUsdPuro(g)) return 0
+  if (g.monto_presupuesto_manual != null) return g.monto_presupuesto_manual
+  return Math.max(0, (montoReal(g) || 0) - (g.split || 0))
+}
+
+export function listarUsosFondo(gastos, nombreFondo) {
+  return gastos
+    .filter(g => g.financiado_por === nombreFondo)
+    .filter(g => !esGastoUsdPuro(g) && g.estado !== 'descartado')
+    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
+}
+
+export function calcularUsadoFondo(gastos, nombreFondo) {
+  return listarUsosFondo(gastos, nombreFondo).reduce((sum, g) => sum + montoUsoFondo(g), 0)
+}
+
+export function calcularSaldoFondo(fondo, nombre, gastos) {
+  const aportes = fondo?.vinculado
+    ? calcularAcumuladoFondo(gastos, fondo.vinculado)
+    : (fondo?.acumulado || 0)
+  const usado = calcularUsadoFondo(gastos, nombre)
+  return { aportes, usado, saldo: aportes - usado }
 }

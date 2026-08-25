@@ -39,6 +39,12 @@ export function AgenteChatProvider({ onRefetchGastos, children }) {
   const [historial, setHistorial] = useState({ items: [], cargando: false })
   const gastosNotificados = useRef(new Set())
 
+  const [grabando, setGrabando] = useState(false)
+  const [transcribiendo, setTranscribiendo] = useState(false)
+  const [errorGrabacion, setErrorGrabacion] = useState(null)
+  const mediaRecorderRef = useRef(null)
+  const chunksRef = useRef([])
+
   const { messages, sendMessage, status, error, setMessages } = useChat({
     id: conversacionId,
     transport: new DefaultChatTransport({ api: '/api/agente/chat', body: { conversacionId } }),
@@ -129,6 +135,52 @@ export function AgenteChatProvider({ onRefetchGastos, children }) {
     agregarArchivos(imagenes)
   }
 
+  function mimeTypeSoportado() {
+    const candidatos = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+    return candidatos.find(tipo => MediaRecorder.isTypeSupported?.(tipo))
+  }
+
+  async function iniciarGrabacion() {
+    setErrorGrabacion(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = mimeTypeSoportado()
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      chunksRef.current = []
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+      recorder.onstop = () => {
+        stream.getTracks().forEach(track => track.stop())
+        void enviarGrabacion(new Blob(chunksRef.current, { type: recorder.mimeType }))
+      }
+      mediaRecorderRef.current = recorder
+      recorder.start()
+      setGrabando(true)
+    } catch {
+      setErrorGrabacion('No se pudo acceder al micrófono. Revisá los permisos del navegador.')
+    }
+  }
+
+  function detenerGrabacion() {
+    mediaRecorderRef.current?.stop()
+    setGrabando(false)
+  }
+
+  async function enviarGrabacion(blob) {
+    setTranscribiendo(true)
+    try {
+      const formData = new FormData()
+      formData.append('audio', blob)
+      const res = await fetch('/api/agente/transcribir', { method: 'POST', body: formData })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data?.texto) throw new Error(data?.error || 'Transcripción falló')
+      setInput(prev => (prev.trim() ? `${prev.trim()} ${data.texto}` : data.texto))
+    } catch {
+      setErrorGrabacion('No se pudo transcribir el audio. Probá de nuevo o escribí el gasto.')
+    } finally {
+      setTranscribiendo(false)
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     const texto = input.trim()
@@ -151,6 +203,7 @@ export function AgenteChatProvider({ onRefetchGastos, children }) {
     archivos, agregarArchivos, quitarArchivo,
     messages, status, error, enviando,
     handlePaste, handleSubmit,
+    grabando, transcribiendo, errorGrabacion, iniciarGrabacion, detenerGrabacion,
     conversacionId, nuevaConversacion, cambiarConversacion,
     historial, cargarHistorial,
   }

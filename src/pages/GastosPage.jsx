@@ -20,7 +20,7 @@ const FILTROS_INIT = {
   mesCalendario: '',
 }
 
-export function GastosPage({ gastos, gastosLocales, ciclos, mesesCalendario, onAgregarGasto, onEliminarGasto, onActualizarGasto, catalogos, onSync, syncing, syncError, pendingSync, onConfirmarSync, onCancelarSync }) {
+export function GastosPage({ gastos, gastosLocales, ciclos, mesesCalendario, onAgregarGasto, onEliminarGasto, onActualizarGasto, catalogos, onSync, syncing, syncError, pendingSync, onConfirmarSync, onCancelarSync, obtenerPresupuesto }) {
   const [ciclo, setCiclo] = useState(obtenerCicloActual)
   const [filtros, setFiltros] = useState(FILTROS_INIT)
   const [mostrarForm, setMostrarForm] = useState(false)
@@ -50,6 +50,8 @@ export function GastosPage({ gastos, gastosLocales, ciclos, mesesCalendario, onA
     })
     return [...set].sort()
   }, [gastosCiclo])
+
+  const nombresFondos = Object.keys(obtenerPresupuesto?.(ciclo)?.fondos || {})
 
   const gastosFiltrados = useMemo(() => {
     return gastosCiclo
@@ -180,7 +182,7 @@ export function GastosPage({ gastos, gastosLocales, ciclos, mesesCalendario, onA
         todosTipos={catalogos?.tipos}
         mesesCalendario={mesesCalendario}
       />
-      <TablaGastos gastos={gastosFiltrados} onEliminar={onEliminarGasto} onActualizar={onActualizarGasto} catalogos={catalogos} />
+      <TablaGastos gastos={gastosFiltrados} onEliminar={onEliminarGasto} onActualizar={onActualizarGasto} catalogos={catalogos} nombresFondos={nombresFondos} />
 
       {mostrarForm && (
         <FormNuevoGasto

@@ -81,6 +81,7 @@ bun run migrate:pg  # migración SQLite→PG (one-shot)
 | Mapeo | `src/utils/mapeo.js`, `regla_mapeo` |
 | Sync n8n | `src/hooks/useSyncN8n.js` |
 | Duplicados | `server/duplicados.js` |
+| Reservas de ahorro | `server/reservas.js` |
 | Schema | `server/db/schema.pg.sql` |
 
 ## Referencia legacy

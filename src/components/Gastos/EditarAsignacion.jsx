@@ -14,7 +14,7 @@ const BANCOS_DEFAULT = ['Edwards', 'BICE', 'TC Papa', 'Otro', 'Transferencia', '
 
 const esUsdPuro = g => g.usd > 0 && !g.monto
 
-export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos }) {
+export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos, nombresFondos = [] }) {
   const gruposPresupuesto = catalogos?.gruposPresupuesto && Object.keys(catalogos.gruposPresupuesto).length
     ? catalogos.gruposPresupuesto
     : GRUPOS_PRESUPUESTO
@@ -32,6 +32,7 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos }) {
   const [pagado, setPagado] = useState(!!gasto.pagado)
   const [plataEnCuenta, setPlataEnCuenta] = useState(!!gasto.plata_en_cuenta)
   const [enPresupuesto, setEnPresupuesto] = useState(gasto.en_presupuesto !== false)
+  const [financiadoPor, setFinanciadoPor] = useState(gasto.financiado_por || '')
 
   // Presupuesto overrides
   const [contextoOverride, setContextoOverride] = useState(gasto.contexto_override ?? '')
@@ -68,6 +69,7 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos }) {
       pagado: pagado ? 1 : 0,
       plata_en_cuenta: plataEnCuenta,
       en_presupuesto: enPresupuesto,
+      financiado_por: financiadoPor || null,
       contexto_override: contextoOverride || null,
       presupuesto_manual: grupo && subcategoria ? { grupo, subcategoria } : null,
       monto_presupuesto_manual: Number(montoParcial) > 0 ? Number(montoParcial) : null,
@@ -270,6 +272,21 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos }) {
               >
                 {enPresupuesto ? 'Incluido' : 'Excluido'}
               </button>
+            </div>
+
+            <div>
+              <label className="text-xs text-slate-500 uppercase tracking-wider block mb-1.5">Financiado por fondo</label>
+              <select
+                value={financiadoPor}
+                onChange={e => setFinanciadoPor(e.target.value)}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500"
+              >
+                <option value="">Ninguno (sale del ciclo)</option>
+                {[...new Set([gasto.financiado_por, ...nombresFondos].filter(Boolean))].map(nombre => (
+                  <option key={nombre} value={nombre}>{nombre}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-600 mt-1.5">No cuenta contra el sueldo del ciclo; baja el saldo del fondo.</p>
             </div>
 
             {/* Contexto override */}

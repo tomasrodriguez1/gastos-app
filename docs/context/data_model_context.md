@@ -31,6 +31,7 @@ Tabla única para gastos sincronizados y manuales.
 | `pagado` | BOOLEAN | Marcado como pagado |
 | `plata_en_cuenta` | BOOLEAN | El importe completo del gasto ya está reservado en el fondo de pago de TC |
 | `en_presupuesto` | BOOLEAN | Si el gasto impacta las agregaciones presupuestarias |
+| `financiado_por` | TEXT | Nombre del fondo de ahorro que financió el gasto; NULL si sale del ciclo |
 | `conciliado` | BOOLEAN | El movimiento fue incluido en un estado de cuenta cuyo total cuadró |
 | `estado` | TEXT | `confirmado` (default, todo lo pre-existente) \| `pendiente` \| `error_parseo` \| `descartado` — ver "Bandeja de ingesta" abajo |
 | `origen` | TEXT | `manual` (default) \| `mail` \| `chat` (F3, agente conversacional) — de dónde entró el gasto |
@@ -44,6 +45,7 @@ Tabla única para gastos sincronizados y manuales.
 **Reglas de negocio:**
 
 - Monto efectivo siempre vía `montoReal()` en `src/utils/calculos.js`; el impacto presupuestario usa `montoPresupuestable()` para aplicar `en_presupuesto` y `split` sin alterar ese monto base.
+- Un gasto con `financiado_por` sigue visible en análisis de categorías (`incluirFinanciados: true`) pero no come el sobre del ciclo: `montoDelCiclo()` lo trata como 0 (la plata ya se apartó en aportes al fondo).
 - Sync UPSERT preserva overrides manuales con `COALESCE`.
 - Filas pure-USD excluidas de totales agregados.
 - UI puede usar `fecha|motivo` como id lógico; PATCH/DELETE usan UUID o `sync_key`.
@@ -71,11 +73,13 @@ categoría. Gastos `confirmado` sin grupo (tipos como `Ajuste`/`Turno`/`Otro`, v
 | `presupuesto_ciclo` | Cabecera por ciclo financiero (`ciclo` PK) |
 | `presupuesto_ingreso` | Ingresos por fuente |
 | `presupuesto_categoria` | Previsto por grupo/subcategoría + flag `fgp` |
-| `presupuesto_fondo` | Fondos de ahorro con `vinculado` JSON, `fecha_meta`, `emoji` |
+| `presupuesto_fondo` | Fondos de ahorro con `vinculado` JSON, `fecha_meta`, `emoji`, `estado` (`activo`\|`cerrado`) |
 
 **PUT presupuesto:** reemplazo por sección dentro del ciclo (solo las secciones enviadas se borran/reescriben).
 
 **`vinculado` JSON:** `{ grupo, subcategoria, desde? }` — cambios propagan a gastos vinculados.
+
+**Uso del fondo:** no se borra ni se cubre con un ingreso falso. El gasto real queda con `financiado_por = nombre del fondo`; el saldo mostrado es `aportes − usos`. `estado='cerrado'` lo archiva (sigue en el ciclo, no se copia al siguiente). Renombrar el fondo actualiza `gastos.financiado_por`.
 
 ### Catálogos
 
@@ -167,6 +171,36 @@ representa que el gasto formó parte de un estado cuadrado; `pagado=true` se asi
 el pago efectivamente salió. Fondo actual y falta depositar siguen incluyendo conciliados mientras
 no estén pagados.
 
+### `reserva` / `reserva_saldo`
+
+Bolsillos de ahorro externos (ej. Mercado Pago: mantención auto, patente, vacaciones, plata
+para terceros como Ale/FGP), con historial de saldos leídos por foto vía el agente conversacional
+(F6, ver `context.md`). **No confundir con `reserva_tarjeta`** (arriba): esa es un valor único por
+banco sin historial; `reserva` es un catálogo persistente (`nombre`, `vinculado`, `tasa_anual`,
+`activa`) con snapshots en `reserva_saldo` (`fecha`, `monto_leido`, `monto_esperado`, `diferencia`).
+Ambas coexisten por el mismo motivo: standalone, fuera del ciclo de presupuesto, para no fusionarse
+con `presupuesto_fondo` (que se recrea/reemplaza cada mes vía PUT).
+
+```sql
+reserva(id, nombre UNIQUE, emoji, vinculado JSONB {grupo, subcategoria?}, tasa_anual, activa)
+reserva_saldo(id, reserva_id FK, fecha, monto_leido, monto_esperado, diferencia, origen, UNIQUE(reserva_id, fecha))
+```
+
+**Cálculo del esperado** (`calcularSaldoEsperado` en `server/reservas.js`): a diferencia de
+`presupuesto_fondo.vinculado` (que no tiene ningún cómputo automático server-side hoy — su
+`acumulado` se escribe a mano desde el PUT), `reserva` sí calcula: retiros = suma de `gastos.monto`
+(bruto, igual criterio que la deuda de tarjeta en `tarjeta.js` — no usa `montoPresupuestable()`)
+de gastos `estado='confirmado'` entre el snapshot anterior y el nuevo, cuya categoría —
+**resuelta reutilizando `resolverCategoria()` de `server/tarjeta.js`**, no `presupuesto_manual @>`
+directo, porque ese campo solo se llena con overrides explícitos — matchea `vinculado`.
+`subcategoria` ausente en `vinculado` = cuenta toda la categoría (grupo). Se suma además un
+crecimiento estimado por interés simple prorrateado según `tasa_anual` (default 3%/año, aprox.
+de lo que rinde el dinero en Mercado Pago). Gastos en USD puro quedan fuera del cálculo (sin FX
+confiable server-side) y se reportan aparte, no se esconden.
+
+**Corrección de una lectura:** no hay tool ni estado de revisión aparte — `UNIQUE(reserva_id,
+fecha)` hace que un segundo `registrar_saldos_reserva` el mismo día haga upsert sobre el anterior.
+
 ### Autenticación (WebAuthn / Passkeys)
 
 Ver DEC-009 en `docs/architecture/decisions.md`. Reemplaza `ACCESS_TOKEN` (que se mantiene
@@ -201,7 +235,10 @@ presupuesto_ciclo 1──* presupuesto_fondo
 catalogo_grupo 1──* catalogo_subcategoria
 gastos.presupuesto_manual → grupo/subcategoria (JSON, no FK)
 presupuesto_fondo.vinculado → grupo/subcategoria (JSON)
+gastos.financiado_por → presupuesto_fondo.nombre (convención, no FK)
 reserva_tarjeta.banco ~ gastos.banco (convención, no FK)
+reserva 1──* reserva_saldo
+reserva.vinculado → grupo/subcategoria (JSON, no FK) — mismo shape que presupuesto_fondo.vinculado
 ```
 
 ## Máquinas de estado
@@ -232,6 +269,8 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | — | `comercio_mapeo` (PG-only, `server/db/migrate-comercios.js`) — memoria de comercios (F2) |
 | — | `plata_en_cuenta`, `en_presupuesto`, `conciliado` en `gastos` (PG-only, `server/db/migrate-tarjeta-reconciliacion.js`) — reconciliación F5 |
 | — | `agente_conversaciones`, `agente_mensajes` (PG-only, `server/db/migrate-agente-historial.js`) — historial del agente conversacional (F3) |
+| — | `gastos.financiado_por`, `presupuesto_fondo.estado` (PG-only, `server/db/migrate-fondo-uso.js`) — uso de fondos de ahorro |
+| — | `reserva`, `reserva_saldo` (PG-only, `server/db/migrate-reservas.js`) — tracking de saldos reales vs esperados en reservas externas (F6) |
 
 **PG:** schema aplicado vía `initSchema()` leyendo `schema.pg.sql`. GAP: sistema de migraciones versionadas para PG — las tablas nuevas siguen el mismo patrón `CREATE TABLE IF NOT EXISTS` que el resto del archivo.
 
@@ -245,6 +284,11 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
   `estado='confirmado'` — el agente solo crea, nunca confirma (ver `server/agente.js`).
 - Ni Groq ni el agente conversacional pueden escribir `tipos`/`contexto` fuera del catálogo
   real (`catalogo_tipo`/`catalogo_contexto`) — filtro duro server-side en ambos casos.
-- Preservación de `presupuesto_manual`, `contexto_override`, `monto_clp_manual`, `monto_presupuesto_manual` en sync.
+- Preservación de `presupuesto_manual`, `contexto_override`, `monto_clp_manual`, `monto_presupuesto_manual`, `financiado_por` en sync.
+- `registrar_saldos_reserva` (agente, F6) escribe directo en `reserva_saldo` sin gate de estado
+  en DB (a diferencia de `crear_gasto`/`editar_gasto`) — la garantía de "el usuario vio el dato
+  antes de que cuente" vive en el prompt (`server/agente.js`), que debe mostrar el resumen leído
+  y esperar confirmación explícita en el turno siguiente antes de llamar a la tool. No quitar
+  ese paso del prompt sin agregar un mecanismo de revisión equivalente.
 - Integridad referencial presupuesto → `presupuesto_ciclo`.
 - Orden de prioridad en `regla_mapeo`.

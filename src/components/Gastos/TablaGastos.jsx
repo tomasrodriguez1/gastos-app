@@ -47,6 +47,18 @@ function PresupuestoBadge({ g }) {
   )
 }
 
+function FondoBadge({ g }) {
+  if (!g.financiado_por) return null
+  return (
+    <span
+      className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-400 shrink-0"
+      title={`Financiado por ${g.financiado_por}`}
+    >
+      {g.financiado_por}
+    </span>
+  )
+}
+
 function EstadoBadge({ estado }) {
   if (estado === 'pendiente') {
     return (
@@ -103,7 +115,7 @@ function MontoCell({ g }) {
   )
 }
 
-export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, destacarIds }) {
+export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, destacarIds, nombresFondos = [] }) {
   const [editando, setEditando] = useState(null)
   const [confirmandoId, setConfirmandoId] = useState(null)
 
@@ -165,6 +177,7 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, desta
                       {formatFecha(g.fecha)}
                     </span>
                     <PresupuestoBadge g={g} />
+                    <FondoBadge g={g} />
                     {(g.tipos || []).slice(0, 2).map(t => <Badge key={t} tipo={t} />)}
                   </div>
 
@@ -288,6 +301,7 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, desta
                       <div className="min-w-0">
                         <div className="truncate" title={g.motivo}>{g.motivo}</div>
                         <ContextoBadge g={g} />
+                        {g.financiado_por && <div className="mt-0.5"><FondoBadge g={g} /></div>}
                       </div>
                     </div>
                   </td>
@@ -394,6 +408,7 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, desta
           onGuardar={changes => handleGuardar(editando, changes)}
           onCerrar={() => setEditando(null)}
           catalogos={catalogos}
+          nombresFondos={nombresFondos}
         />
       )}
     </>

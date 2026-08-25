@@ -1,4 +1,5 @@
-import { NavLink } from 'react-router-dom'
+import { useState } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -111,11 +112,37 @@ function IconOjo({ open }) {
   )
 }
 
+function IconMas() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 // ─── Sidebar desktop (sin cambios) ───────────────────────────────────────────
+
+const MOBILE_NAV_PRINCIPAL = [
+  { to: '/', end: true, icon: IconDashboard, label: 'Dashboard' },
+  { to: '/gastos', icon: IconGastos, label: 'Gastos' },
+  { to: '/agente', icon: IconAgente, label: 'Agente' },
+  { to: '/presupuesto', icon: IconPresupuesto, label: 'Presup.' },
+]
+
+const MOBILE_NAV_MAS = [
+  { to: '/cashflow', icon: IconCashflow, label: 'Cashflow' },
+  { to: '/analisis', icon: IconAnalisis, label: 'Análisis' },
+  { to: '/tarjeta', icon: IconTarjeta, label: 'Tarjeta' },
+  { to: '/passkeys', icon: IconLlave, label: 'Cuenta' },
+]
 
 export function Sidebar() {
   const { isPrivacyModeEnabled, togglePrivacyMode } = usePrivacyMode()
   const { logout } = useAuth()
+  const location = useLocation()
+  const [menuMasAbierto, setMenuMasAbierto] = useState(false)
 
   const navClass = ({ isActive }) =>
     `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
@@ -130,6 +157,8 @@ export function Sidebar() {
         ? 'text-[var(--accent)]'
         : 'text-muted'
     }`
+
+  const rutaActivaEnMas = MOBILE_NAV_MAS.some((item) => item.to === location.pathname)
 
   return (
     <>
@@ -169,49 +198,68 @@ export function Sidebar() {
       </aside>
 
       {/* ── Mobile bottom nav ───────────────────────────────────── */}
+      {menuMasAbierto && (
+        <div
+          className="fixed inset-0 z-[199] md:hidden bg-black/50"
+          onClick={() => setMenuMasAbierto(false)}
+        />
+      )}
+
       <nav className="fixed bottom-0 inset-x-0 z-[200] md:hidden border-t border-slate-800 bg-[var(--background)]/95 backdrop-blur pb-safe">
+        {menuMasAbierto && (
+          <div className="border-b border-slate-800 px-3 pt-3 pb-2">
+            <div className="grid grid-cols-4 gap-1">
+              {MOBILE_NAV_MAS.map(({ to, icon: Icon, label }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={mobileNavClass}
+                  onClick={() => setMenuMasAbierto(false)}
+                >
+                  <Icon />
+                  <span>{label}</span>
+                </NavLink>
+              ))}
+              <button
+                onClick={() => {
+                  togglePrivacyMode()
+                  setMenuMasAbierto(false)
+                }}
+                className={`flex flex-col items-center gap-1 px-2 py-1 text-xs font-medium transition-colors min-w-0 ${
+                  isPrivacyModeEnabled ? 'text-[var(--accent)]' : 'text-muted'
+                }`}
+              >
+                <IconOjo open={!isPrivacyModeEnabled} />
+                <span>{isPrivacyModeEnabled ? 'Mostrar' : 'Ocultar'}</span>
+              </button>
+              <button
+                onClick={() => {
+                  setMenuMasAbierto(false)
+                  logout()
+                }}
+                className="flex flex-col items-center gap-1 px-2 py-1 text-xs font-medium text-muted transition-colors min-w-0"
+              >
+                <IconLogout />
+                <span>Salir</span>
+              </button>
+            </div>
+          </div>
+        )}
         <div className="flex items-center h-16 px-1">
-          <NavLink to="/" end className={mobileNavClass}>
-            <IconDashboard />
-            <span>Dashboard</span>
-          </NavLink>
-          <NavLink to="/cashflow" className={mobileNavClass}>
-            <IconCashflow />
-            <span>Cashflow</span>
-          </NavLink>
-          <NavLink to="/analisis" className={mobileNavClass}>
-            <IconAnalisis />
-            <span>Análisis</span>
-          </NavLink>
-          <NavLink to="/gastos" className={mobileNavClass}>
-            <IconGastos />
-            <span>Gastos</span>
-          </NavLink>
-          <NavLink to="/agente" className={mobileNavClass}>
-            <IconAgente />
-            <span>Agente</span>
-          </NavLink>
-          <NavLink to="/tarjeta" className={mobileNavClass}>
-            <IconTarjeta />
-            <span>Tarjeta</span>
-          </NavLink>
-          <NavLink to="/presupuesto" className={mobileNavClass}>
-            <IconPresupuesto />
-            <span>Presup.</span>
-          </NavLink>
-          <NavLink to="/passkeys" className={mobileNavClass}>
-            <IconLlave />
-            <span>Cuenta</span>
-          </NavLink>
+          {MOBILE_NAV_PRINCIPAL.map(({ to, end, icon: Icon, label }) => (
+            <NavLink key={to} to={to} end={end} className={mobileNavClass}>
+              <Icon />
+              <span>{label}</span>
+            </NavLink>
+          ))}
           <button
-            onClick={togglePrivacyMode}
+            onClick={() => setMenuMasAbierto((v) => !v)}
             className={`flex flex-col items-center gap-1 px-2 py-1 text-xs font-medium transition-colors min-w-0 flex-1 ${
-              isPrivacyModeEnabled ? 'text-[var(--accent)]' : 'text-muted'
+              menuMasAbierto || rutaActivaEnMas ? 'text-[var(--accent)]' : 'text-muted'
             }`}
-            title={isPrivacyModeEnabled ? 'Mostrar montos' : 'Ocultar montos'}
           >
-            <IconOjo open={!isPrivacyModeEnabled} />
-            <span>{isPrivacyModeEnabled ? 'Mostrar' : 'Ocultar'}</span>
+            <IconMas />
+            <span>Más</span>
           </button>
         </div>
       </nav>

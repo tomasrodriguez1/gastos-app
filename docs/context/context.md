@@ -18,7 +18,7 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 
 | Ruta | Propósito |
 |------|-----------|
-| `/` | Dashboard: resumen del ciclo financiero, gráficos, semáforos por categoría, fondos de ahorro |
+| `/` | Dashboard: resumen del ciclo financiero, gráficos, semáforos por categoría, fondos de ahorro (aportar / usar / archivar) |
 | `/cashflow` | Vista de flujo de caja con sincronización n8n |
 | `/analisis` | Análisis histórico: comparador por ciclos, tendencias por categoría, gastos recurrentes |
 | `/gastos` | Tabla de gastos por ciclo (sync + manuales), filtro secundario por mes calendario, asignación presupuestaria y duplicados |
@@ -106,6 +106,27 @@ de chat (`src/components/Agente/AgenteChat.jsx`) — escribir en uno y mirar el 
 misma conversación. El panel flotante no embebe la tabla de bandeja completa (un `TablaGastos`
 angosto se ve mal — cambia de layout por *viewport width*, no por ancho de contenedor); en su
 lugar linkea a `/bandeja` vía `BotonBandeja`.
+
+**Nota de voz:** el botón de micrófono en `AgenteChat.jsx` graba audio con `MediaRecorder` y lo
+manda a `POST /api/agente/transcribir` (Groq Whisper, `server/agente/transcripcion.js`), que
+devuelve `{ texto }`. Ese texto llena el input del chat como si el usuario lo hubiera escrito —
+no se envía automáticamente, se revisa/edita antes de apretar "Enviar". Requiere `GROQ_API_KEY`;
+sin ella el botón falla con 503 sin afectar el resto del chat. Detalle en
+`docs/architecture/integrations.md`.
+
+**Reservas de ahorro (F6):** además de gastos, el agente puede registrar saldos leídos de una
+foto de reservas externas (ej. Mercado Pago: mantención auto, patente, vacaciones, plata para
+terceros) con la tool `registrar_saldos_reserva`. Las reservas activas (`reserva`, ver
+`docs/context/data_model_context.md`) se inyectan en el system prompt igual que tipos/contexto,
+así el modelo mapea por nombre sin necesitar una tool de lookup — nunca crea una reserva nueva
+por su cuenta (eso es solo vía `POST /api/reservas`, fuera del agente). A diferencia de
+`crear_gasto`, la tool escribe el saldo directo (sin `estado='pendiente'`, porque no es una
+transacción — solo lee de `gastos` para calcular el esperado, nunca escribe ahí) pero el prompt
+igual le exige al modelo mostrar el resumen leído y esperar confirmación explícita del usuario
+en el turno siguiente antes de llamar a la tool. Es idempotente por `(reserva, fecha)`: una
+corrección posterior el mismo día es solo volver a llamarla con el monto correcto. Detalle del
+cálculo de "esperado" (retiros implícitos por categoría vinculada + crecimiento estimado) en
+`docs/context/data_model_context.md`.
 
 **Historial de conversaciones (persistencia):** cada mensaje (`UIMessage` con su `parts[]`,
 incluidos los tool-calls) se guarda en `agente_conversaciones`/`agente_mensajes`
