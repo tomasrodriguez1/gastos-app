@@ -146,6 +146,29 @@ CREATE TABLE IF NOT EXISTS comercio_mapeo (
 
 CREATE INDEX IF NOT EXISTS idx_comercio_veces ON comercio_mapeo(veces_confirmado DESC);
 
+-- ─── HISTORIAL DEL AGENTE CONVERSACIONAL (F3) ───────────────────────────────
+-- Una conversación = una sesión de /agente; los mensajes guardan sus UIMessage
+-- parts (texto, adjuntos, tool-calls) tal cual llegan del stream, para poder
+-- reconstruir tanto el diálogo como las acciones (crear/editar gasto) al reabrir.
+
+CREATE TABLE IF NOT EXISTS agente_conversaciones (
+  id          TEXT PRIMARY KEY,
+  titulo      TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS agente_mensajes (
+  id               TEXT PRIMARY KEY,
+  conversacion_id  TEXT NOT NULL REFERENCES agente_conversaciones(id) ON DELETE CASCADE,
+  role             TEXT NOT NULL,
+  parts            JSONB NOT NULL,
+  created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agente_mensajes_conversacion ON agente_mensajes(conversacion_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_agente_conversaciones_updated ON agente_conversaciones(updated_at DESC);
+
 -- ─── DUPLICADOS ──────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS duplicado_exclusion (

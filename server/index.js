@@ -14,6 +14,7 @@ import { tarjetaRouter } from './tarjeta.js'
 import { createAuthMiddleware } from './auth.js'
 import { migrateComercios } from './db/migrate-comercios.js'
 import { migrateTarjetaReconciliacion } from './db/migrate-tarjeta-reconciliacion.js'
+import { migrateAgenteHistorial } from './db/migrate-agente-historial.js'
 import { listarComercios, olvidarComercio } from './comercios.js'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
 import { deserializarGasto } from './gastos/serializacion.js'
@@ -28,6 +29,7 @@ await migrateFinancialCycles()
 await migrateIngesta()
 await migrateComercios()
 await migrateTarjetaReconciliacion()
+await migrateAgenteHistorial()
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()
 }

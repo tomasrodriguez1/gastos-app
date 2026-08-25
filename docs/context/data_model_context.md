@@ -120,6 +120,21 @@ en `estado='confirmado'`, hace upsert best-effort (`server/comercios.js:aprender
 nunca hace fallar el guardado del gasto. No aprende de gastos `pendiente` editados, solo de
 confirmaciones.
 
+### Historial del agente conversacional (F3)
+
+| Tabla | Propósito |
+|-------|-----------|
+| `agente_conversaciones` | Una fila por sesión de `/agente`: `id` (TEXT PK, generado client-side), `titulo` (derivado del primer texto del usuario, `LEFT(texto, 60)`, se fija una sola vez), `created_at`, `updated_at` |
+| `agente_mensajes` | Un mensaje por fila: `id` (TEXT PK — el `message.id` que ya genera `useChat`/`generateMessageId`), `conversacion_id` (FK → `agente_conversaciones` ON DELETE CASCADE), `role`, `parts` (JSONB — el `UIMessage.parts[]` completo: texto, adjuntos, tool-calls con `input`/`output`/`state`), `created_at` |
+
+La conversación se crea recién con el primer mensaje (`crearConversacion`, upsert
+`ON CONFLICT DO NOTHING`) — si nunca se escribe nada, no queda fila. `parts` se guarda tal cual
+llega del stream del agente (`server/agente/historial.js`): como ya incluye los tool-parts con
+su resultado, reabrir una conversación reconstruye tanto el diálogo como las acciones
+(crear/editar gasto) sin un modelo de datos aparte para eso. Sin paginación en
+`listarConversaciones()` (`LIMIT 200`) — GAP si crece mucho. Adjuntos de imagen viajan
+embebidos como `data:` URL dentro de `parts` — GAP de tamaño, ver `docs/context/context.md`.
+
 ### `duplicado_exclusion`
 
 Pares `(gasto_id_a, gasto_id_b)` marcados como "no es duplicado" por el usuario.
@@ -216,6 +231,7 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | — | `estado`, `origen`, `fuente_id`, `payload_raw` en `gastos` (PG-only, `server/db/migrate-ingesta.js`) — bandeja de ingesta externa |
 | — | `comercio_mapeo` (PG-only, `server/db/migrate-comercios.js`) — memoria de comercios (F2) |
 | — | `plata_en_cuenta`, `en_presupuesto`, `conciliado` en `gastos` (PG-only, `server/db/migrate-tarjeta-reconciliacion.js`) — reconciliación F5 |
+| — | `agente_conversaciones`, `agente_mensajes` (PG-only, `server/db/migrate-agente-historial.js`) — historial del agente conversacional (F3) |
 
 **PG:** schema aplicado vía `initSchema()` leyendo `schema.pg.sql`. GAP: sistema de migraciones versionadas para PG — las tablas nuevas siguen el mismo patrón `CREATE TABLE IF NOT EXISTS` que el resto del archivo.
 

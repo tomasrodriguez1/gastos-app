@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { PasoAgente } from './PasoAgente'
+import { HistorialConversaciones } from './HistorialConversaciones'
 import { useAgenteChat } from '../../contexts/AgenteChatContext'
 
 const TOOL_PART_TYPES = new Set([
@@ -26,11 +27,23 @@ export function AgenteChat() {
     archivos, agregarArchivos, quitarArchivo,
     messages, status, error, enviando,
     handlePaste, handleSubmit,
+    nuevaConversacion,
   } = useAgenteChat()
   const fileInputRef = useRef(null)
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <HistorialConversaciones />
+        <button
+          type="button"
+          onClick={nuevaConversacion}
+          className="text-xs text-slate-400 hover:text-slate-200 px-2 py-1 rounded-lg hover:bg-white/5 transition-colors"
+        >
+          + Nueva conversación
+        </button>
+      </div>
+
       <div className="flex-1 min-h-0 overflow-y-auto space-y-4 bg-slate-800/30 border border-slate-700/50 rounded-xl p-4">
         {messages.length === 0 && (
           <p className="text-sm text-slate-500 text-center py-12">

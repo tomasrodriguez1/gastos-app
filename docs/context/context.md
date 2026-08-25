@@ -99,13 +99,29 @@ la misma que usa `/bandeja`) se muestra embebida y colapsable arriba del chat en
 
 **Acceso global (frontend):** la conversación vive en `AgenteChatProvider`
 (`src/contexts/AgenteChatContext.jsx`), montado una vez en `App.jsx` envolviendo toda la app —
-es una sola conversación compartida, no una por página. `AgentePage` (página completa) y
+una sola conversación **activa** a la vez, no una por página. `AgentePage` (página completa) y
 `AgenteFlotante` (botón flotante + panel deslizable, visible en todas las rutas salvo
 `/agente` mismo) consumen ambos el mismo estado vía `useAgenteChat()` y renderizan la misma UI
 de chat (`src/components/Agente/AgenteChat.jsx`) — escribir en uno y mirar el otro muestra la
 misma conversación. El panel flotante no embebe la tabla de bandeja completa (un `TablaGastos`
 angosto se ve mal — cambia de layout por *viewport width*, no por ancho de contenedor); en su
 lugar linkea a `/bandeja` vía `BotonBandeja`.
+
+**Historial de conversaciones (persistencia):** cada mensaje (`UIMessage` con su `parts[]`,
+incluidos los tool-calls) se guarda en `agente_conversaciones`/`agente_mensajes`
+(`server/agente/historial.js`) — ver `docs/context/data_model_context.md`. La conversación
+activa persiste en `localStorage` (`agenteConversacionActual`) y se rehidrata al cargar la
+página vía `GET /api/agente/conversaciones/:id`, así sobrevive a un refresh. El body de
+`POST /api/agente/chat` ahora requiere `conversacionId` además de `messages`; la respuesta usa
+`toUIMessageStreamResponse({ originalMessages, generateMessageId, onFinish })` para persistir
+también el mensaje del asistente (con sus tool-parts ya resueltos) al terminar el stream.
+`GET /api/agente/conversaciones` lista las conversaciones (más reciente primero, `LIMIT 200`,
+sin paginación — GAP si crece mucho) para el dropdown `HistorialConversaciones`
+(`src/components/Agente/HistorialConversaciones.jsx`, montado dentro de `AgenteChat.jsx` junto
+al botón "+ Nueva conversación"). Al reabrir una conversación pasada, `PasoAgente.jsx` renderiza
+los mismos tool-parts persistidos (`state: 'output-available'`, `input`/`output`) como timeline
+de acciones — no hay un log de auditoría aparte, las "acciones hechas" son los tool-calls ya
+guardados dentro de cada conversación.
 
 ## Memoria de comercios (F2)
 
@@ -145,3 +161,8 @@ etc.) no cambió — sigue detrás del mismo gate global, ahora combinado (sesi�
 - GAP: las tools `buscar_gastos_pendientes`/`editar_gasto` del agente (F3) solo ven gastos ya
   sincronizados a Postgres — no pueden buscar ni editar `gastosLocales` (gastos manuales
   guardados solo en `localStorage` del browser), porque el agente corre server-side.
+- GAP: los adjuntos de imagen del chat (boletas/comprobantes) se persisten como `data:` URL
+  base64 dentro de `agente_mensajes.parts` (JSONB) — sin límite de tamaño ni storage aparte;
+  puede crecer la fila/DB con el tiempo si se suben muchas fotos.
+- GAP: no hay forma de borrar o renombrar una conversación del agente desde la UI — solo
+  listar (`GET /api/agente/conversaciones`) y reabrir.

@@ -14,7 +14,7 @@
 // pasos, que el flujo de clasificación batch de mails no requiere.
 
 import { Hono } from 'hono'
-import { streamText, tool, stepCountIs, convertToModelMessages } from 'ai'
+import { streamText, tool, stepCountIs, convertToModelMessages, generateId } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { z } from 'zod'
 import { cargarCatalogos } from './catalogos.js'
@@ -22,6 +22,13 @@ import { buscarComercio } from './comercios.js'
 import { crearGastoPendiente } from './gastos/crear.js'
 import { actualizarGasto, obtenerGastoPorId } from './gastos/actualizar.js'
 import { listarPendientes } from './gastos/pendientes.js'
+import {
+  crearConversacion,
+  guardarMensaje,
+  asegurarTitulo,
+  listarConversaciones,
+  obtenerConversacion,
+} from './agente/historial.js'
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-luna'
 
@@ -33,10 +40,11 @@ function promptSistema(catalogos, hoy) {
     '',
     'Sobre imágenes: si el usuario adjunta una o más fotos, cada una es habitualmente una boleta o',
     'comprobante de un gasto distinto — extraé fecha/monto/comercio de cada imagen igual que si te lo',
-    'hubiera escrito, y llamá a crear_gasto una vez por cada gasto distinto que identifiques. Solo',
-    'tratá varias fotos como un único gasto si el texto del usuario lo indica explícitamente (p.ej.',
-    '"estas dos fotos son de la misma compra"). Si una imagen está borrosa o le falta un dato clave,',
-    'preguntá puntualmente por ese dato en vez de adivinar el monto — ahí sí no asumas.',
+    'hubiera escrito, uno por cada gasto distinto que identifiques (sumalos todos al resumen del paso 5,',
+    'no llames a crear_gasto todavía). Solo tratá varias fotos como un único gasto si el texto del',
+    'usuario lo indica explícitamente (p.ej. "estas dos fotos son de la misma compra"). Si una imagen',
+    'está borrosa o le falta un dato clave, preguntá puntualmente por ese dato en vez de adivinar el',
+    'monto — ahí sí no asumas.',
     '',
     'Flujo a seguir:',
     '1. Extraé de lo que el usuario ya escribió o de las imágenes adjuntas todo lo que puedas: fecha, monto (o USD), comercio/motivo, banco.',
@@ -45,18 +53,33 @@ function promptSistema(catalogos, hoy) {
     `   Tipos válidos: ${JSON.stringify(catalogos.tipos)}`,
     `   Contextos válidos: ${JSON.stringify(catalogos.contextos)}`,
     `   Bancos habituales (orientativo, no es una lista cerrada): ${JSON.stringify(catalogos.bancos)}`,
-    '4. Preguntá SOLO el dato puntual que falte y no puedas inferir razonablemente — nunca pidas un formulario completo de una vez. Si ya tenés todo lo necesario, no preguntes nada y pasá directo al paso 5.',
-    '5. Llamá a la tool crear_gasto con todo lo que tengas. El gasto queda "pendiente" — vos NUNCA lo confirmás ni lo das por aprobado, eso lo hace la persona en su bandeja de revisión.',
+    '4. Si falta un dato puntual que no podés inferir razonablemente, preguntalo — nunca pidas un formulario completo de una vez.',
+    '5. Antes de crear nada, mostrale al usuario un resumen breve de cada gasto que vas a crear (fecha,',
+    '   monto, comercio, banco, tipo/contexto) y preguntale si está bien así. NO llames a crear_gasto en',
+    '   este mismo turno — esperá su respuesta en el siguiente mensaje. Si son varios gastos (p.ej. varias',
+    '   fotos), resumilos todos juntos en una sola pregunta.',
+    '6. Recién cuando el usuario confirme explícitamente ("sí", "dale", "correcto", "así está bien" o',
+    '   similar), llamá a crear_gasto una vez por cada gasto confirmado. Si en cambio te corrige algo,',
+    '   actualizá el resumen con la corrección y volvé a preguntar antes de crear — no asumas que ya',
+    '   quedó confirmado solo porque te dio un dato más.',
     '',
-    'Si algo queda ambiguo y no se resuelve con una pregunta puntual, usá tu mejor criterio, avisá qué asumiste, y creá el gasto igual — total queda pendiente de revisión.',
+    'El gasto siempre nace "pendiente" al crearse — vos NUNCA lo confirmás ni lo das por aprobado, eso',
+    'lo hace la persona en su bandeja de revisión, incluso después de que ya te confirmó el resumen y',
+    'creaste el gasto.',
+    '',
+    'Si algo queda ambiguo y el usuario no te lo aclara cuando le preguntás, usá tu mejor criterio,',
+    'avisá qué asumiste en el resumen, y esperá igual su confirmación antes de crear — total el gasto',
+    'queda pendiente de revisión humana después también.',
     '',
     'Corregir un gasto que ya quedó pendiente: si el usuario te pide arreglar algo de un gasto',
     'anterior (propio o llegado por mail — "el almuerzo de ayer en realidad fue 8 lucas", "cambiale',
     'el banco al de Falabella"), primero llamá a buscar_gastos_pendientes (con texto de búsqueda si',
     'lo tenés, o sin texto para ver los últimos) para encontrar el gastoId correcto. Si hay más de',
     'un candidato razonable, preguntá cuál es antes de tocar nada. Después llamá a editar_gasto con',
-    'ese gastoId y SOLO los campos que cambian. Igual que crear_gasto, editar_gasto NUNCA confirma',
-    'el gasto — sigue pendiente hasta que la persona lo confirme en su bandeja. Solo podés editar',
+    'ese gastoId, listá en "campos" EXACTAMENTE los que cambian (nada más) y completá solo esos —',
+    'no llenes el resto del formulario con ceros o vacíos, cualquier valor fuera de "campos" se',
+    'ignora igual, pero mandarlos confunde. Igual que crear_gasto, editar_gasto NUNCA confirma el',
+    'gasto — sigue pendiente hasta que la persona lo confirme en su bandeja. Solo podés editar',
     'gastos que sigan pendientes o en error_parseo; si ya fue confirmado, avisale que ya no se',
     'puede tocar desde acá.',
   ].join('\n')
@@ -169,15 +192,24 @@ function editarGastoToolFactory(catalogos) {
       'siendo un acto humano en /bandeja.',
     inputSchema: z.object({
       gastoId: z.string().describe('El id del gasto a editar, obtenido de buscar_gastos_pendientes'),
-      fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Nueva fecha en formato YYYY-MM-DD, solo si cambia'),
-      motivo: z.string().optional().describe('Nuevo comercio o descripción, solo si cambia'),
-      monto: z.number().optional().describe('Nuevo monto en pesos chilenos, solo si cambia'),
-      usd: z.number().optional().describe('Nuevo monto en dólares, solo si cambia'),
-      banco: z.string().optional().describe('Nuevo banco o medio de pago, solo si cambia'),
-      tipos: z.array(z.string()).optional().describe('Nuevos tipos — solo valores que existan en el catálogo, solo si cambian'),
-      contexto: z.string().optional().describe('Nuevo contexto — solo un valor que exista en el catálogo, solo si cambia'),
+      campos: z.array(z.enum(['fecha', 'motivo', 'monto', 'usd', 'banco', 'tipos', 'contexto']))
+        .describe('Lista de los campos que EFECTIVAMENTE cambian — solo estos se aplican. Cualquier otro valor presente en esta llamada que no esté listado acá se ignora, así que no completes campos que no cambian.'),
+      fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Nueva fecha en formato YYYY-MM-DD — solo se usa si "fecha" está en campos'),
+      motivo: z.string().optional().describe('Nuevo comercio o descripción — solo se usa si "motivo" está en campos'),
+      monto: z.number().optional().describe('Nuevo monto en pesos chilenos — solo se usa si "monto" está en campos'),
+      usd: z.number().optional().describe('Nuevo monto en dólares — solo se usa si "usd" está en campos'),
+      banco: z.string().optional().describe('Nuevo banco o medio de pago — solo se usa si "banco" está en campos'),
+      tipos: z.array(z.string()).optional().describe('Nuevos tipos — solo valores que existan en el catálogo, solo se usa si "tipos" está en campos'),
+      contexto: z.string().optional().describe('Nuevo contexto — solo un valor que exista en el catálogo, solo se usa si "contexto" está en campos'),
     }),
-    execute: async ({ gastoId, ...cambios }) => {
+    // No confiar en "vino un valor no-undefined" como señal de intención de
+    // cambio: modelos vía tool calling suelen completar TODOS los campos
+    // opcionales del schema (con '' / 0 / [] de relleno) en vez de omitir
+    // los que no cambian, y aplicar eso a ciegas pisa datos reales con
+    // vacíos (visto en vivo: dos llamadas paralelas dejaron motivo="" en
+    // una y monto=0 en la otra). Por eso "campos" es la única fuente de
+    // verdad de qué tocar — el resto del payload se ignora.
+    execute: async ({ gastoId, campos, ...cambios }) => {
       const actual = await obtenerGastoPorId(gastoId)
       if (!actual) return { error: 'No encontré ningún gasto con ese id.' }
       if (actual.estado !== 'pendiente' && actual.estado !== 'error_parseo') {
@@ -185,7 +217,8 @@ function editarGastoToolFactory(catalogos) {
       }
 
       const changes = {}
-      for (const [campo, valor] of Object.entries(cambios)) {
+      for (const campo of campos || []) {
+        const valor = cambios[campo]
         if (valor === undefined) continue
         if (campo === 'tipos') {
           const filtrados = valor.filter(t => catalogos.tipos.includes(t))
@@ -226,8 +259,22 @@ agenteRouter.post('/chat', async (c) => {
   } catch {
     return c.json({ error: 'Body inválido' }, 400)
   }
-  const { messages } = body || {}
+  const { messages, conversacionId } = body || {}
   if (!Array.isArray(messages)) return c.json({ error: 'Falta "messages"' }, 400)
+  if (!conversacionId) return c.json({ error: 'Falta "conversacionId"' }, 400)
+
+  await crearConversacion(conversacionId)
+
+  const ultimoMensaje = messages[messages.length - 1]
+  if (ultimoMensaje?.role === 'user') {
+    await guardarMensaje(conversacionId, ultimoMensaje)
+    const texto = (ultimoMensaje.parts || [])
+      .filter(p => p.type === 'text' && p.text)
+      .map(p => p.text)
+      .join(' ')
+      .trim()
+    await asegurarTitulo(conversacionId, texto)
+  }
 
   const catalogos = await cargarCatalogos()
   const hoy = new Date().toISOString().slice(0, 10)
@@ -245,5 +292,22 @@ agenteRouter.post('/chat', async (c) => {
     stopWhen: stepCountIs(8),
   })
 
-  return result.toUIMessageStreamResponse()
+  return result.toUIMessageStreamResponse({
+    originalMessages: messages,
+    generateMessageId: generateId,
+    onFinish: async ({ responseMessage }) => {
+      await guardarMensaje(conversacionId, responseMessage)
+    },
+  })
+})
+
+agenteRouter.get('/conversaciones', async (c) => {
+  const conversaciones = await listarConversaciones()
+  return c.json(conversaciones)
+})
+
+agenteRouter.get('/conversaciones/:id', async (c) => {
+  const conversacion = await obtenerConversacion(c.req.param('id'))
+  if (!conversacion) return c.json({ error: 'Conversación no encontrada' }, 404)
+  return c.json(conversacion)
 })
