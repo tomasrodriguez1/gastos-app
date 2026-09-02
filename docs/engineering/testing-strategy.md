@@ -19,7 +19,8 @@
 | `montoReal()` / `calculos.js` | Alta | Montos efectivos afectan todos los totales |
 | Sync UPSERT preserva overrides | Alta | Pérdida de datos en sync |
 | Reglas de mapeo (prioridad, `_NONE_`) | Alta | Asignación presupuestaria |
-| Detección duplicados | Media | Falsos positivos/negativos |
+| Detección duplicados | Media | Falsos positivos/negativos. `buscarSimilares` (agente) cubierto en `server/duplicados.test.js` |
+| Consultas de ciclo del agente | Media | Totales deben calzar con el dashboard (`server/consultas/ciclo.test.js`) |
 | `detectarRecurrentes` | Media | Heurísticas complejas |
 | Presupuesto PUT por sección | Media | Borrado parcial de secciones |
 | Asignación de ciclo 29–28 | Alta | Define filtros, totales, gráficos y comparaciones presupuestarias |

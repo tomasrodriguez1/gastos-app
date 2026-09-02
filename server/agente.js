@@ -22,7 +22,9 @@ import { cargarCatalogos } from './catalogos.js'
 import { buscarComercio } from './comercios.js'
 import { crearGastoPendiente } from './gastos/crear.js'
 import { actualizarGasto, obtenerGastoPorId } from './gastos/actualizar.js'
-import { listarPendientes } from './gastos/pendientes.js'
+import { listarPendientes, resumirBandeja } from './gastos/pendientes.js'
+import { buscarSimilares } from './duplicados.js'
+import { resumenCiclo, buscarGastosCiclo } from './consultas/ciclo.js'
 import {
   crearConversacion,
   guardarMensaje,
@@ -32,13 +34,19 @@ import {
 } from './agente/historial.js'
 import { transcribir } from './agente/transcripcion.js'
 import { cargarReservasActivas, registrarSaldo } from './reservas.js'
+import { obtenerCicloActual } from '../src/utils/ciclos.js'
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-luna'
 
-function promptSistema(catalogos, hoy, reservas) {
+function promptSistema(catalogos, hoy, reservas, cicloActual) {
+  const grupos = (catalogos.grupos || []).map(g => ({
+    grupo: g.nombre,
+    subcategorias: (g.subcategorias || []).map(s => s.nombre),
+  }))
   return [
-    'Sos un agente que ayuda a registrar gastos personales en español (Chile) a partir de una frase libre o de fotos de boletas/vouchers/comprobantes.',
-    `Hoy es ${hoy}. Si el usuario dice "ayer", "el viernes pasado", etc., calculá la fecha real y respondé siempre en formato YYYY-MM-DD.`,
+    'Sos un agente que ayuda a registrar gastos personales en español (Chile) a partir de una frase libre o de fotos de boletas/vouchers/comprobantes, a revisar la bandeja de pendientes y a responder cómo va el ciclo financiero.',
+    `Hoy es ${hoy}. El ciclo financiero actual es ${cicloActual} (corte día 29 del mes anterior al 28 del mes nominal). Si el usuario dice "este mes" o "cómo voy", usá ese ciclo, no el mes calendario, salvo que pida un YYYY-MM concreto.`,
+    'Si el usuario dice "ayer", "el viernes pasado", etc., calculá la fecha real y respondé siempre en formato YYYY-MM-DD.',
     'Modismos chilenos de plata: "1 luca" = 1.000 pesos, "2 palos" = 2.000.000 de pesos.',
     '',
     'Sobre imágenes: si el usuario adjunta una o más fotos, cada una es habitualmente una boleta o',
@@ -49,7 +57,7 @@ function promptSistema(catalogos, hoy, reservas) {
     'está borrosa o le falta un dato clave, preguntá puntualmente por ese dato en vez de adivinar el',
     'monto — ahí sí no asumas.',
     '',
-    'Flujo a seguir:',
+    'Flujo a seguir para crear un gasto:',
     '1. Extraé de lo que el usuario ya escribió o de las imágenes adjuntas todo lo que puedas: fecha, monto (o USD), comercio/motivo, banco.',
     '2. Llamá a la tool buscar_comercio con el comercio para ver si ya lo conocés de confirmaciones anteriores del usuario.',
     '3. Si buscar_comercio no encontró nada, elegí vos mismo tipos y contexto — SOLO valores que existan en estas listas, nunca inventes uno nuevo:',
@@ -65,14 +73,27 @@ function promptSistema(catalogos, hoy, reservas) {
     '   similar), llamá a crear_gasto una vez por cada gasto confirmado. Si en cambio te corrige algo,',
     '   actualizá el resumen con la corrección y volvé a preguntar antes de crear — no asumas que ya',
     '   quedó confirmado solo porque te dio un dato más.',
+    '7. Si crear_gasto responde bloqueado=true, hay un posible duplicado (p.ej. el mismo cargo ya llegó',
+    '   por mail). Mostrá los candidatos (fecha, comercio, monto, banco, origen) y esperá. NO lo confirmés',
+    '   en bandeja. Solo si el usuario insiste ("igual crealo", "no es el mismo") volvé a llamar con',
+    '   ignorar_duplicado=true. Nunca pongas ignorar_duplicado=true en la primera llamada.',
     '',
     'El gasto siempre nace "pendiente" al crearse — vos NUNCA lo confirmás ni lo das por aprobado, eso',
     'lo hace la persona en su bandeja de revisión, incluso después de que ya te confirmó el resumen y',
-    'creaste el gasto.',
+    'creaste el gasto. Tampoco ofrezcas confirmar en bloque: eso se hace en /bandeja.',
     '',
     'Si algo queda ambiguo y el usuario no te lo aclara cuando le preguntás, usá tu mejor criterio,',
     'avisá qué asumiste en el resumen, y esperá igual su confirmación antes de crear — total el gasto',
     'queda pendiente de revisión humana después también.',
+    '',
+    'Triage de la bandeja (lote, sin confirmar): si pregunta qué hay pendiente, de un banco, o quiere',
+    'revisar varios ("¿qué hay pendiente de Edwards?", "los de error de parseo"):',
+    '1. Llamá primero a resumir_bandeja (con banco si lo mencionó) y contá el lote (cantidad, bancos, montos).',
+    '2. Después buscar_gastos_pendientes para listar breve: fecha, comercio, monto, banco, gastoId corto.',
+    '3. Esperá instrucción por ítem ("el de Unimarc cámbiale el tipo a supermercado"). No edites el lote entero de una.',
+    '4. Si hay más de un candidato, preguntá cuál es antes de tocar nada.',
+    '5. Editar de a uno con editar_gasto. Si hay más que el límite, ofrecé continuar con offset.',
+    '6. NUNCA confirmes ni ofrezcas confirmar pendientes — ni uno ni en bloque.',
     '',
     'Corregir un gasto que ya quedó pendiente: si el usuario te pide arreglar algo de un gasto',
     'anterior (propio o llegado por mail — "el almuerzo de ayer en realidad fue 8 lucas", "cambiale',
@@ -85,6 +106,13 @@ function promptSistema(catalogos, hoy, reservas) {
     'gasto — sigue pendiente hasta que la persona lo confirme en su bandeja. Solo podés editar',
     'gastos que sigan pendientes o en error_parseo; si ya fue confirmado, avisale que ya no se',
     'puede tocar desde acá.',
+    '',
+    'Preguntas de estado del ciclo (solo lectura, no escribas presupuesto): "¿cómo voy?", "¿cuánto me',
+    'queda en comida?", "¿qué categoría está en rojo?", "¿cuánto gasté en Uber?". Usá resumen_ciclo',
+    'para el panorama (semaforos, restante, en_rojo) y buscar_gastos para un comercio o para filtrar',
+    'por grupo. Mapeá nombres coloquiales a estos grupos/subcategorías — nunca inventes un grupo:',
+    `   ${JSON.stringify(grupos)}`,
+    'Si pide un ciclo pasado, pasá ciclo=YYYY-MM. No inventes números: si la tool no trae dato, decilo.',
     '',
     'Saldos de reservas de ahorro (bolsillos externos, ej. Mercado Pago — mantención auto, patente,',
     'vacaciones, plata para terceros): si el usuario adjunta una foto que muestra saldos de',
@@ -122,9 +150,71 @@ const buscarComercioTool = tool({
   },
 })
 
+export async function ejecutarCrearGasto(catalogos, {
+  fecha,
+  motivo,
+  monto = 0,
+  usd = 0,
+  banco = '',
+  tipos = [],
+  contexto = '',
+  ignorar_duplicado = false,
+}) {
+  let tiposValidados = (tipos || []).filter(t => catalogos.tipos.includes(t))
+  let contextoValidado = catalogos.contextos.includes(contexto) ? contexto : ''
+  let presupuestoManual = null
+
+  if (tiposValidados.length === 0 && !contextoValidado) {
+    const memoria = await buscarComercio(motivo)
+    if (memoria) {
+      tiposValidados = memoria.tipos
+      contextoValidado = memoria.contexto
+      presupuestoManual = memoria.presupuesto_manual
+    }
+  }
+
+  if (!ignorar_duplicado) {
+    const candidatos = await buscarSimilares({
+      fecha,
+      motivo,
+      monto: monto || 0,
+      usd: usd || 0,
+      banco: banco || '',
+    })
+    if (candidatos.length) {
+      return {
+        bloqueado: true,
+        candidatos,
+        resumen: `No creé el gasto: encontré ${candidatos.length} posible${candidatos.length === 1 ? '' : 's'} duplicado${candidatos.length === 1 ? '' : 's'}. Mostráselos al usuario y esperá. Si insiste, volvé a llamar con ignorar_duplicado=true.`,
+      }
+    }
+  }
+
+  const { gastoId } = await crearGastoPendiente({
+    fecha,
+    motivo,
+    monto: monto || 0,
+    usd: usd || 0,
+    banco: banco || '',
+    tipos: tiposValidados,
+    contexto: contextoValidado,
+    presupuesto_manual: presupuestoManual,
+    origen: 'chat',
+  })
+
+  const montoTexto = usd ? `US$${usd}` : `$${monto || 0}`
+  return {
+    gastoId,
+    estado: 'pendiente',
+    resumen: `Gasto creado: ${motivo} — ${montoTexto} (${fecha}). Queda pendiente en /bandeja.`,
+  }
+}
+
 function crearGastoToolFactory(catalogos) {
   return tool({
-    description: 'Crea el gasto en estado pendiente de revisión humana. Nunca lo confirma — eso pasa después, en /bandeja.',
+    description:
+      'Crea el gasto en estado pendiente de revisión humana. Nunca lo confirma — eso pasa después, en /bandeja. ' +
+      'Si encuentra un posible duplicado, NO inserta y devuelve bloqueado=true; solo reintentar con ignorar_duplicado=true si el usuario insiste.',
     inputSchema: z.object({
       fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Fecha del gasto en formato YYYY-MM-DD'),
       motivo: z.string().describe('Comercio o descripción corta del gasto'),
@@ -133,43 +223,12 @@ function crearGastoToolFactory(catalogos) {
       banco: z.string().default('').describe('Banco o medio de pago usado'),
       tipos: z.array(z.string()).default([]).describe('Tipos del gasto — solo valores que existan en el catálogo'),
       contexto: z.string().default('').describe('Contexto del gasto — solo un valor que exista en el catálogo'),
+      ignorar_duplicado: z.boolean().default(false).describe('true solo si el usuario insistió en crear aunque haya un posible duplicado'),
     }),
     // Filtro duro server-side, igual criterio que clasificarGasto() en
     // server/ingesta/groq.js: el modelo no es el guardián del catálogo, el
     // prompt le pide que no invente valores pero acá se filtra igual.
-    execute: async ({ fecha, motivo, monto, usd, banco, tipos, contexto }) => {
-      let tiposValidados = (tipos || []).filter(t => catalogos.tipos.includes(t))
-      let contextoValidado = catalogos.contextos.includes(contexto) ? contexto : ''
-      let presupuestoManual = null
-
-      if (tiposValidados.length === 0 && !contextoValidado) {
-        const memoria = await buscarComercio(motivo)
-        if (memoria) {
-          tiposValidados = memoria.tipos
-          contextoValidado = memoria.contexto
-          presupuestoManual = memoria.presupuesto_manual
-        }
-      }
-
-      const { gastoId } = await crearGastoPendiente({
-        fecha,
-        motivo,
-        monto: monto || 0,
-        usd: usd || 0,
-        banco: banco || '',
-        tipos: tiposValidados,
-        contexto: contextoValidado,
-        presupuesto_manual: presupuestoManual,
-        origen: 'chat',
-      })
-
-      const montoTexto = usd ? `US$${usd}` : `$${monto || 0}`
-      return {
-        gastoId,
-        estado: 'pendiente',
-        resumen: `Gasto creado: ${motivo} — ${montoTexto} (${fecha}). Queda pendiente en /bandeja.`,
-      }
-    },
+    execute: async (input) => ejecutarCrearGasto(catalogos, input),
   })
 }
 
@@ -177,14 +236,20 @@ const buscarPendientesTool = tool({
   description:
     'Busca o lista gastos que ya están en la bandeja esperando revisión (estado pendiente o ' +
     'error_parseo), sin importar si llegaron por mail o por chat. Usarla para encontrar el ' +
-    'gastoId correcto antes de llamar a editar_gasto.',
+    'gastoId correcto antes de llamar a editar_gasto, o para listar un lote después de resumir_bandeja.',
   inputSchema: z.object({
     busqueda: z.string().default('').describe('Texto para filtrar por comercio/motivo o banco. Vacío para ver los más recientes'),
+    banco: z.string().default('').describe('Filtro por banco (coincide parcial, case-insensitive)'),
+    estado: z.enum(['', 'pendiente', 'error_parseo']).default('').describe('Vacío = ambos estados de bandeja'),
+    tipos: z.array(z.string()).default([]).describe('Si hay valores, el gasto debe incluir al menos uno'),
+    limite: z.number().int().min(1).max(30).default(15),
+    offset: z.number().int().min(0).default(0).describe('Para pedir los siguientes después del primer lote'),
   }),
-  execute: async ({ busqueda }) => {
-    const pendientes = await listarPendientes({ busqueda })
+  execute: async ({ busqueda, banco, estado, tipos, limite, offset }) => {
+    const pendientes = await listarPendientes({ busqueda, banco, estado, tipos, limite, offset })
     return {
       total: pendientes.length,
+      offset: offset || 0,
       gastos: pendientes.map(g => ({
         gastoId: g.id,
         fecha: g.fecha,
@@ -199,6 +264,38 @@ const buscarPendientesTool = tool({
       })),
     }
   },
+})
+
+const resumirBandejaTool = tool({
+  description:
+    'Resumen agregado de la bandeja (conteos por banco/estado/origen y suma), sin listar cada gasto. ' +
+    'Usarla primero cuando el usuario pregunta qué hay pendiente o pide un lote.',
+  inputSchema: z.object({
+    banco: z.string().default('').describe('Opcional: filtrar por banco (p.ej. Edwards)'),
+  }),
+  execute: async ({ banco }) => resumirBandeja({ banco }),
+})
+
+const resumenCicloTool = tool({
+  description:
+    'Resumen de solo lectura del ciclo financiero: gastado vs presupuesto, semáforos por grupo, ' +
+    'categorías en rojo y pendientes sin clasificar. Default: ciclo actual (corte 29–28).',
+  inputSchema: z.object({
+    ciclo: z.string().regex(/^\d{4}-\d{2}$/).optional().describe('YYYY-MM del ciclo. Omitir = ciclo actual'),
+  }),
+  execute: async ({ ciclo }) => resumenCiclo({ ciclo }),
+})
+
+const buscarGastosTool = tool({
+  description:
+    'Busca gastos de un ciclo (confirmados y pendientes) por comercio/motivo y/o grupo presupuestario. ' +
+    'Para "cuánto gasté en Uber" o "cuánto va en comida". No escribe nada.',
+  inputSchema: z.object({
+    texto: z.string().default('').describe('Texto a buscar en el motivo/comercio'),
+    ciclo: z.string().regex(/^\d{4}-\d{2}$/).optional().describe('YYYY-MM del ciclo. Omitir = ciclo actual'),
+    grupo: z.string().default('').describe('Nombre o fragmento del grupo presupuestario (p.ej. comida)'),
+  }),
+  execute: async ({ texto, ciclo, grupo }) => buscarGastosCiclo({ texto, ciclo, grupo }),
 })
 
 function editarGastoToolFactory(catalogos) {
@@ -349,19 +446,23 @@ agenteRouter.post(
 
   const [catalogos, reservas] = await Promise.all([cargarCatalogos(), cargarReservasActivas()])
   const hoy = new Date().toISOString().slice(0, 10)
+  const cicloActual = obtenerCicloActual()
 
   const result = streamText({
     model: openai(OPENAI_MODEL),
-    system: promptSistema(catalogos, hoy, reservas),
+    system: promptSistema(catalogos, hoy, reservas, cicloActual),
     messages: await convertToModelMessages(messages),
     tools: {
       buscar_comercio: buscarComercioTool,
       crear_gasto: crearGastoToolFactory(catalogos),
       buscar_gastos_pendientes: buscarPendientesTool,
+      resumir_bandeja: resumirBandejaTool,
       editar_gasto: editarGastoToolFactory(catalogos),
       registrar_saldos_reserva: registrarSaldosReservaToolFactory(reservas),
+      resumen_ciclo: resumenCicloTool,
+      buscar_gastos: buscarGastosTool,
     },
-    stopWhen: stepCountIs(8),
+    stopWhen: stepCountIs(16),
   })
 
   return result.toUIMessageStreamResponse({

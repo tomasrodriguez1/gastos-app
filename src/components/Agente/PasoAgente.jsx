@@ -11,13 +11,28 @@ const ETIQUETAS = {
   },
   'tool-crear_gasto': {
     input: (input) => `Creando el gasto: ${input?.motivo ?? ''}…`,
-    output: (output) => output?.resumen ?? 'Gasto creado — pendiente de revisión en /bandeja',
+    output: (output) => {
+      if (output?.bloqueado) {
+        const n = output.candidatos?.length || 0
+        return `Posible duplicado, no lo creé (${n} candidato${n === 1 ? '' : 's'})`
+      }
+      return output?.resumen ?? 'Gasto creado — pendiente de revisión en /bandeja'
+    },
   },
   'tool-buscar_gastos_pendientes': {
-    input: (input) => `Buscando en la bandeja${input?.busqueda ? ` "${input.busqueda}"` : ''}…`,
+    input: (input) => {
+      const filtro = input?.busqueda || input?.banco || ''
+      return `Buscando en la bandeja${filtro ? ` "${filtro}"` : ''}…`
+    },
     output: (output) => (output?.total > 0
       ? `Encontré ${output.total} gasto${output.total === 1 ? '' : 's'} pendiente${output.total === 1 ? '' : 's'}`
       : 'No hay gastos pendientes que coincidan'),
+  },
+  'tool-resumir_bandeja': {
+    input: (input) => `Resumiendo la bandeja${input?.banco ? ` de ${input.banco}` : ''}…`,
+    output: (output) => (output?.total
+      ? `Bandeja: ${output.total} pendiente${output.total === 1 ? '' : 's'} ($${output.suma_monto ?? 0})`
+      : 'La bandeja está vacía'),
   },
   'tool-editar_gasto': {
     input: () => 'Editando el gasto…',
@@ -28,6 +43,18 @@ const ETIQUETAS = {
     output: (output) => (output?.resultados || [])
       .map(r => r.error ? `⚠ ${r.error}` : r.resumen)
       .join(' · ') || 'Sin lecturas registradas',
+  },
+  'tool-resumen_ciclo': {
+    input: (input) => `Consultando el ciclo${input?.ciclo ? ` ${input.ciclo}` : ''}…`,
+    output: (output) => (output?.ciclo
+      ? `Ciclo ${output.ciclo}: gastado $${output.gastado ?? 0} de $${output.previsto ?? 0}`
+      : 'Sin resumen del ciclo'),
+  },
+  'tool-buscar_gastos': {
+    input: (input) => `Buscando gastos${input?.texto ? ` "${input.texto}"` : ''}…`,
+    output: (output) => (output?.total
+      ? `${output.total} gasto${output.total === 1 ? '' : 's'} ($${output.suma ?? 0})`
+      : 'No encontré gastos que coincidan'),
   },
 }
 

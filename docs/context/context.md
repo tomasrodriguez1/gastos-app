@@ -24,7 +24,7 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 | `/gastos` | Tabla de gastos por ciclo (sync + manuales), filtro secundario por mes calendario, asignación presupuestaria y duplicados |
 | `/log` | Log de últimos gastos ingresados (todos los meses), ordenado por `created_at`, resalta lo nuevo desde la última visita, edición inline. También es la bandeja de revisión de gastos `pendiente`/`error_parseo` llegados por `/api/ingesta` (filtro por estado, confirmar individual o en bloque) |
 | `/bandeja` | Bandeja dedicada de gastos `pendiente`/`error_parseo` (filtros por banco/tipo/contexto/búsqueda, confirmar individual o en bloque) — acceso vía `BotonBandeja` |
-| `/agente` | Agente conversacional (F3): captura en lenguaje natural gastos que no llegan por mail (BICE, efectivo, transferencias) y también corrige gastos ya pendientes (de mail o de chat) a pedido del usuario. Streaming de pasos con `useChat`; crear y editar siempre dejan el gasto en `pendiente`, nunca confirma. La bandeja (`BandejaLista`, compartida con `/bandeja`) se ve embebida en la misma página, colapsable. La conversación también es accesible desde **cualquier otra página** vía un botón flotante (`AgenteFlotante`) que abre la misma conversación en un panel deslizable, sin navegar — ver más abajo |
+| `/agente` | Agente conversacional (F3): captura en lenguaje natural, triage de bandeja (listar/resumir/editar, nunca confirma), consultas de solo lectura del ciclo, aviso de duplicados al crear. Streaming de pasos con `useChat`. La bandeja (`BandejaLista`) se ve embebida y colapsable. También accesible desde cualquier página vía `AgenteFlotante` |
 | `/presupuesto` | Editor de presupuesto por ciclo financiero (ingresos, categorías, fondos) |
 | `/tarjeta` | Reconciliación Edwards/BICE en CLP o USD: fondo derivado, falta depositar, conciliación de estado y registro posterior del pago |
 | `/passkeys` | Gestión de passkeys: ver, agregar, eliminar (requiere sesión) |
@@ -88,14 +88,26 @@ Groq (`server/ingesta/groq.js`, que se queda sin tocar) — ver DEC-011 en
 `docs/architecture/decisions.md`.
 
 Además de crear, el agente puede **corregir** un gasto que ya quedó pendiente — de cualquier
-origen (mail o chat) — con dos tools adicionales: `buscar_gastos_pendientes` (busca/lista por
-texto en `motivo`/`banco` sobre gastos `pendiente`/`error_parseo`) y `editar_gasto` (aplica
-cambios de campo sobre un `gastoId` encontrado así, reusando el mismo camino que
-`PATCH /api/gastos/:id` vía `server/gastos/actualizar.js`). `editar_gasto` no tiene `estado`
-en su schema de entrada — no puede confirmarlo aunque se lo pidan — y su `execute` chequea
-server-side que el gasto siga `pendiente`/`error_parseo` antes de tocar nada, rechazando
+origen (mail o chat) — con `buscar_gastos_pendientes` (busca/lista por texto, banco, estado o
+tipos sobre gastos `pendiente`/`error_parseo`, con `offset` para seguir un lote) y `editar_gasto`
+(aplica cambios de campo sobre un `gastoId` encontrado así, reusando el mismo camino que
+`PATCH /api/gastos/:id` vía `server/gastos/actualizar.js`). `resumir_bandeja` agrega conteos por
+banco/estado/origen sin listar filas, para guiar un triage por voz/chat. `editar_gasto` no tiene
+`estado` en su schema de entrada — no puede confirmarlo aunque se lo pidan — y su `execute`
+chequea server-side que el gasto siga `pendiente`/`error_parseo` antes de tocar nada, rechazando
 cualquier intento sobre uno ya `confirmado`. La bandeja (`src/components/Bandeja/BandejaLista.jsx`,
 la misma que usa `/bandeja`) se muestra embebida y colapsable arriba del chat en `/agente`.
+
+**Duplicados al crear:** `crear_gasto` llama a `buscarSimilares` (`server/duplicados.js`) antes de
+insertar. Si hay un candidato (alta: misma fecha+motivo+monto aunque el banco difiera; media/baja
+igual que el detector de ciclo) y `ignorar_duplicado` es false, **no inserta** y devuelve
+`bloqueado=true` con los candidatos. Solo reintenta con `ignorar_duplicado=true` si el usuario
+insiste. No confirma el duplicado de bandeja.
+
+**Consultas de estado (solo lectura):** `resumen_ciclo` y `buscar_gastos` leen presupuesto y gastos
+del ciclo financiero (default: ciclo actual, corte 29–28). Totales usan `montoDelCiclo()` igual que
+el dashboard: pendientes sin categoría → `SIN CLASIFICAR`, confirmados sin mapeo excluidos, USD puro
+fuera. No escriben presupuesto ni confirman gastos. Implementación en `server/consultas/ciclo.js`.
 
 **Acceso global (frontend):** la conversación vive en `AgenteChatProvider`
 (`src/contexts/AgenteChatContext.jsx`), montado una vez en `App.jsx` envolviendo toda la app —
@@ -179,9 +191,10 @@ etc.) no cambió — sigue detrás del mismo gate global, ahora combinado (sesi�
 - GAP: gastos manuales locales (`gastosLocales`, `POST /api/datos?clave=gastos_manuales`) no
   pasan por `PATCH /api/gastos/:id`, así que no alimentan la memoria de comercios.
 - GAP: sin UI dedicada para gestionar `comercio_mapeo` (solo `GET/DELETE /api/comercios`).
-- GAP: las tools `buscar_gastos_pendientes`/`editar_gasto` del agente (F3) solo ven gastos ya
+- GAP: las tools `buscar_gastos_pendientes`/`editar_gasto`/`buscar_gastos` del agente (F3) solo ven gastos ya
   sincronizados a Postgres — no pueden buscar ni editar `gastosLocales` (gastos manuales
   guardados solo en `localStorage` del browser), porque el agente corre server-side.
+- GAP: el modo privacidad no oculta montos en el chat del agente.
 - GAP: los adjuntos de imagen del chat (boletas/comprobantes) se persisten como `data:` URL
   base64 dentro de `agente_mensajes.parts` (JSONB) — sin límite de tamaño ni storage aparte;
   puede crecer la fila/DB con el tiempo si se suben muchas fotos.

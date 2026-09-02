@@ -2,6 +2,8 @@
 // Tres niveles de confianza: alta, media, baja
 
 import { toMonto } from './db/numeric.js'
+import sql from './db/client.js'
+import { deserializarGasto } from './gastos/serializacion.js'
 
 function normalizarMotivo(motivo) {
   if (!motivo) return ''
@@ -52,6 +54,99 @@ function diffDias(fechaA, fechaB) {
 function clavePar(idA, idB) {
   // par ordenado lexicográficamente para lookup simétrico
   return [idA, idB].sort().join('|')
+}
+
+function fechaISO(fecha) {
+  if (!fecha) return ''
+  if (typeof fecha === 'string') return fecha.slice(0, 10)
+  if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {
+    return fecha.toISOString().slice(0, 10)
+  }
+  return String(fecha).slice(0, 10)
+}
+
+function desplazarFecha(fecha, dias) {
+  const d = new Date(`${fechaISO(fecha)}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + dias)
+  return d.toISOString().slice(0, 10)
+}
+
+function clasificarSimilitud(candidato, existente) {
+  const fechaA = fechaISO(candidato.fecha)
+  const fechaB = fechaISO(existente.fecha)
+  const montoA = montoEfectivo(candidato)
+  const montoB = montoEfectivo(existente)
+  const motivoA = normalizarMotivo(candidato.motivo)
+  const motivoB = normalizarMotivo(existente.motivo)
+  const dias = diffDias(fechaA, fechaB)
+
+  // Alta relajada vs el detector de ciclo: misma fecha + motivo + monto,
+  // aunque el banco difiera (chat BICE vs mail Edwards de la misma compra).
+  if (fechaA === fechaB && motivoA && motivoA === motivoB && montosSimilares(montoA, montoB)) {
+    return { confianza: 'alta', razon: 'fecha_motivo_monto' }
+  }
+
+  if (montosSimilares(montoA, montoB) && dias <= 2 && motivoA !== motivoB) {
+    return { confianza: 'media', razon: 'monto_similar_fecha_cercana' }
+  }
+
+  if (dias <= 3 && similitudMotivo(candidato.motivo, existente.motivo) >= 0.80) {
+    return { confianza: 'baja', razon: 'motivo_similar' }
+  }
+
+  return null
+}
+
+// Candidatos a duplicado de un gasto que todavía no está en DB (agente /
+// crear_gasto). Ventana ±3 días, ignora descartados. No usa exclusiones:
+// el par aún no existe.
+export async function buscarSimilares(candidato) {
+  const fecha = fechaISO(candidato?.fecha)
+  if (!fecha) return []
+
+  const desde = desplazarFecha(fecha, -3)
+  const hasta = desplazarFecha(fecha, 3)
+  const rows = await sql`
+    SELECT * FROM gastos
+    WHERE fecha >= ${desde}
+      AND fecha <= ${hasta}
+      AND (estado IS NULL OR estado <> 'descartado')
+    ORDER BY fecha
+  `
+
+  const candidatoNormalizado = {
+    ...candidato,
+    fecha,
+    monto: candidato.monto ?? 0,
+    monto_real: candidato.monto_real ?? candidato.monto ?? 0,
+    usd: candidato.usd ?? 0,
+    motivo: candidato.motivo || '',
+  }
+
+  const vistos = new Set()
+  const matches = []
+  for (const g of rows.map(deserializarGasto)) {
+    if (candidato.id && g.id === candidato.id) continue
+    const clase = clasificarSimilitud(candidatoNormalizado, g)
+    if (!clase || vistos.has(g.id)) continue
+    vistos.add(g.id)
+    matches.push({
+      gastoId: g.id,
+      fecha: fechaISO(g.fecha),
+      motivo: g.motivo,
+      monto: g.monto,
+      usd: g.usd,
+      banco: g.banco,
+      estado: g.estado,
+      origen: g.origen,
+      confianza: clase.confianza,
+      razon: clase.razon,
+    })
+  }
+
+  const orden = { alta: 0, media: 1, baja: 2 }
+  matches.sort((a, b) => orden[a.confianza] - orden[b.confianza])
+  return matches
 }
 
 export async function detectarDuplicadosCiclo(sql, ciclo, deserializarGasto) {

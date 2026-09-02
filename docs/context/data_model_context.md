@@ -282,6 +282,8 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
   determinista ni Groq deben poder saltarse la revisión humana.
 - Ningún gasto creado por el agente conversacional (`/api/agente/chat`, F3) debe nacer en
   `estado='confirmado'` — el agente solo crea, nunca confirma (ver `server/agente.js`).
+- `crear_gasto` no inserta si `buscarSimilares` encuentra candidatos y `ignorar_duplicado` es
+  false — el duplicado se avisa, no se confirma ni se descarta desde el chat.
 - Ni Groq ni el agente conversacional pueden escribir `tipos`/`contexto` fuera del catálogo
   real (`catalogo_tipo`/`catalogo_contexto`) — filtro duro server-side en ambos casos.
 - Preservación de `presupuesto_manual`, `contexto_override`, `monto_clp_manual`, `monto_presupuesto_manual`, `financiado_por` en sync.
