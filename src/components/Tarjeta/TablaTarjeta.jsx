@@ -134,6 +134,7 @@ export function TablaTarjeta({ gastos, moneda, onActualizarGasto, onConciliar, o
               <th className="w-28 px-3 py-3 text-center">Fondo</th>
               <th className="w-28 px-3 py-3 text-center">Budget</th>
               <th className="w-24 px-3 py-3 text-center">Conciliación</th>
+              <th className="w-24 px-3 py-3 text-center">Ciclo</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-700/30">
@@ -155,6 +156,11 @@ export function TablaTarjeta({ gastos, moneda, onActualizarGasto, onConciliar, o
                   <td className="px-3 py-2.5 text-center"><Toggle activo={gasto.plata_en_cuenta} onClick={() => onActualizarGasto(id, { plata_en_cuenta: !gasto.plata_en_cuenta })} activoLabel="Reservado" inactivoLabel="Falta" title="El importe completo está reservado" /></td>
                   <td className="px-3 py-2.5 text-center"><Toggle activo={gasto.en_presupuesto !== false} onClick={() => onActualizarGasto(id, { en_presupuesto: gasto.en_presupuesto === false })} activoLabel="Incluido" inactivoLabel="Fuera" title="Impacta el presupuesto" /></td>
                   <td className="px-3 py-2.5 text-center">{gasto.conciliado ? <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[11px] text-sky-400">Conciliado</span> : <span className="text-[11px] text-amber-500/70">Pendiente</span>}</td>
+                  <td className="px-3 py-2.5 text-center">
+                    {gasto.facturado === true && <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[11px] text-violet-400">Facturado</span>}
+                    {gasto.facturado === false && <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-400">No facturado</span>}
+                    {gasto.facturado == null && <span className="text-slate-700">—</span>}
+                  </td>
                 </tr>
               )
             })}

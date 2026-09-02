@@ -40,6 +40,18 @@ function desdeUnidades(valor, moneda) {
   return valor / (moneda === 'USD' ? 100 : 1)
 }
 
+export function cierreDelPeriodo(fechaISO, diaCierre) {
+  const [anio, mes, dia] = fechaISO.split('-').map(Number)
+  const enMesActual = dia <= diaCierre
+  const fecha = new Date(Date.UTC(anio, mes - 1 + (enMesActual ? 0 : 1), diaCierre))
+  return fecha.toISOString().slice(0, 10)
+}
+
+export function facturado(fechaISO, diaCierre, hoyISO = new Date().toISOString().slice(0, 10)) {
+  if (!diaCierre) return null
+  return cierreDelPeriodo(fechaISO, diaCierre) <= hoyISO
+}
+
 export function resolverCategoria(row, reglas) {
   const manual = presupuestoManualDe(row)
   if (manual?.grupo && manual?.subcategoria) return manual
@@ -70,19 +82,26 @@ function nuevoAcumulador() {
     por_cobrar: 0,
     conciliados: 0,
     sin_conciliar: 0,
+    facturados: 0,
+    no_facturados: 0,
+    monto_facturado: 0,
+    monto_no_facturado: 0,
     categorias: new Map(),
   }
 }
 
-function acumular(destino, row, reglas, moneda) {
+function acumular(destino, row, reglas, moneda, diaCierre) {
   const importe = importeEnUnidades(row, moneda)
   const split = moneda === 'CLP' ? Math.round(toMonto(row.split) || 0) : 0
+  const yaFacturado = facturado(row.fecha, diaCierre)
   destino.por_pagar += importe
   destino.por_cobrar += split
   if (row.plata_en_cuenta === true) destino.fondo_actual += importe
   else destino.falta_depositar += importe
   if (row.conciliado === true) destino.conciliados += 1
   else destino.sin_conciliar += 1
+  if (yaFacturado === true) { destino.facturados += 1; destino.monto_facturado += importe }
+  else if (yaFacturado === false) { destino.no_facturados += 1; destino.monto_no_facturado += importe }
 
   const categoria = resolverCategoria(row, reglas)
   const clave = `${categoria.grupo}\u0000${categoria.subcategoria}`
@@ -96,6 +115,8 @@ function acumular(destino, row, reglas, moneda) {
   else acumulado.falta_depositar += importe
   if (row.conciliado === true) acumulado.conciliados += 1
   else acumulado.sin_conciliar += 1
+  if (yaFacturado === true) { acumulado.facturados += 1; acumulado.monto_facturado += importe }
+  else if (yaFacturado === false) { acumulado.no_facturados += 1; acumulado.monto_no_facturado += importe }
 }
 
 function finalizar(acumulador, moneda) {
@@ -111,6 +132,10 @@ function finalizar(acumulador, moneda) {
       gasto_propio_neto: convertir(categoria.por_pagar - categoria.por_cobrar),
       conciliados: categoria.conciliados,
       sin_conciliar: categoria.sin_conciliar,
+      facturados: categoria.facturados,
+      no_facturados: categoria.no_facturados,
+      monto_facturado: convertir(categoria.monto_facturado),
+      monto_no_facturado: convertir(categoria.monto_no_facturado),
     }))
     .sort((a, b) => b.falta_depositar - a.falta_depositar || a.grupo.localeCompare(b.grupo))
 
@@ -122,11 +147,15 @@ function finalizar(acumulador, moneda) {
     gasto_propio_neto: convertir(acumulador.por_pagar - acumulador.por_cobrar),
     conciliados: acumulador.conciliados,
     sin_conciliar: acumulador.sin_conciliar,
+    facturados: acumulador.facturados,
+    no_facturados: acumulador.no_facturados,
+    monto_facturado: convertir(acumulador.monto_facturado),
+    monto_no_facturado: convertir(acumulador.monto_no_facturado),
     categorias,
   }
 }
 
-export function crearResumenTarjeta(rows, reglas = []) {
+export function crearResumenTarjeta(rows, reglas = [], ciclos = {}) {
   const totales = Object.fromEntries(MONEDAS_TARJETA.map(moneda => [moneda, nuevoAcumulador()]))
   const porBanco = Object.fromEntries(BANCOS_TARJETA.map(banco => [
     banco,
@@ -136,8 +165,9 @@ export function crearResumenTarjeta(rows, reglas = []) {
   for (const row of rows) {
     if (!BANCOS_TARJETA.includes(row.banco) || row.pagado === true || row.estado === 'descartado') continue
     const moneda = monedaGasto(row)
-    acumular(totales[moneda], row, reglas, moneda)
-    acumular(porBanco[row.banco][moneda], row, reglas, moneda)
+    const diaCierre = ciclos[row.banco]
+    acumular(totales[moneda], row, reglas, moneda, diaCierre)
+    acumular(porBanco[row.banco][moneda], row, reglas, moneda, diaCierre)
   }
 
   return {
@@ -186,11 +216,33 @@ export function createTarjetaRouter({ db = sql } = {}) {
   const router = new Hono()
 
   router.get('/resumen', async (c) => {
-    const [rows, reglas] = await Promise.all([
+    const [rows, reglas, filasCiclo] = await Promise.all([
       db`SELECT * FROM gastos WHERE banco IN ('Edwards', 'BICE') AND pagado = FALSE AND estado != 'descartado'`,
       db`SELECT * FROM regla_mapeo WHERE activa = TRUE ORDER BY prioridad, id`,
+      db`SELECT banco, dia_cierre FROM tarjeta_ciclo`,
     ])
-    return c.json(crearResumenTarjeta(rows, reglas))
+    const ciclos = Object.fromEntries(filasCiclo.map(fila => [fila.banco, fila.dia_cierre]))
+    return c.json(crearResumenTarjeta(rows, reglas, ciclos))
+  })
+
+  router.get('/ciclos', async (c) => {
+    const rows = await db`SELECT banco, dia_cierre FROM tarjeta_ciclo ORDER BY banco`
+    return c.json(rows.map(r => ({ banco: r.banco, dia_cierre: r.dia_cierre })))
+  })
+
+  router.put('/ciclos/:banco', async (c) => {
+    const banco = decodeURIComponent(c.req.param('banco'))
+    const { dia_cierre: diaCierre } = await c.req.json()
+    if (!BANCOS_TARJETA.includes(banco)) return respuestaError(c, 'Banco no permitido')
+    if (!Number.isInteger(diaCierre) || diaCierre < 1 || diaCierre > 28) {
+      return respuestaError(c, 'Día de cierre inválido (debe ser entre 1 y 28)')
+    }
+    await db`
+      INSERT INTO tarjeta_ciclo (banco, dia_cierre, updated_at)
+      VALUES (${banco}, ${diaCierre}, NOW())
+      ON CONFLICT (banco) DO UPDATE SET dia_cierre = EXCLUDED.dia_cierre, updated_at = NOW()
+    `
+    return c.json({ ok: true, banco, dia_cierre: diaCierre })
   })
 
   router.post('/conciliar', async (c) => {

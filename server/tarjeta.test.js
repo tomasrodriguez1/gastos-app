@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { crearResumenTarjeta, createTarjetaRouter, importeEnUnidades, monedaGasto } from './tarjeta'
+import { cierreDelPeriodo, crearResumenTarjeta, createTarjetaRouter, facturado, importeEnUnidades, monedaGasto } from './tarjeta'
 
 const gasto = (overrides = {}) => ({
   id: crypto.randomUUID(),
@@ -46,6 +46,109 @@ describe('resumen de tarjeta', () => {
     expect(monedaGasto(gasto({ monto: 0, usd: 10.129 }))).toBe('USD')
     expect(importeEnUnidades(gasto({ monto: 0, usd: 10.129 }), 'USD')).toBe(1013)
     expect(importeEnUnidades(gasto({ monto: 1000.4 }), 'CLP')).toBe(1000)
+  })
+
+  test('separa facturado/no facturado según el ciclo configurado por banco', () => {
+    // dia_cierre = 1: el día 1 del mes anterior ya cerró (facturado); el día 1
+    // del mes siguiente todavía no llega (no facturado) — robusto sin importar
+    // en qué día del mes corra el test.
+    const hoy = new Date()
+    const primerDia = fecha => `${fecha.getUTCFullYear()}-${String(fecha.getUTCMonth() + 1).padStart(2, '0')}-01`
+    const mesAnterior = primerDia(new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() - 1, 1)))
+    const mesSiguiente = primerDia(new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() + 1, 1)))
+
+    const resumen = crearResumenTarjeta([
+      gasto({ fecha: mesAnterior }), // cierre ya pasado -> facturado
+      gasto({ fecha: mesSiguiente }), // cierre todavía no llega -> no facturado
+      gasto({ fecha: mesAnterior, banco: 'BICE' }), // BICE sin ciclo configurado
+    ], [], { Edwards: 1 })
+
+    const edwards = resumen.bancos.find(b => b.banco === 'Edwards').monedas.CLP
+    expect(edwards.facturados).toBe(1)
+    expect(edwards.no_facturados).toBe(1)
+    expect(edwards.monto_facturado).toBe(1000)
+    expect(edwards.monto_no_facturado).toBe(1000)
+
+    const bice = resumen.bancos.find(b => b.banco === 'BICE').monedas.CLP
+    expect(bice.facturados).toBe(0)
+    expect(bice.no_facturados).toBe(0)
+  })
+})
+
+describe('ciclo de facturación', () => {
+  test('cierreDelPeriodo cae en el mismo mes si la fecha es antes o igual al día de cierre', () => {
+    expect(cierreDelPeriodo('2026-03-10', 15)).toBe('2026-03-15')
+    expect(cierreDelPeriodo('2026-03-15', 15)).toBe('2026-03-15')
+  })
+
+  test('cierreDelPeriodo cae en el mes siguiente si la fecha es posterior al día de cierre', () => {
+    expect(cierreDelPeriodo('2026-03-20', 15)).toBe('2026-04-15')
+  })
+
+  test('cierreDelPeriodo hace rollover de año en diciembre', () => {
+    expect(cierreDelPeriodo('2026-12-20', 15)).toBe('2027-01-15')
+  })
+
+  test('facturado compara el cierre del período contra la fecha de hoy', () => {
+    expect(facturado('2026-03-10', 15, '2026-03-20')).toBe(true) // cierre 03-15 ya pasó
+    expect(facturado('2026-03-20', 15, '2026-03-25')).toBe(false) // cierre 04-15 no ha llegado
+    expect(facturado('2026-03-20', 15, '2026-04-15')).toBe(true) // cierre 04-15 ya llegó
+  })
+
+  test('sin día de cierre configurado devuelve null', () => {
+    expect(facturado('2026-03-10', undefined)).toBeNull()
+    expect(facturado('2026-03-10', null)).toBeNull()
+  })
+})
+
+function dbCiclosFalsa(filasIniciales = []) {
+  const filas = filasIniciales.map(fila => ({ ...fila }))
+  const db = async (strings, ...values) => {
+    const consulta = strings.join('?')
+    if (consulta.includes('SELECT banco, dia_cierre FROM tarjeta_ciclo')) return filas
+    if (consulta.includes('INSERT INTO tarjeta_ciclo')) {
+      const [banco, diaCierre] = values
+      const existente = filas.find(f => f.banco === banco)
+      if (existente) existente.dia_cierre = diaCierre
+      else filas.push({ banco, dia_cierre: diaCierre })
+      return []
+    }
+    throw new Error(`Consulta no contemplada en test: ${consulta}`)
+  }
+  return { db, filas }
+}
+
+function put(router, ruta, body) {
+  return router.request(ruta, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+describe('endpoints de ciclo de facturación', () => {
+  test('GET /ciclos devuelve los bancos configurados', async () => {
+    const { db } = dbCiclosFalsa([{ banco: 'Edwards', dia_cierre: 15 }])
+    const router = createTarjetaRouter({ db })
+    const respuesta = await router.request('/ciclos')
+    expect(respuesta.status).toBe(200)
+    expect(await respuesta.json()).toEqual([{ banco: 'Edwards', dia_cierre: 15 }])
+  })
+
+  test('PUT /ciclos/:banco hace upsert del día de cierre', async () => {
+    const { db, filas } = dbCiclosFalsa()
+    const router = createTarjetaRouter({ db })
+    const respuesta = await put(router, '/ciclos/Edwards', { dia_cierre: 20 })
+    expect(respuesta.status).toBe(200)
+    expect(filas).toEqual([{ banco: 'Edwards', dia_cierre: 20 }])
+  })
+
+  test('PUT /ciclos/:banco rechaza banco o día de cierre inválidos', async () => {
+    const { db } = dbCiclosFalsa()
+    const router = createTarjetaRouter({ db })
+    expect((await put(router, '/ciclos/Otro', { dia_cierre: 15 })).status).toBe(400)
+    expect((await put(router, '/ciclos/Edwards', { dia_cierre: 29 })).status).toBe(400)
+    expect((await put(router, '/ciclos/Edwards', { dia_cierre: 0 })).status).toBe(400)
   })
 })
 

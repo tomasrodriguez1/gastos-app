@@ -5,6 +5,11 @@ import { formatCLP } from '../utils/formatters'
 
 const BANCOS = ['Edwards', 'BICE']
 const MONEDAS = ['CLP', 'USD']
+const FILTROS_FACTURADO = [
+  { value: 'todos', label: 'Todos' },
+  { value: 'facturado', label: 'Facturado' },
+  { value: 'no_facturado', label: 'No facturado' },
+]
 const VACIO = {
   por_pagar: 0,
   fondo_actual: 0,
@@ -13,12 +18,28 @@ const VACIO = {
   gasto_propio_neto: 0,
   conciliados: 0,
   sin_conciliar: 0,
+  facturados: 0,
+  no_facturados: 0,
+  monto_facturado: 0,
+  monto_no_facturado: 0,
   categorias: [],
 }
 
 function esMoneda(gasto, moneda) {
   const usdPuro = gasto.usd > 0 && !gasto.monto
   return moneda === 'USD' ? usdPuro : !usdPuro
+}
+
+function cierreDelPeriodo(fechaISO, diaCierre) {
+  const [anio, mes, dia] = fechaISO.split('-').map(Number)
+  const enMesActual = dia <= diaCierre
+  const fecha = new Date(Date.UTC(anio, mes - 1 + (enMesActual ? 0 : 1), diaCierre))
+  return fecha.toISOString().slice(0, 10)
+}
+
+function facturadoGasto(gasto, diaCierre, hoyISO = new Date().toISOString().slice(0, 10)) {
+  if (!diaCierre) return null
+  return cierreDelPeriodo(gasto.fecha, diaCierre) <= hoyISO
 }
 
 function formatMonto(valor, moneda) {
@@ -30,14 +51,23 @@ function formatMonto(valor, moneda) {
 export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefetchGastos }) {
   const [banco, setBanco] = useState('Edwards')
   const [moneda, setMoneda] = useState('CLP')
+  const [filtroFacturado, setFiltroFacturado] = useState('todos')
 
   const resumenBanco = reconciliacion.resumen?.bancos?.find(item => item.banco === banco)
   const metricas = resumenBanco?.monedas?.[moneda] || VACIO
   const globales = reconciliacion.resumen?.totales?.[moneda] || VACIO
+  const diaCierre = reconciliacion.ciclos?.[banco]
 
   const pendientes = useMemo(() => gastos
     .filter(gasto => gasto.banco === banco && !gasto.pagado && gasto.estado !== 'descartado' && esMoneda(gasto, moneda))
-    .sort((a, b) => b.fecha.localeCompare(a.fecha)), [gastos, banco, moneda])
+    .map(gasto => ({ ...gasto, facturado: facturadoGasto(gasto, diaCierre) }))
+    .filter(gasto => {
+      if (!diaCierre) return true
+      if (filtroFacturado === 'facturado') return gasto.facturado === true
+      if (filtroFacturado === 'no_facturado') return gasto.facturado === false
+      return true
+    })
+    .sort((a, b) => b.fecha.localeCompare(a.fecha)), [gastos, banco, moneda, diaCierre, filtroFacturado])
 
   async function actualizarGasto(id, cambios) {
     await onActualizarGasto(id, cambios)
@@ -71,6 +101,15 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
               </button>
             ))}
           </div>
+          {diaCierre ? (
+            <div className="flex rounded-lg border border-slate-700 bg-slate-800 p-0.5">
+              {FILTROS_FACTURADO.map(item => (
+                <button key={item.value} onClick={() => setFiltroFacturado(item.value)} className={`rounded-md px-3 py-1 text-xs font-medium ${filtroFacturado === item.value ? 'bg-sky-500/20 text-sky-400' : 'text-slate-500'}`}>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -83,6 +122,8 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
         globales={globales}
         reservaLegacy={reconciliacion.reservas?.[banco] || 0}
         onGuardarReserva={reconciliacion.guardarReserva}
+        diaCierre={diaCierre}
+        onGuardarCiclo={reconciliacion.guardarCiclo}
       />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">

@@ -200,6 +200,18 @@ CREATE TABLE IF NOT EXISTS reserva_tarjeta (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ─── CICLO DE FACTURACIÓN DE TARJETA ────────────────────────────────────────
+-- Día de cierre configurable por tarjeta, usado para calcular (derivado, no
+-- persistido en `gastos`) si un movimiento ya quedó en un estado de cuenta
+-- cerrado ("facturado") o si todavía puede aparecer en el próximo corte. Sin
+-- fila para un banco = sin ciclo configurado. Ver data_model_context.md.
+
+CREATE TABLE IF NOT EXISTS tarjeta_ciclo (
+  banco      TEXT PRIMARY KEY,
+  dia_cierre SMALLINT NOT NULL CHECK (dia_cierre BETWEEN 1 AND 28),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ─── RESERVAS DE AHORRO (F6) ─────────────────────────────────────────────────
 -- Bolsillos de ahorro externos (ej. Mercado Pago: mantención auto, patente,
 -- vacaciones, plata para terceros). NO es lo mismo que reserva_tarjeta (arriba):

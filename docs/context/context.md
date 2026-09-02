@@ -24,9 +24,9 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 | `/gastos` | Tabla de gastos por ciclo (sync + manuales), filtro secundario por mes calendario, asignación presupuestaria y duplicados |
 | `/log` | Log de últimos gastos ingresados (todos los meses), ordenado por `created_at`, resalta lo nuevo desde la última visita, edición inline. También es la bandeja de revisión de gastos `pendiente`/`error_parseo` llegados por `/api/ingesta` (filtro por estado, confirmar individual o en bloque) |
 | `/bandeja` | Bandeja dedicada de gastos `pendiente`/`error_parseo` (filtros por banco/tipo/contexto/búsqueda, confirmar individual o en bloque) — acceso vía `BotonBandeja` |
-| `/agente` | Agente conversacional (F3): captura en lenguaje natural, triage de bandeja (listar/resumir/editar, nunca confirma), consultas de solo lectura del ciclo, aviso de duplicados al crear. Streaming de pasos con `useChat`. La bandeja (`BandejaLista`) se ve embebida y colapsable. También accesible desde cualquier página vía `AgenteFlotante` |
+| `/agente` | Agente conversacional (F3): captura en lenguaje natural, triage de bandeja (listar/resumir/editar, nunca confirma), consultas de solo lectura del ciclo, aviso de duplicados al crear. Streaming de pasos con `useChat`. Layout en dos columnas en desktop: chat a la izquierda y bandeja (`BandejaLista`) embebida y colapsable a la derecha. También accesible desde cualquier página vía `AgenteFlotante` |
 | `/presupuesto` | Editor de presupuesto por ciclo financiero (ingresos, categorías, fondos) |
-| `/tarjeta` | Reconciliación Edwards/BICE en CLP o USD: fondo derivado, falta depositar, conciliación de estado y registro posterior del pago |
+| `/tarjeta` | Reconciliación Edwards/BICE en CLP o USD: fondo derivado, falta depositar, conciliación de estado y registro posterior del pago. Día de cierre configurable por tarjeta (`tarjeta_ciclo`) para distinguir movimientos ya facturados (estado cerrado) de los que aún no, con filtro y badge por movimiento |
 | `/passkeys` | Gestión de passkeys: ver, agregar, eliminar (requiere sesión) |
 
 ## Stack
@@ -96,7 +96,8 @@ banco/estado/origen sin listar filas, para guiar un triage por voz/chat. `editar
 `estado` en su schema de entrada — no puede confirmarlo aunque se lo pidan — y su `execute`
 chequea server-side que el gasto siga `pendiente`/`error_parseo` antes de tocar nada, rechazando
 cualquier intento sobre uno ya `confirmado`. La bandeja (`src/components/Bandeja/BandejaLista.jsx`,
-la misma que usa `/bandeja`) se muestra embebida y colapsable arriba del chat en `/agente`.
+la misma que usa `/bandeja`) se muestra embebida y colapsable a la derecha del chat en `/agente`
+(debajo del chat en viewport chico).
 
 **Duplicados al crear:** `crear_gasto` llama a `buscarSimilares` (`server/duplicados.js`) antes de
 insertar. Si hay un candidato (alta: misma fecha+motivo+monto aunque el banco difiera; media/baja

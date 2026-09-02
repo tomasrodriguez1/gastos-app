@@ -158,6 +158,30 @@ presupuesto (vía `vinculado` + gasto de aporte) duplicaría el gasto: el cargo 
 registra una vez en `gastos`; registrar también un "aporte al fondo" lo contaría dos veces. Por eso
 `reserva_tarjeta` vive fuera del ciclo de presupuesto y no se toca en el UPSERT de sync.
 
+### `tarjeta_ciclo`
+
+Día de cierre configurable por tarjeta, una fila por `banco` (PK):
+
+```sql
+tarjeta_ciclo(banco PK, dia_cierre SMALLINT CHECK 1-28, updated_at)
+```
+
+Se usa para calcular si un movimiento pendiente de `/tarjeta` ya quedó en un estado de cuenta
+cerrado ("facturado") o si todavía puede aparecer en el próximo corte ("no facturado"). **Diseño
+intencional: derivado, no persistido en `gastos`.** `server/tarjeta.js` calcula esto en cada
+request (`facturado()`/`cierreDelPeriodo()`) a partir de `gastos.fecha` + `dia_cierre`, en vez de
+guardar un campo `facturado` por gasto — así, cambiar el día de cierre desde la UI recalcula todo
+al instante sin tener que re-sincronizar filas existentes (mismo motivo que llevó a no persistir
+esto). Sin fila para un banco = "sin ciclo configurado"; `crearResumenTarjeta` y el frontend tratan
+ese caso como `facturado = null` (no se asume un día por defecto).
+
+`GET/PUT /api/tarjeta/ciclos(/:banco)` gestionan la tabla; `GET /api/tarjeta/resumen` la consulta
+para anotar `facturados`/`no_facturados`/`monto_facturado`/`monto_no_facturado` en cada nivel de
+`crearResumenTarjeta` (totales, por banco y por categoría).
+
+GAP: el cálculo de facturado se recalcula sobre todos los movimientos pendientes en cada request
+a `/api/tarjeta/resumen`; si el volumen de gastos por tarjeta crece mucho podría materializarse.
+
 **Semántica de `gastos.split` en esta vista:** monto CLP del cargo que le deben a Tomás (compra
 por terceros). No afecta `montoReal()` ni el presupuesto (deliberado — ver "Qué no debe cambiarse").
 En `/tarjeta`: Por pagar = Σ`monto` (no pagados) · Por cobrar = Σ`split` · Gasto neto = la resta.

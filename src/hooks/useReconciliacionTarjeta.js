@@ -13,21 +13,25 @@ async function leerJson(res) {
 export function useReconciliacionTarjeta() {
   const [resumen, setResumen] = useState(null)
   const [reservas, setReservas] = useState({})
+  const [ciclos, setCiclos] = useState({})
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
 
   const refrescar = useCallback(async () => {
     try {
-      const [resumenRes, reservasRes] = await Promise.all([
+      const [resumenRes, reservasRes, ciclosRes] = await Promise.all([
         fetch('/api/tarjeta/resumen'),
         fetch('/api/reserva-tarjeta'),
+        fetch('/api/tarjeta/ciclos'),
       ])
-      const [nuevoResumen, filasReserva] = await Promise.all([
+      const [nuevoResumen, filasReserva, filasCiclo] = await Promise.all([
         leerJson(resumenRes),
         leerJson(reservasRes),
+        leerJson(ciclosRes),
       ])
       setResumen(nuevoResumen)
       setReservas(Object.fromEntries(filasReserva.map(row => [row.banco, row.monto])))
+      setCiclos(Object.fromEntries(filasCiclo.map(row => [row.banco, row.dia_cierre])))
       setError(null)
     } catch (e) {
       setError(e.message)
@@ -50,6 +54,15 @@ export function useReconciliacionTarjeta() {
     setReservas(prev => ({ ...prev, [banco]: monto }))
   }, [])
 
+  const guardarCiclo = useCallback(async (banco, diaCierre) => {
+    await leerJson(await fetch(`/api/tarjeta/ciclos/${encodeURIComponent(banco)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dia_cierre: diaCierre }),
+    }))
+    setCiclos(prev => ({ ...prev, [banco]: diaCierre }))
+  }, [])
+
   const ejecutar = useCallback(async (accion, payload) => {
     const resultado = await leerJson(await fetch(`/api/tarjeta/${accion}`, {
       method: 'POST',
@@ -63,10 +76,12 @@ export function useReconciliacionTarjeta() {
   return {
     resumen,
     reservas,
+    ciclos,
     cargando,
     error,
     refrescar,
     guardarReserva,
+    guardarCiclo,
     conciliar: payload => ejecutar('conciliar', payload),
     desconciliar: payload => ejecutar('desconciliar', payload),
     pagar: payload => ejecutar('pagar', payload),

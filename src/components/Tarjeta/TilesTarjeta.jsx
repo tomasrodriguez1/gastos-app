@@ -56,7 +56,42 @@ function ReservaLegacy({ banco, monto, onGuardar }) {
   )
 }
 
-export function TilesTarjeta({ banco, moneda, metricas, globales, reservaLegacy, onGuardarReserva }) {
+function CicloTarjeta({ banco, diaCierre, onGuardar }) {
+  const [editando, setEditando] = useState(false)
+  const [valor, setValor] = useState(String(diaCierre || ''))
+
+  async function confirmar() {
+    const numero = Number(valor)
+    if (Number.isInteger(numero) && numero >= 1 && numero <= 28) await onGuardar(banco, numero)
+    setEditando(false)
+  }
+
+  return (
+    <div className="rounded-xl border border-dashed border-sky-500/30 bg-sky-500/[0.04] p-4">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-sky-500/70">Día de cierre</div>
+      {editando ? (
+        <input
+          type="number"
+          min={1}
+          max={28}
+          autoFocus
+          value={valor}
+          onChange={event => setValor(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter') confirmar(); if (event.key === 'Escape') setEditando(false) }}
+          onBlur={confirmar}
+          className="mt-2 w-20 rounded-lg border border-slate-600 bg-slate-900 px-2 py-1 text-right font-mono-numbers text-slate-200"
+        />
+      ) : (
+        <button onClick={() => { setValor(String(diaCierre || '')); setEditando(true) }} className="mt-2 font-mono-numbers text-lg text-slate-300 hover:text-white">
+          {diaCierre ? `Día ${diaCierre}` : 'Sin configurar'}
+        </button>
+      )}
+      <p className="mt-1 text-xs text-slate-600">Define qué movimientos ya quedaron en un estado cerrado.</p>
+    </div>
+  )
+}
+
+export function TilesTarjeta({ banco, moneda, metricas, globales, reservaLegacy, onGuardarReserva, diaCierre, onGuardarCiclo }) {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
@@ -66,9 +101,16 @@ export function TilesTarjeta({ banco, moneda, metricas, globales, reservaLegacy,
         <Card label="Por cobrar" value={metricas.por_cobrar} moneda={moneda} color="text-sky-400" sub={moneda === 'USD' ? 'Split solo se registra en CLP' : 'Compras de terceros'} />
         <Card label="Gasto propio neto" value={metricas.gasto_propio_neto} moneda={moneda} sub="Por pagar − por cobrar" />
       </div>
-      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+      {diaCierre ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+          <Card label="Ya facturado" value={metricas.monto_facturado} moneda={moneda} color="text-violet-400" sub={`${metricas.facturados} movimientos · corte pasado`} />
+          <Card label="Aún no facturado" value={metricas.monto_no_facturado} moneda={moneda} color="text-amber-400" sub={`${metricas.no_facturados} movimientos · próximo corte`} />
+        </div>
+      ) : null}
+      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto]">
         <Card label="Fondo total tarjetas" value={globales.fondo_actual} moneda={moneda} sub="Edwards + BICE" color="text-emerald-400" />
         <Card label="Falta total tarjetas" value={globales.falta_depositar} moneda={moneda} sub="Edwards + BICE" color="text-rose-400" />
+        <CicloTarjeta banco={banco} diaCierre={diaCierre} onGuardar={onGuardarCiclo} />
         <ReservaLegacy banco={banco} monto={reservaLegacy} onGuardar={onGuardarReserva} />
       </div>
     </div>
