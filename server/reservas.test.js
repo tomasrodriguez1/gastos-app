@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { calcularSaldoEsperado, registrarSaldo, createReservaRouter, excedeTolerancia } from './reservas'
+import {
+  calcularSaldoEsperado, registrarSaldo, createReservaRouter, excedeTolerancia,
+  crearReserva, editarReserva, listarReservas, listarSaldosReserva,
+  validarVinculadoContraCatalogo,
+} from './reservas'
 
 const reserva = (overrides = {}) => ({
   id: 1,
@@ -43,8 +47,18 @@ function dbFalsa({ reservas = [], saldos = [], gastos = [] } = {}) {
         (r.vinculado.subcategoria ?? null) === (subcategoria ?? null)
       )
     }
+    if (consulta.includes('SELECT id FROM reserva WHERE nombre =')) {
+      const [nombre, id] = values
+      return state.reservas.filter(r => r.nombre === nombre && r.id !== id).map(r => ({ id: r.id }))
+    }
+    if (consulta.includes('SELECT * FROM reserva WHERE nombre =')) {
+      return state.reservas.filter(r => r.nombre === values[0])
+    }
     if (consulta.includes('SELECT * FROM reserva WHERE id =')) {
       return state.reservas.filter(r => r.id === values[0])
+    }
+    if (consulta.includes('SELECT * FROM reserva WHERE activa = TRUE')) {
+      return state.reservas.filter(r => r.activa).sort((a, b) => a.nombre.localeCompare(b.nombre))
     }
     if (consulta.includes('SELECT * FROM reserva ORDER BY activa')) {
       return [...state.reservas].sort((a, b) => Number(b.activa) - Number(a.activa) || a.nombre.localeCompare(b.nombre))
@@ -55,12 +69,26 @@ function dbFalsa({ reservas = [], saldos = [], gastos = [] } = {}) {
       state.reservas.push(row)
       return [row]
     }
+    if (consulta.includes('UPDATE reserva SET')) {
+      const [nombre, emoji, tasa_anual, activa, id] = values
+      const row = state.reservas.find(r => r.id === id)
+      if (!row) return []
+      Object.assign(row, { nombre, emoji, tasa_anual, activa })
+      return [row]
+    }
     if (consulta.includes('FROM reserva_saldo') && consulta.includes('ORDER BY fecha DESC LIMIT 1')) {
       const [reservaId, fechaNueva] = values
       return state.saldos
         .filter(s => s.reserva_id === reservaId && s.fecha < fechaNueva)
         .sort((a, b) => b.fecha.localeCompare(a.fecha))
         .slice(0, 1)
+    }
+    if (consulta.includes('SELECT * FROM reserva_saldo') && consulta.includes('WHERE reserva_id =')) {
+      const [reservaId, limite] = values
+      return state.saldos
+        .filter(s => s.reserva_id === reservaId)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha))
+        .slice(0, limite ?? 20)
     }
     if (consulta.includes('FROM regla_mapeo')) return []
     if (consulta.includes('FROM gastos') && consulta.includes("estado = 'confirmado'")) {
@@ -191,5 +219,83 @@ describe('POST /api/reservas', () => {
     })
     expect(respuesta.status).toBe(201)
     expect(state.reservas.some(r => r.nombre === 'Vacaciones')).toBe(true)
+  })
+})
+
+describe('validarVinculadoContraCatalogo', () => {
+  const catalogos = {
+    grupos: [
+      { nombre: 'AUTO', subcategorias: [{ nombre: 'Mantención' }, { nombre: 'Patente' }] },
+      { nombre: 'VIAJES', subcategorias: [{ nombre: 'Vacaciones' }] },
+    ],
+  }
+
+  test('acepta grupo y subcategoría existentes, normalizando mayúsculas', () => {
+    const r = validarVinculadoContraCatalogo({ grupo: 'auto', subcategoria: 'patente' }, catalogos)
+    expect(r.vinculado).toEqual({ grupo: 'AUTO', subcategoria: 'Patente' })
+  })
+
+  test('sin subcategoría vincula todo el grupo', () => {
+    const r = validarVinculadoContraCatalogo({ grupo: 'VIAJES' }, catalogos)
+    expect(r.vinculado).toEqual({ grupo: 'VIAJES' })
+  })
+
+  test('rechaza un grupo que no está en el catálogo', () => {
+    const r = validarVinculadoContraCatalogo({ grupo: 'INVENTADO' }, catalogos)
+    expect(r.error).toContain('INVENTADO')
+  })
+
+  test('rechaza una subcategoría que no pertenece al grupo', () => {
+    const r = validarVinculadoContraCatalogo({ grupo: 'AUTO', subcategoria: 'Vacaciones' }, catalogos)
+    expect(r.error).toContain('Vacaciones')
+  })
+})
+
+describe('crearReserva / editarReserva / listar', () => {
+  test('nombre duplicado activo no inserta', async () => {
+    const { db, state } = dbFalsa({ reservas: [reserva()] })
+    const resultado = await crearReserva({ nombre: 'Mantención auto', vinculado: { grupo: 'VIAJES' } }, db)
+    expect(resultado.status).toBe(409)
+    expect(resultado.reservaId).toBe(1)
+    expect(state.reservas).toHaveLength(1)
+  })
+
+  test('nombre duplicado inactivo sugiere reactivar', async () => {
+    const { db } = dbFalsa({ reservas: [reserva({ activa: false, nombre: 'Patente' })] })
+    const resultado = await crearReserva({ nombre: 'Patente', vinculado: { grupo: 'AUTO', subcategoria: 'Patente' } }, db)
+    expect(resultado.status).toBe(409)
+    expect(resultado.sugerencia).toBe('reactivar')
+  })
+
+  test('archivar con editarReserva deja activa=false', async () => {
+    const { db } = dbFalsa({ reservas: [reserva()] })
+    const resultado = await editarReserva(1, { activa: false }, db)
+    expect(resultado.reserva.activa).toBe(false)
+    expect(resultado.reserva.nombre).toBe('Mantención auto')
+  })
+
+  test('listarReservas puede ocultar archivadas', async () => {
+    const { db } = dbFalsa({
+      reservas: [reserva(), reserva({ id: 2, nombre: 'Patente', activa: false, vinculado: { grupo: 'AUTO', subcategoria: 'Patente' } })],
+    })
+    const todas = await listarReservas({}, db)
+    const activas = await listarReservas({ soloActivas: true }, db)
+    expect(todas).toHaveLength(2)
+    expect(activas).toHaveLength(1)
+    expect(activas[0].nombre).toBe('Mantención auto')
+  })
+
+  test('listarSaldosReserva ordena del más reciente y marca no_calza', async () => {
+    const { db } = dbFalsa({
+      reservas: [reserva()],
+      saldos: [
+        { reserva_id: 1, fecha: '2026-08-01', monto_leido: 100000, monto_esperado: null, diferencia: null, origen: 'foto_agente' },
+        { reserva_id: 1, fecha: '2026-08-20', monto_leido: 50000, monto_esperado: 80000, diferencia: -30000, origen: 'foto_agente' },
+      ],
+    })
+    const resultado = await listarSaldosReserva(1, { limite: 10 }, db)
+    expect(resultado.saldos[0].fecha).toBe('2026-08-20')
+    expect(resultado.saldos[0].no_calza).toBe(true)
+    expect(resultado.saldos[1].no_calza).toBe(false)
   })
 })

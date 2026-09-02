@@ -33,7 +33,16 @@ import {
   obtenerConversacion,
 } from './agente/historial.js'
 import { transcribir } from './agente/transcripcion.js'
-import { cargarReservasActivas, registrarSaldo } from './reservas.js'
+import {
+  cargarReservasActivas,
+  registrarSaldo,
+  listarReservas,
+  crearReserva,
+  editarReserva,
+  listarSaldosReserva,
+  obtenerReserva,
+  validarVinculadoContraCatalogo,
+} from './reservas.js'
 import { obtenerCicloActual } from '../src/utils/ciclos.js'
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-luna'
@@ -44,7 +53,7 @@ function promptSistema(catalogos, hoy, reservas, cicloActual) {
     subcategorias: (g.subcategorias || []).map(s => s.nombre),
   }))
   return [
-    'Sos un agente que ayuda a registrar gastos personales en español (Chile) a partir de una frase libre o de fotos de boletas/vouchers/comprobantes, a revisar la bandeja de pendientes y a responder cómo va el ciclo financiero.',
+    'Sos un agente que ayuda a registrar gastos personales en español (Chile) a partir de una frase libre o de fotos de boletas/vouchers/comprobantes, a revisar la bandeja de pendientes, a responder cómo va el ciclo financiero y a gestionar reservas de ahorro (bolsillos de Mercado Pago): crearlas, editarlas, archivarlas y registrar saldos.',
     `Hoy es ${hoy}. El ciclo financiero actual es ${cicloActual} (corte día 29 del mes anterior al 28 del mes nominal). Si el usuario dice "este mes" o "cómo voy", usá ese ciclo, no el mes calendario, salvo que pida un YYYY-MM concreto.`,
     'Si el usuario dice "ayer", "el viernes pasado", etc., calculá la fecha real y respondé siempre en formato YYYY-MM-DD.',
     'Modismos chilenos de plata: "1 luca" = 1.000 pesos, "2 palos" = 2.000.000 de pesos.',
@@ -114,19 +123,37 @@ function promptSistema(catalogos, hoy, reservas, cicloActual) {
     `   ${JSON.stringify(grupos)}`,
     'Si pide un ciclo pasado, pasá ciclo=YYYY-MM. No inventes números: si la tool no trae dato, decilo.',
     '',
-    'Saldos de reservas de ahorro (bolsillos externos, ej. Mercado Pago — mantención auto, patente,',
-    'vacaciones, plata para terceros): si el usuario adjunta una foto que muestra saldos de',
-    '"bolsillos"/reservas (no una boleta de compra), tu tarea es distinta a la de un gasto — extraé',
-    'cada nombre de bolsillo visible y su monto, y mapealo por nombre a una de estas reservas',
-    'activas (nunca inventes una reserva que no esté en la lista; si no reconocés el match,',
-    'preguntá o decí explícitamente que no la reconociste):',
-    `   Reservas activas: ${JSON.stringify(reservas.map(r => ({ id: r.id, nombre: r.nombre, emoji: r.emoji })))}`,
-    'Mostrale al usuario un resumen de qué leíste (reserva → monto) y esperá su confirmación',
-    'explícita en el turno siguiente — igual que con crear_gasto — antes de llamar a',
-    'registrar_saldos_reserva. Si el usuario corrige un monto antes de confirmar, actualizá el',
-    'resumen y volvé a preguntar. registrar_saldos_reserva es idempotente por fecha: si ya se',
-    'registró un saldo hoy y el usuario da un número distinto, se corrige solo, sin que hagas nada',
-    'especial — no hace falta ninguna tool de corrección aparte.',
+    'Reservas de ahorro (bolsillos externos, ej. Mercado Pago — mantención auto, patente, vacaciones,',
+    'plata para terceros). NO son los fondos de ahorro del dashboard ni la referencia legacy de /tarjeta:',
+    'nunca crees un presupuesto_fondo desde acá. Si dudás de la lista (porque acabás de crear/editar',
+    'en este chat), llamá a listar_reservas. Reservas activas al empezar este turno:',
+    `   ${JSON.stringify(reservas.map(r => ({ id: r.id, nombre: r.nombre, emoji: r.emoji, vinculado: r.vinculado })))}`,
+    '',
+    'Consultar: "qué reservas tengo", "cuánto hay en vacaciones" → listar_reservas; si pide historial',
+    'o el último saldo, listar_saldos_reserva con el id.',
+    '',
+    'Crear un bolsillo: si el usuario pide crear uno, O si en una foto aparece un bolsillo que no está',
+    'en la lista, proponé crear_reserva. Mapeá el nombre a un grupo/subcategoría de este catálogo —',
+    'nunca inventes un grupo:',
+    `   ${JSON.stringify(grupos)}`,
+    'tasa_anual default 0.03 (rendimiento MP); 0 si el usuario dice que no rinde. Mostrá un resumen',
+    '(nombre, categoría, tasa) y ESPERÁ confirmación explícita en el turno siguiente — igual que con',
+    'crear_gasto — antes de llamar a crear_reserva. Si crear_reserva responde sugerencia=reactivar,',
+    'ofrecé reactivar con editar_reserva (activa=true). Si hay solape de categoría, avisá y solo',
+    'reintentá con permitir_solape=true si el usuario insiste. No borres reservas: archivá con',
+    'activa=false. No hay forma de cambiar la categoría vinculada después de crear.',
+    '',
+    'Editar: nombre, emoji, tasa o archivar/reactivar. Usá "campos" como en editar_gasto: listá',
+    'EXACTAMENTE los que cambian. Mostrá el cambio y esperá confirmación antes de llamar a editar_reserva.',
+    '',
+    'Saldos (foto de bolsillos MP, no una boleta de compra, o un número que dicta el usuario): extraé',
+    'cada nombre y monto, mapealo a una reserva existente. Si no existe, proponé crearla primero',
+    '(con confirmación) y recién después registrar el saldo. Mostrale un resumen (reserva → monto) y',
+    'esperá confirmación explícita en el turno siguiente antes de llamar a registrar_saldos_reserva.',
+    'Si acabás de crear una reserva en este mismo turno, usá el id que devolvió crear_reserva — no te',
+    'quedes solo con la lista del prompt. Si el usuario corrige un monto, actualizá el resumen y volvé',
+    'a preguntar. registrar_saldos_reserva es idempotente por fecha: un segundo llamado el mismo día',
+    'corrige el anterior, sin tool de corrección aparte.',
   ].join('\n')
 }
 
@@ -360,30 +387,141 @@ function editarGastoToolFactory(catalogos) {
   })
 }
 
-// Registra saldo(s) de reserva leídos de una foto. A diferencia de crear_gasto,
-// escribe directo (sin estado 'pendiente' en DB) — nunca escribe a `gastos` ni
-// a `presupuesto_*`, solo lee de ahí para calcular el esperado, y es corregible
-// con un simple upsert por (reserva, fecha). La garantía de "el usuario vio el
-// número antes de que cuente" no es un gate de DB acá sino el mismo patrón
-// conversacional de crear_gasto: el prompt le pide al modelo mostrar el resumen
-// y esperar confirmación explícita antes de llamar a esta tool.
-function registrarSaldosReservaToolFactory(reservas) {
+// Reservas F6. crear/editar/registrar escriben directo (sin estado 'pendiente'
+// en DB) — nunca escriben a `gastos` ni a `presupuesto_*`. La garantía de "el
+// usuario vio el dato antes de que cuente" vive en el prompt: mostrar resumen y
+// esperar confirmación explícita, igual que crear_gasto.
+const listarReservasTool = tool({
+  description:
+    'Lista las reservas de ahorro (bolsillos externos, ej. Mercado Pago). Incluye archivadas ' +
+    'salvo que se pida solo_activas. Para el historial de saldos de una reserva concreta usá ' +
+    'listar_saldos_reserva.',
+  inputSchema: z.object({
+    solo_activas: z.boolean().default(false).describe('true para ocultar las archivadas'),
+  }),
+  execute: async ({ solo_activas }) => {
+    const reservas = await listarReservas({ soloActivas: solo_activas })
+    return { total: reservas.length, reservas }
+  },
+})
+
+function crearReservaToolFactory(catalogos) {
+  return tool({
+    description:
+      'Crea una reserva de ahorro (bolsillo de Mercado Pago). No es un fondo del dashboard. ' +
+      'Grupo/subcategoría deben existir en el catálogo. Si hay solape de categoría, no crea ' +
+      'salvo permitir_solape=true (solo si el usuario insistió).',
+    inputSchema: z.object({
+      nombre: z.string().describe('Nombre del bolsillo, tal como lo ve el usuario (ej. Vacaciones)'),
+      emoji: z.string().default('💰').describe('Emoji corto para mostrar'),
+      grupo: z.string().describe('Grupo presupuestario del catálogo al que se vincula'),
+      subcategoria: z.string().default('').describe('Subcategoría del catálogo; vacío = todo el grupo cuenta'),
+      tasa_anual: z.number().default(0.03).describe('Rendimiento estimado anual (0.03 = 3% típico de MP; 0 si no rinde)'),
+      permitir_solape: z.boolean().default(false).describe('true solo si el usuario insistió aunque otra reserva ya use esa categoría'),
+    }),
+    execute: async ({ nombre, emoji, grupo, subcategoria, tasa_anual, permitir_solape }) => {
+      const validado = validarVinculadoContraCatalogo(
+        { grupo, subcategoria: subcategoria || undefined },
+        catalogos,
+      )
+      if (validado.error) {
+        const grupos = (catalogos.grupos || []).map(g => ({
+          grupo: g.nombre,
+          subcategorias: (g.subcategorias || []).map(s => s.nombre),
+        }))
+        return { error: validado.error, grupos_validos: grupos }
+      }
+      const resultado = await crearReserva({
+        nombre,
+        emoji,
+        vinculado: validado.vinculado,
+        tasa_anual,
+        permitir_solape,
+      })
+      if (resultado.error) {
+        return {
+          error: resultado.error,
+          reservaId: resultado.reservaId,
+          sugerencia: resultado.sugerencia,
+        }
+      }
+      return {
+        ok: true,
+        reserva: resultado.reserva,
+        resumen: `Reserva creada: ${resultado.reserva.emoji} ${resultado.reserva.nombre} → ${resultado.reserva.vinculado.grupo}` +
+          (resultado.reserva.vinculado.subcategoria ? ` / ${resultado.reserva.vinculado.subcategoria}` : ''),
+      }
+    },
+  })
+}
+
+const editarReservaTool = tool({
+  description:
+    'Edita nombre, emoji, tasa_anual o archiva/reactiva una reserva existente (encontrada con ' +
+    'listar_reservas). No cambia la categoría vinculada. No borra: para archivar usá activa=false.',
+  inputSchema: z.object({
+    reservaId: z.number().int().describe('Id de la reserva, obtenido de listar_reservas o crear_reserva'),
+    campos: z.array(z.enum(['nombre', 'emoji', 'tasa_anual', 'activa']))
+      .describe('Lista de los campos que EFECTIVAMENTE cambian — solo estos se aplican.'),
+    nombre: z.string().optional().describe('Nuevo nombre — solo si "nombre" está en campos'),
+    emoji: z.string().optional().describe('Nuevo emoji — solo si "emoji" está en campos'),
+    tasa_anual: z.number().optional().describe('Nueva tasa anual — solo si "tasa_anual" está en campos'),
+    activa: z.boolean().optional().describe('false archiva, true reactiva — solo si "activa" está en campos'),
+  }),
+  execute: async ({ reservaId, campos, ...cambios }) => {
+    const actual = await obtenerReserva(reservaId)
+    if (!actual) return { error: 'No encontré ninguna reserva con ese id.' }
+
+    const payload = {}
+    for (const campo of campos || []) {
+      if (cambios[campo] !== undefined) payload[campo] = cambios[campo]
+    }
+    if (Object.keys(payload).length === 0) return { error: 'No me diste ningún cambio válido para aplicar.' }
+
+    const resultado = await editarReserva(reservaId, payload)
+    if (resultado.error) return { error: resultado.error }
+    return {
+      ok: true,
+      reserva: resultado.reserva,
+      resumen: `Reserva actualizada: ${resultado.reserva.emoji} ${resultado.reserva.nombre}` +
+        (resultado.reserva.activa ? '' : ' (archivada)'),
+    }
+  },
+})
+
+const listarSaldosReservaTool = tool({
+  description:
+    'Historial de saldos leídos de una reserva (más reciente primero), con esperado vs diferencia. ' +
+    'Para "cuánto hay en vacaciones" o si un saldo no calzó.',
+  inputSchema: z.object({
+    reservaId: z.number().int().describe('Id de la reserva, obtenido de listar_reservas'),
+    limite: z.number().int().min(1).max(50).default(20),
+  }),
+  execute: async ({ reservaId, limite }) => {
+    const resultado = await listarSaldosReserva(reservaId, { limite })
+    if (resultado.error) return { error: resultado.error }
+    return resultado
+  },
+})
+
+function registrarSaldosReservaTool() {
   return tool({
     description:
       'Registra el/los saldo(s) leído(s) de una o más reservas (bolsillos de ahorro) para hoy o ' +
       'la fecha indicada, y calcula si calzan contra lo esperado según los gastos de su categoría ' +
-      'vinculada. Idempotente por (reserva, fecha): un segundo llamado el mismo día corrige el anterior.',
+      'vinculada. Idempotente por (reserva, fecha): un segundo llamado el mismo día corrige el anterior. ' +
+      'Si la reserva se acaba de crear en este turno, usá el id que devolvió crear_reserva.',
     inputSchema: z.object({
       lecturas: z.array(z.object({
-        reservaId: z.number().int().describe('Id de la reserva, tomado de la lista de reservas activas'),
-        monto: z.number().describe('Saldo leído en la foto, en pesos chilenos'),
+        reservaId: z.number().int().describe('Id de la reserva, tomado de listar_reservas o crear_reserva'),
+        monto: z.number().describe('Saldo leído en la foto o dictado, en pesos chilenos'),
         fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Fecha del saldo mostrado (normalmente hoy)'),
-      })).min(1).describe('Una entrada por cada bolsillo/reserva reconocido en la(s) foto(s)'),
+      })).min(1).describe('Una entrada por cada bolsillo/reserva reconocido'),
     }),
     execute: async ({ lecturas }) => {
       const resultados = []
       for (const { reservaId, monto, fecha } of lecturas) {
-        const reserva = reservas.find(r => r.id === reservaId)
+        const reserva = await obtenerReserva(reservaId)
         if (!reserva) {
           resultados.push({ reservaId, error: 'No reconocí esa reserva.' })
           continue
@@ -458,7 +596,11 @@ agenteRouter.post(
       buscar_gastos_pendientes: buscarPendientesTool,
       resumir_bandeja: resumirBandejaTool,
       editar_gasto: editarGastoToolFactory(catalogos),
-      registrar_saldos_reserva: registrarSaldosReservaToolFactory(reservas),
+      registrar_saldos_reserva: registrarSaldosReservaTool(),
+      listar_reservas: listarReservasTool,
+      crear_reserva: crearReservaToolFactory(catalogos),
+      editar_reserva: editarReservaTool,
+      listar_saldos_reserva: listarSaldosReservaTool,
       resumen_ciclo: resumenCicloTool,
       buscar_gastos: buscarGastosTool,
     },

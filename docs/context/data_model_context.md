@@ -198,8 +198,10 @@ no estén pagados.
 ### `reserva` / `reserva_saldo`
 
 Bolsillos de ahorro externos (ej. Mercado Pago: mantención auto, patente, vacaciones, plata
-para terceros como Ale/FGP), con historial de saldos leídos por foto vía el agente conversacional
-(F6, ver `context.md`). **No confundir con `reserva_tarjeta`** (arriba): esa es un valor único por
+para terceros como Ale/FGP), con historial de saldos leídos por foto o dictados vía el agente
+conversacional (F6, ver `context.md`). El agente también crea, lista, edita y archiva el
+catálogo (`listar_reservas` / `crear_reserva` / `editar_reserva`); no borra filas ni cambia
+`vinculado` después de crear. **No confundir con `reserva_tarjeta`** (arriba): esa es un valor único por
 banco sin historial; `reserva` es un catálogo persistente (`nombre`, `vinculado`, `tasa_anual`,
 `activa`) con snapshots en `reserva_saldo` (`fecha`, `monto_leido`, `monto_esperado`, `diferencia`).
 Ambas coexisten por el mismo motivo: standalone, fuera del ciclo de presupuesto, para no fusionarse
@@ -311,10 +313,13 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 - Ni Groq ni el agente conversacional pueden escribir `tipos`/`contexto` fuera del catálogo
   real (`catalogo_tipo`/`catalogo_contexto`) — filtro duro server-side en ambos casos.
 - Preservación de `presupuesto_manual`, `contexto_override`, `monto_clp_manual`, `monto_presupuesto_manual`, `financiado_por` en sync.
-- `registrar_saldos_reserva` (agente, F6) escribe directo en `reserva_saldo` sin gate de estado
-  en DB (a diferencia de `crear_gasto`/`editar_gasto`) — la garantía de "el usuario vio el dato
-  antes de que cuente" vive en el prompt (`server/agente.js`), que debe mostrar el resumen leído
-  y esperar confirmación explícita en el turno siguiente antes de llamar a la tool. No quitar
-  ese paso del prompt sin agregar un mecanismo de revisión equivalente.
+- `registrar_saldos_reserva` / `crear_reserva` / `editar_reserva` (agente, F6) escriben directo
+  en `reserva` / `reserva_saldo` sin gate de estado en DB (a diferencia de `crear_gasto` /
+  `editar_gasto`) — la garantía de "el usuario vio el dato antes de que cuente" vive en el
+  prompt (`server/agente.js`), que debe mostrar el resumen y esperar confirmación explícita en
+  el turno siguiente antes de llamar a la tool. No quitar ese paso del prompt sin agregar un
+  mecanismo de revisión equivalente. `crear_reserva` no acepta un `grupo`/`subcategoria` fuera
+  del catálogo (`validarVinculadoContraCatalogo`). El agente no crea `presupuesto_fondo` ni
+  borra reservas (solo `activa=false`).
 - Integridad referencial presupuesto → `presupuesto_ciclo`.
 - Orden de prioridad en `regla_mapeo`.

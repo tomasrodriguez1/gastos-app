@@ -127,19 +127,21 @@ no se envía automáticamente, se revisa/edita antes de apretar "Enviar". Requie
 sin ella el botón falla con 503 sin afectar el resto del chat. Detalle en
 `docs/architecture/integrations.md`.
 
-**Reservas de ahorro (F6):** además de gastos, el agente puede registrar saldos leídos de una
-foto de reservas externas (ej. Mercado Pago: mantención auto, patente, vacaciones, plata para
-terceros) con la tool `registrar_saldos_reserva`. Las reservas activas (`reserva`, ver
-`docs/context/data_model_context.md`) se inyectan en el system prompt igual que tipos/contexto,
-así el modelo mapea por nombre sin necesitar una tool de lookup — nunca crea una reserva nueva
-por su cuenta (eso es solo vía `POST /api/reservas`, fuera del agente). A diferencia de
-`crear_gasto`, la tool escribe el saldo directo (sin `estado='pendiente'`, porque no es una
-transacción — solo lee de `gastos` para calcular el esperado, nunca escribe ahí) pero el prompt
-igual le exige al modelo mostrar el resumen leído y esperar confirmación explícita del usuario
-en el turno siguiente antes de llamar a la tool. Es idempotente por `(reserva, fecha)`: una
-corrección posterior el mismo día es solo volver a llamarla con el monto correcto. Detalle del
-cálculo de "esperado" (retiros implícitos por categoría vinculada + crecimiento estimado) en
-`docs/context/data_model_context.md`.
+**Reservas de ahorro (F6):** el agente gestiona bolsillos externos (ej. Mercado Pago: mantención
+auto, patente, vacaciones, plata para terceros) — no los fondos de ahorro del dashboard ni la
+referencia legacy de `/tarjeta`. Tools: `listar_reservas`, `crear_reserva`, `editar_reserva`
+(nombre/emoji/tasa/archivar; no cambia la categoría vinculada ni borra), `listar_saldos_reserva`
+y `registrar_saldos_reserva`. `crear_reserva` valida grupo/subcategoría contra el catálogo
+(`validarVinculadoContraCatalogo`) y reusa `POST /api/reservas` vía `crearReserva()`: no inventa
+grupos, no crea `presupuesto_fondo`, y si el nombre ya existe inactivo sugiere reactivar.
+El prompt exige confirmación explícita en el turno siguiente antes de crear, editar o registrar
+un saldo — igual que `crear_gasto`. A diferencia de un gasto, estas tools escriben directo
+(sin `estado='pendiente'`, porque no es una transacción — solo leen de `gastos` para calcular
+el esperado, nunca escriben ahí). `registrar_saldos_reserva` es idempotente por `(reserva, fecha)`:
+una corrección posterior el mismo día es volver a llamarla con el monto correcto. Si la reserva
+se acaba de crear en el mismo turno, usa el id que devolvió `crear_reserva` (ya no depende de un
+snapshot del prompt). Detalle del cálculo de "esperado" (retiros implícitos por categoría
+vinculada + crecimiento estimado) en `docs/context/data_model_context.md`.
 
 **Historial de conversaciones (persistencia):** cada mensaje (`UIMessage` con su `parts[]`,
 incluidos los tool-calls) se guarda en `agente_conversaciones`/`agente_mensajes`
@@ -201,3 +203,5 @@ etc.) no cambió — sigue detrás del mismo gate global, ahora combinado (sesi�
   puede crecer la fila/DB con el tiempo si se suben muchas fotos.
 - GAP: no hay forma de borrar o renombrar una conversación del agente desde la UI — solo
   listar (`GET /api/agente/conversaciones`) y reabrir.
+- GAP: no hay UI dedicada para gestionar reservas F6 (crear/editar/listar bolsillos); el
+  camino soportado es el agente y `GET/POST/PATCH /api/reservas`.

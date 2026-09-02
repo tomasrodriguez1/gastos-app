@@ -9,6 +9,10 @@ const TOOL_PART_TYPES = new Set([
   'tool-buscar_gastos_pendientes',
   'tool-editar_gasto',
   'tool-registrar_saldos_reserva',
+  'tool-listar_reservas',
+  'tool-crear_reserva',
+  'tool-editar_reserva',
+  'tool-listar_saldos_reserva',
 ])
 
 function IconAdjuntar() {

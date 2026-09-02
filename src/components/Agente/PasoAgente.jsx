@@ -44,6 +44,31 @@ const ETIQUETAS = {
       .map(r => r.error ? `⚠ ${r.error}` : r.resumen)
       .join(' · ') || 'Sin lecturas registradas',
   },
+  'tool-listar_reservas': {
+    input: (input) => input?.solo_activas ? 'Listando reservas activas…' : 'Listando reservas…',
+    output: (output) => (output?.total
+      ? `${output.total} reserva${output.total === 1 ? '' : 's'}`
+      : 'No hay reservas'),
+  },
+  'tool-crear_reserva': {
+    input: (input) => `Creando la reserva "${input?.nombre ?? ''}"…`,
+    output: (output) => output?.error ?? (output?.resumen ?? 'Reserva creada'),
+  },
+  'tool-editar_reserva': {
+    input: () => 'Editando la reserva…',
+    output: (output) => output?.error ?? (output?.resumen ?? 'Reserva actualizada'),
+  },
+  'tool-listar_saldos_reserva': {
+    input: () => 'Consultando saldos de la reserva…',
+    output: (output) => {
+      if (output?.error) return output.error
+      const n = output?.saldos?.length || 0
+      const nombre = output?.reserva?.nombre
+      return n
+        ? `${n} saldo${n === 1 ? '' : 's'} de ${nombre}`
+        : `Sin lecturas todavía${nombre ? ` en ${nombre}` : ''}`
+    },
+  },
   'tool-resumen_ciclo': {
     input: (input) => `Consultando el ciclo${input?.ciclo ? ` ${input.ciclo}` : ''}…`,
     output: (output) => (output?.ciclo

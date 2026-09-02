@@ -21,6 +21,7 @@
 | Reglas de mapeo (prioridad, `_NONE_`) | Alta | Asignación presupuestaria |
 | Detección duplicados | Media | Falsos positivos/negativos. `buscarSimilares` (agente) cubierto en `server/duplicados.test.js` |
 | Consultas de ciclo del agente | Media | Totales deben calzar con el dashboard (`server/consultas/ciclo.test.js`) |
+| Reservas F6 (crear/editar/saldos) | Media | El agente escribe directo; solape de categoría y catálogo inválido no deben colarse (`server/reservas.test.js`) |
 | `detectarRecurrentes` | Media | Heurísticas complejas |
 | Presupuesto PUT por sección | Media | Borrado parcial de secciones |
 | Asignación de ciclo 29–28 | Alta | Define filtros, totales, gráficos y comparaciones presupuestarias |

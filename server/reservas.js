@@ -96,6 +96,40 @@ export async function registrarSaldo({ reservaId, monto, fecha }, db = sql) {
   }
 }
 
+export function serializarReserva(row) {
+  return {
+    id: row.id,
+    nombre: row.nombre,
+    emoji: row.emoji,
+    vinculado: vinculadoDe(row),
+    tasa_anual: toMonto(row.tasa_anual) ?? 0,
+    activa: row.activa === true,
+  }
+}
+
+export function validarVinculadoContraCatalogo(vinculado, catalogos) {
+  const grupos = catalogos?.grupos || []
+  const grupoNombre = vinculado?.grupo
+  if (!grupoNombre) return { error: 'Falta vinculado.grupo' }
+  const grupo = grupos.find(g => g.nombre.toLowerCase() === String(grupoNombre).toLowerCase())
+  if (!grupo) {
+    return { error: `El grupo "${grupoNombre}" no existe en el catálogo.` }
+  }
+  if (!vinculado.subcategoria) return { vinculado: { grupo: grupo.nombre } }
+  const sub = (grupo.subcategorias || []).find(s =>
+    s.nombre.toLowerCase() === String(vinculado.subcategoria).toLowerCase()
+  )
+  if (!sub) {
+    return { error: `La subcategoría "${vinculado.subcategoria}" no existe en ${grupo.nombre}.` }
+  }
+  return { vinculado: { grupo: grupo.nombre, subcategoria: sub.nombre } }
+}
+
+export async function obtenerReserva(id, db = sql) {
+  const [row] = await db`SELECT * FROM reserva WHERE id = ${Number(id)}`
+  return row ? serializarReserva(row) : null
+}
+
 export async function cargarReservasActivas(db = sql) {
   const rows = await db`SELECT id, nombre, emoji, vinculado FROM reserva WHERE activa = TRUE ORDER BY nombre`
   return rows.map(r => ({
@@ -106,60 +140,158 @@ export async function cargarReservasActivas(db = sql) {
   }))
 }
 
+export async function listarReservas({ soloActivas = false } = {}, db = sql) {
+  const rows = soloActivas
+    ? await db`SELECT * FROM reserva WHERE activa = TRUE ORDER BY nombre`
+    : await db`SELECT * FROM reserva ORDER BY activa DESC, nombre`
+  return rows.map(serializarReserva)
+}
+
+export async function crearReserva({
+  nombre,
+  emoji,
+  vinculado,
+  tasa_anual,
+  permitir_solape = false,
+} = {}, db = sql) {
+  const nombreLimpio = typeof nombre === 'string' ? nombre.trim() : ''
+  if (!nombreLimpio || !vinculado?.grupo) {
+    return { error: 'Falta nombre o vinculado.grupo', status: 400 }
+  }
+
+  const [existente] = await db`SELECT * FROM reserva WHERE nombre = ${nombreLimpio}`
+  if (existente) {
+    if (existente.activa === false) {
+      return {
+        error: `Ya existe una reserva inactiva llamada "${existente.nombre}". Reactivala con editar_reserva (activa=true) en vez de crear otra.`,
+        status: 409,
+        reservaId: existente.id,
+        sugerencia: 'reactivar',
+      }
+    }
+    return {
+      error: `Ya existe una reserva llamada "${existente.nombre}".`,
+      status: 409,
+      reservaId: existente.id,
+    }
+  }
+
+  // Guard por defecto contra doble conteo entre reservas — no evita que dos
+  // reservas cuenten la misma categoría si se crean directo por SQL.
+  if (!permitir_solape) {
+    const solapadas = await db`
+      SELECT nombre FROM reserva
+      WHERE activa = TRUE
+        AND vinculado->>'grupo' = ${vinculado.grupo}
+        AND (vinculado->>'subcategoria' IS NOT DISTINCT FROM ${vinculado.subcategoria ?? null})
+    `
+    if (solapadas.length) {
+      return {
+        error: `Ya existe una reserva activa vinculada a esa categoría: ${solapadas[0].nombre}`,
+        status: 409,
+      }
+    }
+  }
+
+  try {
+    const [row] = await db`
+      INSERT INTO reserva (nombre, emoji, vinculado, tasa_anual)
+      VALUES (${nombreLimpio}, ${emoji || '💰'}, ${vinculado}, ${tasa_anual ?? 0.03})
+      RETURNING *
+    `
+    return { reserva: serializarReserva(row) }
+  } catch (error) {
+    if (error.code === '23505') {
+      return { error: 'Ya existe una reserva con ese nombre', status: 409 }
+    }
+    throw error
+  }
+}
+
+export async function editarReserva(id, cambios = {}, db = sql) {
+  const reservaId = Number(id)
+  const [actual] = await db`SELECT * FROM reserva WHERE id = ${reservaId}`
+  if (!actual) return { error: 'No encontrada', status: 404 }
+
+  const nombre = cambios.nombre !== undefined
+    ? (typeof cambios.nombre === 'string' ? cambios.nombre.trim() : actual.nombre)
+    : actual.nombre
+  if (!nombre) return { error: 'El nombre no puede quedar vacío', status: 400 }
+
+  if (nombre !== actual.nombre) {
+    const [otro] = await db`SELECT id FROM reserva WHERE nombre = ${nombre} AND id != ${reservaId}`
+    if (otro) return { error: `Ya existe una reserva llamada "${nombre}".`, status: 409 }
+  }
+
+  const emoji = cambios.emoji !== undefined ? cambios.emoji : actual.emoji
+  const tasaAnual = cambios.tasa_anual !== undefined ? cambios.tasa_anual : actual.tasa_anual
+  const activa = cambios.activa !== undefined ? cambios.activa : actual.activa
+
+  const [row] = await db`
+    UPDATE reserva SET
+      nombre = ${nombre},
+      emoji = ${emoji},
+      tasa_anual = ${tasaAnual},
+      activa = ${activa},
+      updated_at = NOW()
+    WHERE id = ${reservaId}
+    RETURNING *
+  `
+  return { reserva: serializarReserva(row) }
+}
+
+export async function listarSaldosReserva(reservaId, { limite = 20 } = {}, db = sql) {
+  const id = Number(reservaId)
+  const reserva = await obtenerReserva(id, db)
+  if (!reserva) return { error: 'Reserva no encontrada', status: 404 }
+
+  const rows = await db`
+    SELECT * FROM reserva_saldo
+    WHERE reserva_id = ${id}
+    ORDER BY fecha DESC
+    LIMIT ${limite}
+  `
+  return {
+    reserva,
+    saldos: rows.map(s => {
+      const montoEsperado = s.monto_esperado == null ? null : toMonto(s.monto_esperado)
+      const diferencia = s.diferencia == null ? null : toMonto(s.diferencia)
+      return {
+        fecha: s.fecha,
+        monto_leido: toMonto(s.monto_leido),
+        monto_esperado: montoEsperado,
+        diferencia,
+        no_calza: excedeTolerancia(diferencia, montoEsperado),
+        origen: s.origen,
+      }
+    }),
+  }
+}
+
 export function createReservaRouter({ db = sql } = {}) {
   const router = new Hono()
 
   router.get('/', async (c) => {
-    const rows = await db`SELECT * FROM reserva ORDER BY activa DESC, nombre`
-    return c.json(rows)
+    return c.json(await listarReservas({}, db))
   })
 
   router.post('/', async (c) => {
     const body = await c.req.json()
-    const { nombre, emoji, vinculado, tasa_anual } = body || {}
-    if (!nombre || !vinculado?.grupo) return c.json({ error: 'Falta nombre o vinculado.grupo' }, 400)
-
-    // Guard por defecto contra doble conteo entre reservas — no evita que dos
-    // reservas cuenten la misma categoría si se crean directo por SQL.
-    if (!body.permitir_solape) {
-      const solapadas = await db`
-        SELECT nombre FROM reserva
-        WHERE activa = TRUE
-          AND vinculado->>'grupo' = ${vinculado.grupo}
-          AND (vinculado->>'subcategoria' IS NOT DISTINCT FROM ${vinculado.subcategoria ?? null})
-      `
-      if (solapadas.length) {
-        return c.json({ error: `Ya existe una reserva activa vinculada a esa categoría: ${solapadas[0].nombre}` }, 409)
-      }
-    }
-
-    const [row] = await db`
-      INSERT INTO reserva (nombre, emoji, vinculado, tasa_anual)
-      VALUES (${nombre}, ${emoji || '💰'}, ${vinculado}, ${tasa_anual ?? 0.03})
-      RETURNING *
-    `
-    return c.json(row, 201)
+    const resultado = await crearReserva(body || {}, db)
+    if (resultado.error) return c.json({ error: resultado.error }, resultado.status)
+    return c.json(resultado.reserva, 201)
   })
 
   router.patch('/:id', async (c) => {
-    const { nombre, emoji, tasa_anual, activa } = await c.req.json()
-    const [row] = await db`
-      UPDATE reserva SET
-        nombre = COALESCE(${nombre}, nombre),
-        emoji = COALESCE(${emoji}, emoji),
-        tasa_anual = COALESCE(${tasa_anual}, tasa_anual),
-        activa = COALESCE(${activa}, activa),
-        updated_at = NOW()
-      WHERE id = ${c.req.param('id')}
-      RETURNING *
-    `
-    if (!row) return c.json({ error: 'No encontrada' }, 404)
-    return c.json(row)
+    const resultado = await editarReserva(c.req.param('id'), await c.req.json(), db)
+    if (resultado.error) return c.json({ error: resultado.error }, resultado.status)
+    return c.json(resultado.reserva)
   })
 
   router.get('/:id/saldos', async (c) => {
-    const rows = await db`SELECT * FROM reserva_saldo WHERE reserva_id = ${c.req.param('id')} ORDER BY fecha DESC`
-    return c.json(rows)
+    const resultado = await listarSaldosReserva(c.req.param('id'), {}, db)
+    if (resultado.error) return c.json({ error: resultado.error }, resultado.status)
+    return c.json(resultado.saldos)
   })
 
   return router
