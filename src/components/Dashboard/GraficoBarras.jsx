@@ -186,7 +186,7 @@ export function GraficoBarras({ gastos, mes, presupuestoMes }) {
   const chartHeight = Math.max(340, data.length * 38 + 72)
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-700/50 bg-slate-800/50">
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-700/50 bg-slate-800/50">
       <div className="px-4 py-4 text-center sm:px-5">
         <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">
           Desviación neta

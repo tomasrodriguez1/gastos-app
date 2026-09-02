@@ -35,23 +35,27 @@ function getCategoria(gasto) {
 
 function MetricBlock({ label, value, detail, tone = 'text-slate-200' }) {
   return (
-    <div className="rounded-lg border border-slate-700/45 bg-slate-950/25 p-4">
-      <div className="text-xs font-medium uppercase tracking-wider text-slate-500">{label}</div>
-      <div className={`mt-2 font-mono-numbers text-xl font-bold ${tone}`}>{value}</div>
-      {detail && <div className="mt-1 text-xs text-slate-500">{detail}</div>}
+    <div className="rounded-lg border border-slate-700/45 bg-slate-950/25 p-3">
+      <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{label}</div>
+      <div className={`mt-1.5 font-mono-numbers text-lg font-bold leading-tight ${tone}`}>{value}</div>
+      {detail && <div className="mt-1 text-[11px] leading-snug text-slate-500">{detail}</div>}
     </div>
   )
+}
+
+function gastosDelCiclo(gastos, mes) {
+  return gastos
+    .filter(gasto => gasto.ciclo_financiero === mes)
+    .filter(gasto => !esGastoUsdPuro(gasto))
+    .map(gasto => ({ ...gasto, montoCalculado: montoDelCiclo(gasto) || 0 }))
+    .filter(gasto => gasto.montoCalculado > 0)
 }
 
 export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
   const presupuestoTotal = calcularTotalPrevisto(presupuestoMes)
   const duracionCiclo = obtenerDuracionCiclo(mes)
-  const gastosMes = gastos
-    .filter(gasto => gasto.ciclo_financiero === mes)
-    .filter(gasto => !esGastoUsdPuro(gasto))
-    .map(gasto => ({ ...gasto, montoCalculado: montoDelCiclo(gasto) || 0 }))
-    .filter(gasto => gasto.montoCalculado > 0)
+  const gastosMes = gastosDelCiclo(gastos, mes)
 
   const diaCorte = getDiaCorte(gastosMes, mes)
   const gastoAcumulado = gastosMes
@@ -68,9 +72,6 @@ export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
   const restante = presupuestoTotal - gastoAcumulado
   const diasRestantes = diaCorte > 0 ? Math.max(1, duracionCiclo - diaCorte + 1) : duracionCiclo
   const ritmoDiario = presupuestoTotal > 0 ? Math.floor(restante / diasRestantes) : 0
-  const topGastos = [...gastosMes]
-    .sort((a, b) => b.montoCalculado - a.montoCalculado)
-    .slice(0, 5)
 
   const pctMes = diaCorte > 0 ? Math.round((diaCorte / duracionCiclo) * 100) : 0
   const pctPresupuesto = presupuestoTotal > 0 && diaCorte > 0
@@ -104,8 +105,8 @@ export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
         : 'text-emerald-400'
 
   return (
-    <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-5">
-      <div className="mb-4">
+    <div className="flex h-full flex-col rounded-xl border border-slate-700/50 bg-slate-800/50 p-4">
+      <div className="mb-3">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
           Metricas accionables
         </h3>
@@ -114,7 +115,7 @@ export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
         </p>
       </div>
 
-      <div className="space-y-4">
+      <div className="grid flex-1 grid-cols-1 content-start gap-3">
         <MetricBlock
           label="Proyeccion de cierre"
           value={sinPresupuesto ? 'Sin presupuesto' : privacyFormat(proyeccionCierre, isPrivacyModeEnabled)}
@@ -187,31 +188,43 @@ export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
           }
         />
 
-        <div className="rounded-lg border border-slate-700/45 bg-slate-950/25">
-          <div className="border-b border-slate-700/45 px-4 py-3">
-            <div className="text-xs font-medium uppercase tracking-wider text-slate-500">
-              Top 5 gastos del ciclo
-            </div>
-          </div>
-          <div className="divide-y divide-slate-700/35">
-            {topGastos.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-slate-500">Sin gastos para este ciclo.</div>
-            ) : topGastos.map(gasto => (
-              <div key={gasto.id || `${gasto.fecha}-${gasto.motivo}-${gasto.montoCalculado}`} className="flex items-start justify-between gap-4 px-4 py-3">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-slate-200">
-                    {gasto.motivo || 'Sin descripcion'}
-                  </div>
-                  <div className="mt-1 truncate text-xs text-slate-500">
-                    {formatFecha(gasto.fecha)} / {getCategoria(gasto)}
-                  </div>
+      </div>
+    </div>
+  )
+}
+
+export function PanelTopGastos({ gastos, mes }) {
+  const { isPrivacyModeEnabled } = usePrivacyMode()
+  const topGastos = [...gastosDelCiclo(gastos, mes)]
+    .sort((a, b) => b.montoCalculado - a.montoCalculado)
+    .slice(0, 5)
+
+  return (
+    <div className="flex h-full flex-col rounded-xl border border-slate-700/50 bg-slate-800/50 p-5">
+      <div className="mb-4">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
+          Top 5 gastos del ciclo
+        </h3>
+      </div>
+      <div className="flex-1 overflow-hidden rounded-lg border border-slate-700/45 bg-slate-950/25">
+        <div className="divide-y divide-slate-700/35">
+          {topGastos.length === 0 ? (
+            <div className="px-4 py-6 text-sm text-slate-500">Sin gastos para este ciclo.</div>
+          ) : topGastos.map(gasto => (
+            <div key={gasto.id || `${gasto.fecha}-${gasto.motivo}-${gasto.montoCalculado}`} className="flex items-start justify-between gap-4 px-4 py-3">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium text-slate-200">
+                  {gasto.motivo || 'Sin descripcion'}
                 </div>
-                <div className="shrink-0 font-mono-numbers text-sm font-semibold text-slate-200">
-                  {privacyFormat(gasto.montoCalculado, isPrivacyModeEnabled)}
+                <div className="mt-1 truncate text-xs text-slate-500">
+                  {formatFecha(gasto.fecha)} / {getCategoria(gasto)}
                 </div>
               </div>
-            ))}
-          </div>
+              <div className="shrink-0 font-mono-numbers text-sm font-semibold text-slate-200">
+                {privacyFormat(gasto.montoCalculado, isPrivacyModeEnabled)}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

@@ -10,7 +10,7 @@ import { SemaforoCategorias } from '../components/Dashboard/SemaforoCategorias'
 import { FondosAhorro } from '../components/Dashboard/FondosAhorro'
 import { FondoFGP } from '../components/Dashboard/FondoFGP'
 import { SyncReview } from '../components/Dashboard/SyncReview'
-import { PanelMetricasAccionables } from '../components/Dashboard/PanelMetricasAccionables'
+import { PanelMetricasAccionables, PanelTopGastos } from '../components/Dashboard/PanelMetricasAccionables'
 import { AlertasPresupuesto } from '../components/Dashboard/AlertasPresupuesto'
 import { obtenerCicloActual, obtenerCicloAnterior } from '../utils/ciclos'
 
@@ -31,7 +31,7 @@ export function CashflowPage({ gastos, ciclos, obtenerPresupuesto, guardarPresup
         catalogos={catalogos}
       />
     )}
-    <main className="max-w-7xl mx-auto px-3 py-4 sm:px-6 sm:py-6 space-y-5">
+    <main className="mx-auto max-w-[90rem] px-3 py-4 sm:px-6 sm:py-6 space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <SelectorCiclo ciclo={ciclo} ciclos={ciclos} onChange={setCiclo} />
         <div className="flex items-center gap-3">
@@ -62,9 +62,10 @@ export function CashflowPage({ gastos, ciclos, obtenerPresupuesto, guardarPresup
         <>
           <ResumenMes gastosMes={gastosMes} presupuestoMes={presupuestoMes} />
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.7fr)_minmax(0,1.15fr)]">
             <GraficoBarras gastos={gastos} mes={ciclo} presupuestoMes={presupuestoMes} />
             <PanelMetricasAccionables gastos={gastos} mes={ciclo} presupuestoMes={presupuestoMes} />
+            <PanelTopGastos gastos={gastos} mes={ciclo} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,65fr)_minmax(0,35fr)] gap-6">
