@@ -30,7 +30,7 @@ export default function App() {
   const { gastosLocales, agregar, actualizar: actualizarLocal, eliminar, recargar: recargarLocales } = useGastosLocales()
 
   async function refetchGastos() {
-    await Promise.all([recargarGastos(), recargarLocales()])
+    await Promise.all([recargarGastos(), recargarLocales(), reconciliacion.refrescar()])
   }
 
   function eliminarCualquierGasto(id) {
@@ -43,9 +43,14 @@ export default function App() {
     return actualizarGasto(id, changes)
   }
   const { obtenerCiclo, guardar, copiarCicloAnterior, cargado: presupuestoCargado, errorGuardado } = usePresupuesto()
-  const { sincronizar, syncing, syncError, pendingSync, confirmarSync, cancelarSync } = useSyncN8n(setGastos)
-  const catalogos = useCatalogos()
   const reconciliacion = useReconciliacionTarjeta()
+
+  function setGastosYRefrescarTarjeta(nuevosGastos) {
+    setGastos(nuevosGastos)
+    reconciliacion.refrescar()
+  }
+  const { sincronizar, syncing, syncError, pendingSync, confirmarSync, cancelarSync } = useSyncN8n(setGastosYRefrescarTarjeta)
+  const catalogos = useCatalogos()
 
   if (loading || !presupuestoCargado) {
     return (
