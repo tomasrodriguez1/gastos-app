@@ -212,6 +212,35 @@ function respuestaError(c, error, status = 400, extra = {}) {
   return c.json({ error, ...extra }, status)
 }
 
+function hoyISO() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function fechaValida(valor) {
+  return typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor)
+}
+
+function serializarMovimientoFondo(row) {
+  return {
+    id: row.id,
+    fecha: row.fecha,
+    tipo: row.tipo,
+    moneda: row.moneda,
+    monto: toMonto(row.monto),
+    banco: row.banco || null,
+    nota: row.nota || null,
+  }
+}
+
+async function saldosFondo(db) {
+  const rows = await db`SELECT moneda, COALESCE(SUM(monto), 0) AS saldo FROM fondo_tarjeta_movimiento GROUP BY moneda`
+  const saldos = Object.fromEntries(MONEDAS_TARJETA.map(moneda => [moneda, 0]))
+  for (const row of rows) {
+    if (MONEDAS_TARJETA.includes(row.moneda)) saldos[row.moneda] = toMonto(row.saldo) || 0
+  }
+  return saldos
+}
+
 export function createTarjetaRouter({ db = sql } = {}) {
   const router = new Hono()
 
@@ -243,6 +272,61 @@ export function createTarjetaRouter({ db = sql } = {}) {
       ON CONFLICT (banco) DO UPDATE SET dia_cierre = EXCLUDED.dia_cierre, updated_at = NOW()
     `
     return c.json({ ok: true, banco, dia_cierre: diaCierre })
+  })
+
+  router.get('/fondo', async (c) => {
+    const [saldos, movimientos] = await Promise.all([
+      saldosFondo(db),
+      db`SELECT * FROM fondo_tarjeta_movimiento ORDER BY fecha DESC, id DESC LIMIT 50`,
+    ])
+    return c.json({ saldos, movimientos: movimientos.map(serializarMovimientoFondo) })
+  })
+
+  router.post('/fondo/aportes', async (c) => {
+    const body = await c.req.json()
+    const moneda = body?.moneda
+    if (!MONEDAS_TARJETA.includes(moneda)) return respuestaError(c, 'Moneda no permitida')
+    const unidades = unidadesDesdeTotal(body?.monto, moneda)
+    if (unidades == null || unidades <= 0) return respuestaError(c, 'El aporte debe ser un monto positivo')
+    const fecha = body?.fecha ?? hoyISO()
+    if (!fechaValida(fecha)) return respuestaError(c, 'Fecha inválida (YYYY-MM-DD)')
+    const nota = typeof body?.nota === 'string' && body.nota.trim() ? body.nota.trim().slice(0, 200) : null
+    const [row] = await db`
+      INSERT INTO fondo_tarjeta_movimiento (fecha, tipo, moneda, monto, nota)
+      VALUES (${fecha}, 'aporte', ${moneda}, ${desdeUnidades(unidades, moneda)}, ${nota})
+      RETURNING *
+    `
+    return c.json({ ok: true, movimiento: serializarMovimientoFondo(row) })
+  })
+
+  // Corrige el saldo a un valor absoluto registrando la diferencia como ajuste,
+  // así el historial sigue sumando exactamente al saldo mostrado.
+  router.put('/fondo/saldo', async (c) => {
+    const body = await c.req.json()
+    const moneda = body?.moneda
+    if (!MONEDAS_TARJETA.includes(moneda)) return respuestaError(c, 'Moneda no permitida')
+    const nuevo = unidadesDesdeTotal(body?.saldo, moneda)
+    if (nuevo == null) return respuestaError(c, 'Saldo inválido')
+    const actual = unidadesDesdeTotal((await saldosFondo(db))[moneda], moneda)
+    const diferencia = nuevo - actual
+    if (diferencia !== 0) {
+      await db`
+        INSERT INTO fondo_tarjeta_movimiento (fecha, tipo, moneda, monto, nota)
+        VALUES (${hoyISO()}, 'ajuste', ${moneda}, ${desdeUnidades(diferencia, moneda)}, 'Ajuste manual de saldo')
+      `
+    }
+    return c.json({ ok: true, moneda, saldo: desdeUnidades(nuevo, moneda), diferencia: desdeUnidades(diferencia, moneda) })
+  })
+
+  // Los pagos no se borran desde acá: quedan atados a gastos marcados pagado.
+  router.delete('/fondo/movimientos/:id', async (c) => {
+    const id = Number(c.req.param('id'))
+    if (!Number.isInteger(id) || id <= 0) return respuestaError(c, 'Id inválido')
+    const [row] = await db`SELECT * FROM fondo_tarjeta_movimiento WHERE id = ${id}`
+    if (!row) return respuestaError(c, 'Movimiento no encontrado', 404)
+    if (row.tipo === 'pago') return respuestaError(c, 'Los pagos registrados no se pueden borrar del fondo', 409)
+    await db`DELETE FROM fondo_tarjeta_movimiento WHERE id = ${id}`
+    return c.json({ ok: true })
   })
 
   router.post('/conciliar', async (c) => {
@@ -313,7 +397,13 @@ export function createTarjetaRouter({ db = sql } = {}) {
           }
         }
         await tx`UPDATE gastos SET pagado = TRUE, updated_at = NOW() WHERE id = ANY(${base.ids})`
-        return { ok: true, actualizados: rows.length, total: desdeUnidades(calculado, base.moneda) }
+        const total = desdeUnidades(calculado, base.moneda)
+        const nota = `Pago ${rows.length} movimiento${rows.length === 1 ? '' : 's'}`
+        await tx`
+          INSERT INTO fondo_tarjeta_movimiento (fecha, tipo, moneda, monto, banco, nota)
+          VALUES (${hoyISO()}, 'pago', ${base.moneda}, ${-total}, ${base.banco}, ${nota})
+        `
+        return { ok: true, actualizados: rows.length, total }
       })
     } catch (error) {
       console.error('[tarjeta/pagar]', error.message)

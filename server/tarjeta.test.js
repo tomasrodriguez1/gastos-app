@@ -152,10 +152,35 @@ describe('endpoints de ciclo de facturación', () => {
   })
 })
 
-function dbFalsa(filasIniciales) {
+function dbFalsa(filasIniciales, movimientosIniciales = []) {
   const filas = filasIniciales.map(fila => ({ ...fila }))
+  const movimientos = movimientosIniciales.map(mov => ({ ...mov }))
   const db = async (strings, ...values) => {
     const consulta = strings.join('?')
+    if (consulta.includes('SUM(monto)')) {
+      const porMoneda = {}
+      for (const mov of movimientos) porMoneda[mov.moneda] = (porMoneda[mov.moneda] || 0) + Number(mov.monto)
+      return Object.entries(porMoneda).map(([moneda, saldo]) => ({ moneda, saldo: String(saldo) }))
+    }
+    if (consulta.includes('INSERT INTO fondo_tarjeta_movimiento')) {
+      const conBanco = consulta.includes('banco')
+      const fila = conBanco
+        ? { fecha: values[0], tipo: 'pago', moneda: values[1], monto: values[2], banco: values[3], nota: values[4] }
+        : consulta.includes("'aporte'")
+          ? { fecha: values[0], tipo: 'aporte', moneda: values[1], monto: values[2], nota: values[3] }
+          : { fecha: values[0], tipo: 'ajuste', moneda: values[1], monto: values[2] }
+      fila.id = movimientos.length + 1
+      movimientos.push(fila)
+      return [fila]
+    }
+    if (consulta.includes('FROM fondo_tarjeta_movimiento ORDER BY')) return [...movimientos].reverse()
+    if (consulta.includes('SELECT * FROM fondo_tarjeta_movimiento WHERE id')) {
+      return movimientos.filter(mov => mov.id === values[0])
+    }
+    if (consulta.includes('DELETE FROM fondo_tarjeta_movimiento')) {
+      movimientos.splice(movimientos.findIndex(mov => mov.id === values[0]), 1)
+      return []
+    }
     if (consulta.includes('FROM regla_mapeo')) return []
     if (consulta.includes("banco IN ('Edwards', 'BICE')")) return filas
     if (consulta.includes('SELECT * FROM gastos WHERE id = ANY')) {
@@ -176,7 +201,7 @@ function dbFalsa(filasIniciales) {
     throw new Error(`Consulta no contemplada en test: ${consulta}`)
   }
   db.begin = callback => callback(db)
-  return { db, filas }
+  return { db, filas, movimientos }
 }
 
 function post(router, ruta, body) {
@@ -212,6 +237,15 @@ describe('operaciones transaccionales de tarjeta', () => {
     expect(filas.every(fila => fila.pagado)).toBe(true)
   })
 
+  test('registrar un pago descuenta el total del fondo de tarjetas', async () => {
+    const { db, movimientos } = dbFalsa([gasto({ id: 'g-1', monto: 1000, conciliado: true })])
+    const router = createTarjetaRouter({ db })
+    const respuesta = await post(router, '/pagar', { banco: 'Edwards', moneda: 'CLP', gasto_ids: ['g-1'], total_pagado: 1000 })
+    expect(respuesta.status).toBe(200)
+    expect(movimientos).toHaveLength(1)
+    expect(movimientos[0]).toMatchObject({ tipo: 'pago', moneda: 'CLP', monto: -1000, banco: 'Edwards' })
+  })
+
   test('rechaza pagar sin conciliación previa y desconciliar un movimiento pagado', async () => {
     const { db } = dbFalsa([gasto({ id: 'g-1', monto: 1000 })])
     const router = createTarjetaRouter({ db })
@@ -221,5 +255,54 @@ describe('operaciones transaccionales de tarjeta', () => {
     const pagado = dbFalsa([gasto({ id: 'g-2', conciliado: true, pagado: true })])
     const routerPagado = createTarjetaRouter({ db: pagado.db })
     expect((await post(routerPagado, '/desconciliar', { banco: 'Edwards', moneda: 'CLP', gasto_ids: ['g-2'] })).status).toBe(409)
+  })
+})
+
+describe('fondo de tarjetas', () => {
+  test('aportes suman y el saldo se calcula por moneda', async () => {
+    const { db } = dbFalsa([], [{ id: 1, moneda: 'USD', monto: '50', tipo: 'aporte' }])
+    const router = createTarjetaRouter({ db })
+    expect((await post(router, '/fondo/aportes', { moneda: 'CLP', monto: 300000, nota: 'sueldo' })).status).toBe(200)
+    expect((await post(router, '/fondo/aportes', { moneda: 'CLP', monto: 200000 })).status).toBe(200)
+    const respuesta = await router.request('/fondo')
+    expect(respuesta.status).toBe(200)
+    const fondo = await respuesta.json()
+    expect(fondo.saldos).toEqual({ CLP: 500000, USD: 50 })
+    expect(fondo.movimientos[0]).toMatchObject({ tipo: 'aporte', moneda: 'CLP', monto: 200000, nota: null })
+    expect(fondo.movimientos[1].nota).toBe('sueldo')
+  })
+
+  test('rechaza aportes no positivos, moneda o fecha inválida', async () => {
+    const { db, movimientos } = dbFalsa([])
+    const router = createTarjetaRouter({ db })
+    expect((await post(router, '/fondo/aportes', { moneda: 'CLP', monto: 0 })).status).toBe(400)
+    expect((await post(router, '/fondo/aportes', { moneda: 'CLP', monto: -10 })).status).toBe(400)
+    expect((await post(router, '/fondo/aportes', { moneda: 'EUR', monto: 10 })).status).toBe(400)
+    expect((await post(router, '/fondo/aportes', { moneda: 'CLP', monto: 10, fecha: '01-10-2026' })).status).toBe(400)
+    expect(movimientos).toHaveLength(0)
+  })
+
+  test('PUT /fondo/saldo registra la diferencia como ajuste', async () => {
+    const { db, movimientos } = dbFalsa([], [{ id: 1, moneda: 'CLP', monto: '500000', tipo: 'aporte' }])
+    const router = createTarjetaRouter({ db })
+    const respuesta = await put(router, '/fondo/saldo', { moneda: 'CLP', saldo: 420000 })
+    expect(respuesta.status).toBe(200)
+    expect((await respuesta.json()).diferencia).toBe(-80000)
+    expect(movimientos[1]).toMatchObject({ tipo: 'ajuste', moneda: 'CLP', monto: -80000 })
+
+    expect((await put(router, '/fondo/saldo', { moneda: 'CLP', saldo: 420000 })).status).toBe(200)
+    expect(movimientos).toHaveLength(2)
+  })
+
+  test('permite borrar aportes pero no pagos', async () => {
+    const { db, movimientos } = dbFalsa([], [
+      { id: 1, moneda: 'CLP', monto: '1000', tipo: 'aporte' },
+      { id: 2, moneda: 'CLP', monto: '-1000', tipo: 'pago' },
+    ])
+    const router = createTarjetaRouter({ db })
+    expect((await router.request('/fondo/movimientos/2', { method: 'DELETE' })).status).toBe(409)
+    expect((await router.request('/fondo/movimientos/1', { method: 'DELETE' })).status).toBe(200)
+    expect(movimientos.map(mov => mov.id)).toEqual([2])
+    expect((await router.request('/fondo/movimientos/99', { method: 'DELETE' })).status).toBe(404)
   })
 })
