@@ -124,7 +124,7 @@ function promptSistema(catalogos, hoy, reservas, cicloActual) {
     'Si pide un ciclo pasado, pasá ciclo=YYYY-MM. No inventes números: si la tool no trae dato, decilo.',
     '',
     'Reservas de ahorro (bolsillos externos, ej. Mercado Pago — mantención auto, patente, vacaciones,',
-    'plata para terceros). NO son los fondos de ahorro del dashboard ni la referencia legacy de /tarjeta:',
+    'plata para terceros). NO son los fondos de ahorro del dashboard ni el fondo de tarjetas de /tarjeta:',
     'nunca crees un presupuesto_fondo desde acá. Si dudás de la lista (porque acabás de crear/editar',
     'en este chat), llamá a listar_reservas. Reservas activas al empezar este turno:',
     `   ${JSON.stringify(reservas.map(r => ({ id: r.id, nombre: r.nombre, emoji: r.emoji, vinculado: r.vinculado })))}`,

@@ -212,6 +212,26 @@ CREATE TABLE IF NOT EXISTS tarjeta_ciclo (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ─── FONDO DE TARJETAS ──────────────────────────────────────────────────────
+-- Fondo común con el que se pagan las tarjetas (Edwards + BICE), por moneda.
+-- Libro de movimientos con signo: aporte (+, manual), pago (−, automático al
+-- registrar un pago en /tarjeta), ajuste (±, al corregir el saldo a mano).
+-- Saldo = SUM(monto) por moneda, derivado. Reemplaza en la UI a
+-- reserva_tarjeta (legacy, no participaba en cálculos). Ver data_model_context.md.
+
+CREATE TABLE IF NOT EXISTS fondo_tarjeta_movimiento (
+  id         SERIAL PRIMARY KEY,
+  fecha      TEXT NOT NULL CHECK (fecha ~ '^\d{4}-\d{2}-\d{2}$'),
+  tipo       TEXT NOT NULL CHECK (tipo IN ('aporte', 'ajuste', 'pago')),
+  moneda     TEXT NOT NULL CHECK (moneda IN ('CLP', 'USD')),
+  monto      NUMERIC NOT NULL,
+  banco      TEXT,
+  nota       TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_fondo_tarjeta_moneda_fecha ON fondo_tarjeta_movimiento(moneda, fecha DESC, id DESC);
+
 -- ─── RESERVAS DE AHORRO (F6) ─────────────────────────────────────────────────
 -- Bolsillos de ahorro externos (ej. Mercado Pago: mantención auto, patente,
 -- vacaciones, plata para terceros). NO es lo mismo que reserva_tarjeta (arriba):

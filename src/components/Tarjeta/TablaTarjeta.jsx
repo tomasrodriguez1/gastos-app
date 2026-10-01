@@ -1,12 +1,7 @@
 import { useMemo, useState } from 'react'
 import { getGastoId } from '../../utils/gastosIds'
 import { formatCLP, formatFecha } from '../../utils/formatters'
-
-function formatMonto(valor, moneda) {
-  return moneda === 'USD'
-    ? `USD ${(valor || 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-    : formatCLP(valor || 0)
-}
+import { formatMontoTarjeta as formatMonto } from './formato'
 
 function montoGasto(gasto, moneda) {
   return moneda === 'USD' ? gasto.usd || 0 : gasto.monto || 0
@@ -29,7 +24,7 @@ function Toggle({ activo, onClick, activoLabel, inactivoLabel, title }) {
   )
 }
 
-export function TablaTarjeta({ gastos, moneda, onActualizarGasto, onConciliar, onDesconciliar, onPagar }) {
+export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, onConciliar, onDesconciliar, onPagar }) {
   const [seleccionados, setSeleccionados] = useState(new Set())
   const [totalOperacion, setTotalOperacion] = useState('')
   const [editandoId, setEditandoId] = useState(null)
@@ -39,6 +34,9 @@ export function TablaTarjeta({ gastos, moneda, onActualizarGasto, onConciliar, o
 
   const seleccion = useMemo(() => gastos.filter((gasto, indice) => seleccionados.has(getGastoId(gasto, indice))), [gastos, seleccionados])
   const idsSeleccionados = seleccion.map(gasto => gasto.id)
+  const bancosSeleccion = [...new Set(seleccion.map(gasto => gasto.banco))]
+  // Cada estado de cuenta es de un banco: conciliar/pagar solo con una tarjeta.
+  const bancoUnico = bancosSeleccion.length === 1 ? bancosSeleccion[0] : null
   const todosSinConciliar = seleccion.length > 0 && seleccion.every(gasto => !gasto.conciliado)
   const todosConciliados = seleccion.length > 0 && seleccion.every(gasto => gasto.conciliado)
   const totalSeleccionado = seleccion.reduce((suma, gasto) => suma + montoGasto(gasto, moneda), 0)
@@ -67,9 +65,9 @@ export function TablaTarjeta({ gastos, moneda, onActualizarGasto, onConciliar, o
     setProcesando(true)
     setError('')
     try {
-      if (tipo === 'conciliar') await onConciliar(idsSeleccionados, Number(totalOperacion))
-      if (tipo === 'desconciliar') await onDesconciliar(idsSeleccionados)
-      if (tipo === 'pagar') await onPagar(idsSeleccionados, Number(totalOperacion))
+      if (tipo === 'conciliar') await onConciliar(bancoUnico, idsSeleccionados, Number(totalOperacion))
+      if (tipo === 'desconciliar') await onDesconciliar(bancoUnico, idsSeleccionados)
+      if (tipo === 'pagar') await onPagar(bancoUnico, idsSeleccionados, Number(totalOperacion))
       setSeleccionados(new Set())
       setTotalOperacion('')
     } catch (e) {
@@ -93,7 +91,7 @@ export function TablaTarjeta({ gastos, moneda, onActualizarGasto, onConciliar, o
   }
 
   if (gastos.length === 0) {
-    return <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-12 text-center text-slate-500">No hay gastos por pagar para esta tarjeta y moneda.</div>
+    return <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-12 text-center text-slate-500">No hay gastos por pagar para esta selección.</div>
   }
 
   return (
@@ -111,14 +109,15 @@ export function TablaTarjeta({ gastos, moneda, onActualizarGasto, onConciliar, o
               className="w-44 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-right font-mono-numbers text-sm text-slate-200 outline-none focus:border-sky-500"
             />
           </div>
-          <button disabled={!todosSinConciliar || procesando} onClick={() => ejecutar('conciliar')} className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs font-medium text-sky-400 disabled:cursor-not-allowed disabled:opacity-30">Conciliar estado</button>
-          <button disabled={!todosConciliados || procesando} onClick={() => ejecutar('pagar')} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-400 disabled:cursor-not-allowed disabled:opacity-30">Registrar pago</button>
-          <button disabled={!todosConciliados || procesando} onClick={() => ejecutar('desconciliar')} className="rounded-lg border border-slate-600/50 px-3 py-2 text-xs text-slate-400 disabled:cursor-not-allowed disabled:opacity-30">Desconciliar</button>
+          <button disabled={!todosSinConciliar || !bancoUnico || procesando} onClick={() => ejecutar('conciliar')} className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs font-medium text-sky-400 disabled:cursor-not-allowed disabled:opacity-30">Conciliar estado</button>
+          <button disabled={!todosConciliados || !bancoUnico || procesando} onClick={() => ejecutar('pagar')} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-400 disabled:cursor-not-allowed disabled:opacity-30">Registrar pago</button>
+          <button disabled={!todosConciliados || !bancoUnico || procesando} onClick={() => ejecutar('desconciliar')} className="rounded-lg border border-slate-600/50 px-3 py-2 text-xs text-slate-400 disabled:cursor-not-allowed disabled:opacity-30">Desconciliar</button>
           <div className="ml-auto text-right text-xs text-slate-500">
             <div>{seleccion.length} seleccionados</div>
             <div className="font-mono-numbers text-slate-300">{formatMonto(totalSeleccionado, moneda)}</div>
           </div>
         </div>
+        {bancosSeleccion.length > 1 && <p className="mt-3 text-xs text-amber-400">Seleccionaste movimientos de {bancosSeleccion.join(' y ')}: conciliá y pagá una tarjeta a la vez.</p>}
         {error && <p className="mt-3 text-xs text-rose-400">{error}</p>}
       </div>
 
@@ -128,10 +127,10 @@ export function TablaTarjeta({ gastos, moneda, onActualizarGasto, onConciliar, o
             <tr className="border-b border-slate-700/50 text-[10px] uppercase tracking-wider text-slate-500">
               <th className="w-10 px-3 py-3"><input type="checkbox" checked={todosMarcados} onChange={toggleTodos} /></th>
               <th className="w-16 px-3 py-3 text-left">Fecha</th>
+              {mostrarBanco && <th className="w-20 px-3 py-3 text-left">Tarjeta</th>}
               <th className="min-w-48 px-3 py-3 text-left">Motivo</th>
               <th className="w-28 px-3 py-3 text-right">Monto</th>
               <th className="w-28 px-3 py-3 text-right">Por cobrar</th>
-              <th className="w-28 px-3 py-3 text-center">Fondo</th>
               <th className="w-28 px-3 py-3 text-center">Budget</th>
               <th className="w-24 px-3 py-3 text-center">Conciliación</th>
               <th className="w-24 px-3 py-3 text-center">Ciclo</th>
@@ -144,6 +143,7 @@ export function TablaTarjeta({ gastos, moneda, onActualizarGasto, onConciliar, o
                 <tr key={id} className={seleccionados.has(id) ? 'bg-sky-500/[0.04]' : 'hover:bg-white/[0.02]'}>
                   <td className="px-3 py-2.5 text-center"><input type="checkbox" checked={seleccionados.has(id)} onChange={() => toggleSeleccion(id)} /></td>
                   <td className="px-3 py-2.5 font-mono-numbers text-xs text-slate-500">{formatFecha(gasto.fecha)}</td>
+                  {mostrarBanco && <td className="px-3 py-2.5 text-xs text-slate-400">{gasto.banco}</td>}
                   <td className="max-w-xs px-3 py-2.5 text-slate-300"><div className="truncate" title={gasto.motivo}>{gasto.motivo}</div></td>
                   <td className="px-3 py-2.5 text-right font-mono-numbers font-medium text-slate-200">{formatMonto(montoGasto(gasto, moneda), moneda)}</td>
                   <td className="px-3 py-2.5 text-right">
@@ -153,7 +153,6 @@ export function TablaTarjeta({ gastos, moneda, onActualizarGasto, onConciliar, o
                       <button onClick={() => empezarSplit(gasto, id)} className="font-mono-numbers text-sky-400 hover:text-sky-300">{formatCLP(gasto.split || 0)}</button>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 text-center"><Toggle activo={gasto.plata_en_cuenta} onClick={() => onActualizarGasto(id, { plata_en_cuenta: !gasto.plata_en_cuenta })} activoLabel="Reservado" inactivoLabel="Falta" title="El importe completo está reservado" /></td>
                   <td className="px-3 py-2.5 text-center"><Toggle activo={gasto.en_presupuesto !== false} onClick={() => onActualizarGasto(id, { en_presupuesto: gasto.en_presupuesto === false })} activoLabel="Incluido" inactivoLabel="Fuera" title="Impacta el presupuesto" /></td>
                   <td className="px-3 py-2.5 text-center">{gasto.conciliado ? <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[11px] text-sky-400">Conciliado</span> : <span className="text-[11px] text-amber-500/70">Pendiente</span>}</td>
                   <td className="px-3 py-2.5 text-center">

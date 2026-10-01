@@ -14,6 +14,7 @@ import { tarjetaRouter } from './tarjeta.js'
 import { createAuthMiddleware } from './auth.js'
 import { migrateComercios } from './db/migrate-comercios.js'
 import { migrateTarjetaReconciliacion } from './db/migrate-tarjeta-reconciliacion.js'
+import { migrateFondoTarjeta } from './db/migrate-fondo-tarjeta.js'
 import { migrateAgenteHistorial } from './db/migrate-agente-historial.js'
 import { migrateFondoUso } from './db/migrate-fondo-uso.js'
 import { migrateReservas } from './db/migrate-reservas.js'
@@ -33,6 +34,7 @@ await migrateFinancialCycles()
 await migrateIngesta()
 await migrateComercios()
 await migrateTarjetaReconciliacion()
+await migrateFondoTarjeta()
 await migrateAgenteHistorial()
 await migrateFondoUso()
 await migrateReservas()
@@ -316,6 +318,8 @@ app.post('/api/presupuesto/:ciclo/copiar-anterior', async (c) => {
 // ─── RESERVA TARJETA ─────────────────────────────────────────────────────────
 // Saldo reservado por tarjeta para pagar la TC (ej. Mercado Pago). Standalone,
 // fuera del presupuesto — ver server/db/schema.pg.sql.
+// LEGACY: /tarjeta ya no lo usa; el fondo vive en fondo_tarjeta_movimiento
+// (GET /api/tarjeta/fondo). Se mantiene para no perder el dato histórico.
 
 app.get('/api/reserva-tarjeta', async (c) => {
   const rows = await sql`SELECT banco, monto FROM reserva_tarjeta ORDER BY banco`

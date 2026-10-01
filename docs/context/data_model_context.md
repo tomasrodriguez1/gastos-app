@@ -29,7 +29,7 @@ Tabla única para gastos sincronizados y manuales.
 | `monto_presupuesto_manual` | NUMERIC | Override monto presupuestario |
 | `es_manual` | BOOLEAN | `false`=sync/n8n, `true`=UI manual |
 | `pagado` | BOOLEAN | Marcado como pagado |
-| `plata_en_cuenta` | BOOLEAN | El importe completo del gasto ya está reservado en el fondo de pago de TC |
+| `plata_en_cuenta` | BOOLEAN | El importe completo del gasto ya está reservado en el fondo de pago de TC. Desde el fondo manual (`fondo_tarjeta_movimiento`) `/tarjeta` ya no lo muestra ni lo usa en sus KPIs; `/api/tarjeta/resumen` lo sigue devolviendo como `fondo_actual`/`falta_depositar` |
 | `en_presupuesto` | BOOLEAN | Si el gasto impacta las agregaciones presupuestarias |
 | `financiado_por` | TEXT | Nombre del fondo de ahorro que financió el gasto; NULL si sale del ciclo |
 | `conciliado` | BOOLEAN | El movimiento fue incluido en un estado de cuenta cuyo total cuadró |
@@ -149,14 +149,38 @@ Clave-valor genérico (usado en SQLite para tracking de migraciones).
 
 ### `reserva_tarjeta`
 
-Saldo manual legacy reservado para cada tarjeta. Una fila por `banco` (PK), valor `monto`
-editable desde `/tarjeta`. Desde F5 se conserva solo como referencia de transición: no participa
-en los totales derivados desde `gastos.plata_en_cuenta`.
+**LEGACY — ya no se muestra en `/tarjeta`.** Saldo manual por tarjeta, una fila por `banco` (PK).
+Nunca participó en los cálculos. Reemplazado por `fondo_tarjeta_movimiento` (abajo). La tabla y
+`GET/PUT /api/reserva-tarjeta` se conservan para no perder el dato histórico (Edwards tenía
+$700.000 al momento del reemplazo; no se migró — el fondo nuevo arrancó en 0 por decisión del
+usuario). GAP: definir si se elimina la tabla y el endpoint.
 
 **Diseño intencional:** es standalone, **no** un `presupuesto_fondo` vinculado. Vincularlo al
 presupuesto (vía `vinculado` + gasto de aporte) duplicaría el gasto: el cargo de la tarjeta ya se
 registra una vez en `gastos`; registrar también un "aporte al fondo" lo contaría dos veces. Por eso
 `reserva_tarjeta` vive fuera del ciclo de presupuesto y no se toca en el UPSERT de sync.
+
+### `fondo_tarjeta_movimiento`
+
+Fondo **común** (todas las tarjetas) con el que se pagan Edwards y BICE, separado por moneda.
+Libro de movimientos con signo:
+
+```sql
+fondo_tarjeta_movimiento(id SERIAL PK, fecha TEXT YYYY-MM-DD, tipo 'aporte'|'ajuste'|'pago',
+                         moneda 'CLP'|'USD', monto NUMERIC con signo, banco TEXT NULL, nota TEXT, created_at)
+```
+
+| tipo | Signo | Origen |
+|------|-------|--------|
+| `aporte` | + | Manual desde `/tarjeta` ("+ Aportar") — `POST /api/tarjeta/fondo/aportes` |
+| `ajuste` | ± | Corrección manual del saldo a un valor absoluto; se guarda la diferencia — `PUT /api/tarjeta/fondo/saldo` |
+| `pago` | − | Automático dentro de la transacción de `POST /api/tarjeta/pagar` (con `banco`) |
+
+**Saldo = `SUM(monto)` por moneda, derivado, nunca persistido.** En `/tarjeta`: "Falta aportar" =
+deuda pendiente de todas las tarjetas (`resumen.totales[moneda].por_pagar`) − saldo. Los pagos no se
+pueden borrar (`DELETE /api/tarjeta/fondo/movimientos/:id` responde 409): quedan atados a gastos
+marcados `pagado`. Mismo criterio standalone que `reserva_tarjeta`: no es un `presupuesto_fondo` ni
+genera gastos (el cargo ya está en `gastos`; un aporte como gasto lo contaría dos veces).
 
 ### `tarjeta_ciclo`
 
@@ -263,6 +287,7 @@ gastos.presupuesto_manual → grupo/subcategoria (JSON, no FK)
 presupuesto_fondo.vinculado → grupo/subcategoria (JSON)
 gastos.financiado_por → presupuesto_fondo.nombre (convención, no FK)
 reserva_tarjeta.banco ~ gastos.banco (convención, no FK)
+fondo_tarjeta_movimiento.banco ~ gastos.banco (solo tipo 'pago'; convención, no FK)
 reserva 1──* reserva_saldo
 reserva.vinculado → grupo/subcategoria (JSON, no FK) — mismo shape que presupuesto_fondo.vinculado
 ```
@@ -297,6 +322,7 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | — | `agente_conversaciones`, `agente_mensajes` (PG-only, `server/db/migrate-agente-historial.js`) — historial del agente conversacional (F3) |
 | — | `gastos.financiado_por`, `presupuesto_fondo.estado` (PG-only, `server/db/migrate-fondo-uso.js`) — uso de fondos de ahorro |
 | — | `reserva`, `reserva_saldo` (PG-only, `server/db/migrate-reservas.js`) — tracking de saldos reales vs esperados en reservas externas (F6) |
+| — | `fondo_tarjeta_movimiento` (PG-only, `server/db/migrate-fondo-tarjeta.js`) — fondo común manual para pagar tarjetas |
 
 **PG:** schema aplicado vía `initSchema()` leyendo `schema.pg.sql`. GAP: sistema de migraciones versionadas para PG — las tablas nuevas siguen el mismo patrón `CREATE TABLE IF NOT EXISTS` que el resto del archivo.
 

@@ -26,7 +26,7 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 | `/bandeja` | Bandeja dedicada de gastos `pendiente`/`error_parseo` (filtros por banco/tipo/contexto/búsqueda, confirmar individual o en bloque) — acceso vía `BotonBandeja` |
 | `/agente` | Agente conversacional (F3): captura en lenguaje natural, triage de bandeja (listar/resumir/editar, nunca confirma), consultas de solo lectura del ciclo, aviso de duplicados al crear. Streaming de pasos con `useChat`. Layout en dos columnas en desktop: chat a la izquierda y bandeja (`BandejaLista`) embebida y colapsable a la derecha. También accesible desde cualquier página vía `AgenteFlotante` |
 | `/presupuesto` | Editor de presupuesto por ciclo financiero (ingresos, categorías, fondos) |
-| `/tarjeta` | Reconciliación Edwards/BICE en CLP o USD: fondo derivado, falta depositar, conciliación de estado y registro posterior del pago. Día de cierre configurable por tarjeta (`tarjeta_ciclo`) para distinguir movimientos ya facturados (estado cerrado) de los que aún no, con filtro y badge por movimiento |
+| `/tarjeta` | Vista consolidada de tarjetas Edwards/BICE (multi-selección) en CLP o USD: gasto total pendiente, ya facturado / no facturado, fondo común aportado manualmente (`fondo_tarjeta_movimiento`: aportes, ajustes y pagos automáticos) y falta aportar, con barra de cobertura y desglose por tarjeta. Conciliación de estado y registro posterior del pago (una tarjeta a la vez). Día de cierre configurable por tarjeta (`tarjeta_ciclo`, chip en la barra de filtros) para distinguir movimientos ya facturados de los que aún no |
 | `/passkeys` | Gestión de passkeys: ver, agregar, eliminar (requiere sesión) |
 
 ## Stack
@@ -128,8 +128,8 @@ sin ella el botón falla con 503 sin afectar el resto del chat. Detalle en
 `docs/architecture/integrations.md`.
 
 **Reservas de ahorro (F6):** el agente gestiona bolsillos externos (ej. Mercado Pago: mantención
-auto, patente, vacaciones, plata para terceros) — no los fondos de ahorro del dashboard ni la
-referencia legacy de `/tarjeta`. Tools: `listar_reservas`, `crear_reserva`, `editar_reserva`
+auto, patente, vacaciones, plata para terceros) — no los fondos de ahorro del dashboard ni el
+fondo de tarjetas de `/tarjeta` (`fondo_tarjeta_movimiento`). Tools: `listar_reservas`, `crear_reserva`, `editar_reserva`
 (nombre/emoji/tasa/archivar; no cambia la categoría vinculada ni borra), `listar_saldos_reserva`
 y `registrar_saldos_reserva`. `crear_reserva` valida grupo/subcategoría contra el catálogo
 (`validarVinculadoContraCatalogo`) y reusa `POST /api/reservas` vía `crearReserva()`: no inventa

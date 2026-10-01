@@ -12,25 +12,25 @@ async function leerJson(res) {
 
 export function useReconciliacionTarjeta() {
   const [resumen, setResumen] = useState(null)
-  const [reservas, setReservas] = useState({})
+  const [fondo, setFondo] = useState({ saldos: { CLP: 0, USD: 0 }, movimientos: [] })
   const [ciclos, setCiclos] = useState({})
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
 
   const refrescar = useCallback(async () => {
     try {
-      const [resumenRes, reservasRes, ciclosRes] = await Promise.all([
+      const [resumenRes, fondoRes, ciclosRes] = await Promise.all([
         fetch('/api/tarjeta/resumen'),
-        fetch('/api/reserva-tarjeta'),
+        fetch('/api/tarjeta/fondo'),
         fetch('/api/tarjeta/ciclos'),
       ])
-      const [nuevoResumen, filasReserva, filasCiclo] = await Promise.all([
+      const [nuevoResumen, nuevoFondo, filasCiclo] = await Promise.all([
         leerJson(resumenRes),
-        leerJson(reservasRes),
+        leerJson(fondoRes),
         leerJson(ciclosRes),
       ])
       setResumen(nuevoResumen)
-      setReservas(Object.fromEntries(filasReserva.map(row => [row.banco, row.monto])))
+      setFondo(nuevoFondo)
       setCiclos(Object.fromEntries(filasCiclo.map(row => [row.banco, row.dia_cierre])))
       setError(null)
     } catch (e) {
@@ -45,14 +45,18 @@ export function useReconciliacionTarjeta() {
     refrescar()
   }, [refrescar])
 
-  const guardarReserva = useCallback(async (banco, monto) => {
-    await leerJson(await fetch(`/api/reserva-tarjeta/${encodeURIComponent(banco)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ monto }),
+  const enviarFondo = useCallback(async (ruta, method, body) => {
+    await leerJson(await fetch(`/api/tarjeta/fondo${ruta}`, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
     }))
-    setReservas(prev => ({ ...prev, [banco]: monto }))
+    setFondo(await leerJson(await fetch('/api/tarjeta/fondo')))
   }, [])
+
+  const aportarFondo = useCallback((moneda, monto, nota) => enviarFondo('/aportes', 'POST', { moneda, monto, nota }), [enviarFondo])
+  const ajustarSaldoFondo = useCallback((moneda, saldo) => enviarFondo('/saldo', 'PUT', { moneda, saldo }), [enviarFondo])
+  const eliminarMovimientoFondo = useCallback(id => enviarFondo(`/movimientos/${id}`, 'DELETE'), [enviarFondo])
 
   const guardarCiclo = useCallback(async (banco, diaCierre) => {
     await leerJson(await fetch(`/api/tarjeta/ciclos/${encodeURIComponent(banco)}`, {
@@ -75,12 +79,14 @@ export function useReconciliacionTarjeta() {
 
   return {
     resumen,
-    reservas,
+    fondo,
     ciclos,
     cargando,
     error,
     refrescar,
-    guardarReserva,
+    aportarFondo,
+    ajustarSaldoFondo,
+    eliminarMovimientoFondo,
     guardarCiclo,
     conciliar: payload => ejecutar('conciliar', payload),
     desconciliar: payload => ejecutar('desconciliar', payload),
