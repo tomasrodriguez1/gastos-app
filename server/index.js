@@ -48,7 +48,7 @@ if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'producti
 
 app.route('/api/auth', authRouter)
 
-// ─── INGESTA EXTERNA (n8n) ───────────────────────────────────────────────────
+// ─── INGESTA EXTERNA (n8n y atajo del teléfono) ─────────────────────────────
 // Montado antes del gate por el mismo motivo que /api/auth/* — usa su propio
 // token (INGESTA_TOKEN), no passkey ni ACCESS_TOKEN. Ver server/ingesta.js.
 

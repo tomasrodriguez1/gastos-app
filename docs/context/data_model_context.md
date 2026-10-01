@@ -34,7 +34,7 @@ Tabla única para gastos sincronizados y manuales.
 | `financiado_por` | TEXT | Nombre del fondo de ahorro que financió el gasto; NULL si sale del ciclo |
 | `conciliado` | BOOLEAN | El movimiento fue incluido en un estado de cuenta cuyo total cuadró |
 | `estado` | TEXT | `confirmado` (default, todo lo pre-existente) \| `pendiente` \| `error_parseo` \| `descartado` — ver "Bandeja de ingesta" abajo |
-| `origen` | TEXT | `manual` (default) \| `mail` \| `chat` (F3, agente conversacional) — de dónde entró el gasto |
+| `origen` | TEXT | `manual` (default) \| `mail` \| `chat` (F3, agente conversacional) \| `telefono` (atajo iOS, `POST /api/ingesta/telefono`) — de dónde entró el gasto |
 | `fuente_id` | TEXT | Id externo (p.ej. id de mensaje de Gmail) para idempotencia de ingesta; único (parcial WHERE NOT NULL) |
 | `payload_raw` | JSONB | Mensaje/evento crudo tal como llegó a `/api/ingesta`, preservado siempre aunque el parseo falle |
 | `created_at`, `updated_at` | TIMESTAMPTZ | Auditoría |

@@ -130,6 +130,20 @@ Contrato que n8n debe postear (el workflow en sí — trigger de Gmail, filtros,
 Edwards; otros asuntos (pagos, abonos, alertas) caen en `error_parseo` hasta agregar su patrón.
 **GAP:** el workflow de n8n en sí (Gmail trigger, filtros, reintentos) no vive en este repo.
 
+### `POST /api/ingesta/telefono` (atajo iOS → app)
+
+Misma auth, misma clasificación y misma bandeja que `/api/ingesta`. El teléfono no manda un mail: manda el comercio y el monto que extrajo un modelo on-device de una notificación de compra BICE. El banco queda fijo en `BICE`. La fecha es el día de la llamada en `America/Santiago`.
+
+| Aspecto | Detalle |
+|---------|---------|
+| Dirección | Atajo de iOS → servidor |
+| Auth | Header `Authorization: Bearer <INGESTA_TOKEN>` — el mismo token que el mail |
+| Payload | `{ "data": { "comercio", "monto" } }`. `data` puede ser ese objeto o el JSON en texto (lo que devuelve el modelo del atajo). También se aceptan `comercio` y `monto` en la raíz |
+| Monto | Número o texto CLP (`4500`, `"4.500"`, `"$4.500"`). No es USD |
+| Idempotencia | `fuente_id` = `telefono:BICE:{fecha}:{comercio normalizado}:{monto}`. La misma compra el mismo día no se inserta dos veces. Dos compras distintas del mismo comercio, monto y día tampoco: la segunda responde `duplicado: true` |
+| Resultado | Gasto `estado='pendiente'`, `origen='telefono'`, `banco='BICE'`. Nunca se confirma solo. Si faltan comercio o monto, `400` y no se inserta nada |
+| Clasificación | La misma cascada: memoria → agente → Groq → sin tipos |
+
 ### `POST /api/agente/chat` (browser → app, F3)
 
 A diferencia de `/api/ingesta`, esto es una sesión interactiva de browser autenticada por el

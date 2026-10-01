@@ -8,6 +8,7 @@ import { obtenerCicloFinanciero } from '../src/utils/ciclos.js'
 import { cargarCatalogos } from './catalogos.js'
 import { buscarComercio } from './comercios.js'
 import { crearGastoPendiente } from './gastos/crear.js'
+import { normalizarComercio } from '../src/utils/comercio.js'
 
 const BANCOS_POR_DOMINIO = [{ dominio: 'bancoedwards.cl', banco: 'Edwards' }]
 
@@ -58,33 +59,14 @@ async function procesarMensaje(msg, catalogos, ia) {
   }
 
   // Cascada de clasificación, solo si el gasto va a quedar pendiente — un
-  // error_parseo no tiene motivo confiable. Memoria primero (gratis). Si el
-  // comercio es nuevo, clasifica el modelo del agente; si no hay key, falla o
-  // devuelve vacío, Groq. Si tampoco hay clasificación, el gasto entra igual.
+  // error_parseo no tiene motivo confiable.
   let tipos = []
   let contexto = ''
   let presupuestoManual = null
   if (estado === 'pendiente') {
-    const memoria = await buscarComercio(motivo)
-    if (memoria) {
-      tipos = memoria.tipos
-      contexto = memoria.contexto
-      presupuestoManual = memoria.presupuesto_manual
-    } else {
-      const clasificacionAgente = ia.clasificarConAgente
-        ? await ia.clasificarConAgente({ motivo, banco, monto, usd, fecha, catalogos })
-        : null
-      const clasificacion = clasificacionAgente || await ia.clasificarGasto({
-        motivo,
-        banco,
-        tiposDisponibles: catalogos.tipos,
-        contextosDisponibles: catalogos.contextos,
-      })
-      if (clasificacion) {
-        tipos = clasificacion.tipos
-        contexto = clasificacion.contexto
-      }
-    }
+    ;({ tipos, contexto, presupuestoManual } = await clasificarGastoIngesta({
+      motivo, banco, monto, usd, fecha, catalogos, ia,
+    }))
   }
 
   const { gastoId } = await crearGastoPendiente({
@@ -105,6 +87,125 @@ async function procesarMensaje(msg, catalogos, ia) {
   return { id, ok: true, gastoId, estado }
 }
 
+// Memoria primero (gratis). Si el comercio es nuevo, clasifica el modelo del
+// agente; si no hay key, falla o devuelve vacío, Groq. Si tampoco hay
+// clasificación, el gasto entra igual, sin tipos.
+async function clasificarGastoIngesta({ motivo, banco, monto, usd = 0, fecha, catalogos, ia }) {
+  const memoria = await buscarComercio(motivo)
+  if (memoria) {
+    return {
+      tipos: memoria.tipos,
+      contexto: memoria.contexto,
+      presupuestoManual: memoria.presupuesto_manual,
+    }
+  }
+
+  const clasificacionAgente = ia.clasificarConAgente
+    ? await ia.clasificarConAgente({ motivo, banco, monto, usd, fecha, catalogos })
+    : null
+  const clasificacion = clasificacionAgente || await ia.clasificarGasto({
+    motivo,
+    banco,
+    tiposDisponibles: catalogos.tipos,
+    contextosDisponibles: catalogos.contextos,
+  })
+
+  return {
+    tipos: clasificacion?.tipos || [],
+    contexto: clasificacion?.contexto || '',
+    presupuestoManual: null,
+  }
+}
+
+const BANCO_TELEFONO = 'BICE'
+
+function fechaHoyChile(ahora = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(ahora)
+}
+
+function parseMontoClp(raw) {
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return Math.round(raw)
+  if (typeof raw !== 'string') return null
+  const limpio = raw.trim().replace(/[^\d.,]/g, '')
+  if (!limpio) return null
+  const normalizado = limpio.includes(',')
+    ? limpio.replace(/\./g, '').replace(',', '.')
+    : limpio.replace(/\./g, '')
+  const valor = Number(normalizado)
+  if (!Number.isFinite(valor) || valor <= 0) return null
+  return Math.round(valor)
+}
+
+// Atajos (iOS) manda el JSON del modelo on-device en un campo `data`, a veces
+// como objeto y a veces como texto. También se acepta comercio/monto en la raíz.
+function leerCompraTelefono(body) {
+  let payload = body?.json ?? body
+  let data = payload?.data ?? payload
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data)
+    } catch {
+      return null
+    }
+  }
+  if (!data || typeof data !== 'object') return null
+  const comercio = typeof data.comercio === 'string' ? data.comercio.trim() : ''
+  const monto = parseMontoClp(data.monto)
+  if (!comercio || monto == null) return null
+  return { comercio, monto }
+}
+
+function fuenteIdTelefono({ fecha, comercio, monto }) {
+  const clave = normalizarComercio(comercio) || comercio.trim().toLowerCase()
+  return `telefono:${BANCO_TELEFONO}:${fecha}:${clave}:${monto}`
+}
+
+async function procesarTelefono(body, catalogos, ia) {
+  const compra = leerCompraTelefono(body)
+  if (!compra) return { ok: false, error: 'Faltan comercio o monto', status: 400 }
+
+  const fecha = fechaHoyChile()
+  const banco = BANCO_TELEFONO
+  const fuenteId = fuenteIdTelefono({ fecha, comercio: compra.comercio, monto: compra.monto })
+
+  const existente = await sql`SELECT id, estado FROM gastos WHERE fuente_id = ${fuenteId} LIMIT 1`
+  if (existente.length > 0) {
+    return {
+      ok: true,
+      duplicado: true,
+      gastoId: existente[0].id,
+      estado: existente[0].estado,
+      fuente_id: fuenteId,
+    }
+  }
+
+  const { tipos, contexto, presupuestoManual } = await clasificarGastoIngesta({
+    motivo: compra.comercio,
+    banco,
+    monto: compra.monto,
+    fecha,
+    catalogos,
+    ia,
+  })
+
+  const { gastoId } = await crearGastoPendiente({
+    fecha,
+    motivo: compra.comercio,
+    monto: compra.monto,
+    usd: 0,
+    banco,
+    tipos,
+    contexto,
+    presupuesto_manual: presupuestoManual,
+    estado: 'pendiente',
+    origen: 'telefono',
+    fuente_id: fuenteId,
+    payload_raw: body,
+  })
+
+  return { ok: true, gastoId, estado: 'pendiente', duplicado: false, fuente_id: fuenteId }
+}
+
 const iaDefault = {
   extraerCampos: groqDefault.extraerCampos,
   clasificarGasto: groqDefault.clasificarGasto,
@@ -114,13 +215,35 @@ const iaDefault = {
 // `ia` es inyectable para poder testear la orquestación del endpoint sin llamar
 // a OpenAI ni a Groq de verdad — ver server/ingesta.test.js. En producción
 // siempre usa el módulo real.
+function tokenIngesta(c) {
+  const authHeader = c.req.header('Authorization') || ''
+  return authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+}
+
 export function createIngestaRouter({ ia = iaDefault } = {}) {
   const router = new Hono()
 
+  router.post('/telefono', async (c) => {
+    if (!verifyIngestaToken(tokenIngesta(c))) return c.json({ error: 'No autorizado' }, 401)
+
+    let body
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: 'Body inválido' }, 400)
+    }
+
+    try {
+      const catalogos = await cargarCatalogos()
+      const { status = 200, ...respuesta } = await procesarTelefono(body, catalogos, ia)
+      return c.json(respuesta, status)
+    } catch (error) {
+      return c.json({ ok: false, error: error.message }, 500)
+    }
+  })
+
   router.post('/', async (c) => {
-    const authHeader = c.req.header('Authorization') || ''
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
-    if (!verifyIngestaToken(token)) return c.json({ error: 'No autorizado' }, 401)
+    if (!verifyIngestaToken(tokenIngesta(c))) return c.json({ error: 'No autorizado' }, 401)
 
     let body
     try {

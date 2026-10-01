@@ -197,3 +197,69 @@ describe('POST /api/ingesta', () => {
     expect(Number(gasto.monto)).toBe(5000)
   })
 })
+
+function postTelefono(body, token = TOKEN) {
+  return app.request('/telefono', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  })
+}
+
+describe('POST /api/ingesta/telefono', () => {
+  test('token inválido -> 401', async () => {
+    const res = await postTelefono({ comercio: 'Uber', monto: 4500 }, 'token-incorrecto')
+    expect(res.status).toBe(401)
+  })
+
+  test.skipIf(!TOKEN)('data como texto JSON del atajo -> pendiente BICE, clasificado por el agente', async () => {
+    clasificarConAgenteMock.mockResolvedValueOnce({ tipos: ['Transporte'], contexto: 'Personal' })
+    const comercio = `ZZFONO${crypto.randomUUID().slice(0, 8)}`
+
+    const res = await postTelefono({
+      data: JSON.stringify({ comercio, monto: '4.500' }),
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.estado).toBe('pendiente')
+    expect(body.duplicado).toBe(false)
+    fuenteIdsCreados.push(body.fuente_id)
+    expect(clasificarGastoMock).not.toHaveBeenCalled()
+
+    const gasto = await buscarGasto(body.fuente_id)
+    expect(gasto.motivo).toBe(comercio)
+    expect(Number(gasto.monto)).toBe(4500)
+    expect(gasto.banco).toBe('BICE')
+    expect(gasto.origen).toBe('telefono')
+    expect(gasto.tipos).toEqual(['Transporte'])
+    expect(gasto.contexto).toBe('Personal')
+  })
+
+  test.skipIf(!TOKEN)('mismo comercio y monto el mismo día no duplica', async () => {
+    const comercio = `ZZFONODUP${crypto.randomUUID().slice(0, 8)}`
+    const payload = { data: { comercio, monto: 3200 } }
+
+    const primera = await postTelefono(payload)
+    const segunda = await postTelefono(payload)
+    const body1 = await primera.json()
+    const body2 = await segunda.json()
+    fuenteIdsCreados.push(body1.fuente_id)
+
+    expect(body1.duplicado).toBe(false)
+    expect(body2.duplicado).toBe(true)
+    expect(body2.gastoId).toBe(body1.gastoId)
+
+    const filas = await sql`SELECT id FROM gastos WHERE fuente_id = ${body1.fuente_id}`
+    expect(filas.length).toBe(1)
+  })
+
+  test.skipIf(!TOKEN)('sin comercio o sin monto -> 400, no clasifica', async () => {
+    const res = await postTelefono({ data: { comercio: '', monto: 1000 } })
+    expect(res.status).toBe(400)
+    expect(clasificarConAgenteMock).not.toHaveBeenCalled()
+    expect(clasificarGastoMock).not.toHaveBeenCalled()
+  })
+})

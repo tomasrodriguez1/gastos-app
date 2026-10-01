@@ -75,8 +75,10 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 autenticado con `INGESTA_TOKEN` (no passkey). Gastos nacen en `estado='pendiente'` y se
 revisan en `/bandeja` y `/log`. Si el comercio no está en memoria, lo clasifica el modelo
 del agente (`server/ingesta/agente.js`); Groq queda como respaldo. No pasa por el chat.
-Detalle y contrato HTTP para n8n en `docs/architecture/integrations.md`; modelo de
-`estado` en `docs/context/data_model_context.md`. Ver DEC-012.
+`POST /api/ingesta/telefono` recibe comercio y monto desde un atajo del teléfono
+(banco fijo BICE, mismo `INGESTA_TOKEN`) y sigue la misma clasificación. Detalle y
+contrato HTTP en `docs/architecture/integrations.md`; modelo de `estado` en
+`docs/context/data_model_context.md`. Ver DEC-012.
 
 ## API — Agente conversacional (F3)
 
