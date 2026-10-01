@@ -8,17 +8,26 @@ import { createIngestaRouter } from './ingesta.js'
 // vía `bun test server`). Estos tests validan la orquestación del endpoint (idempotencia,
 // fallback regex->IA, estado resultante), no la IA en sí — eso vive en groq.test.js.
 const extraerCamposMock = mock(async () => null)
+const clasificarConAgenteMock = mock(async () => null)
 const clasificarGastoMock = mock(async () => null)
 
 afterEach(() => {
   extraerCamposMock.mockReset()
+  clasificarConAgenteMock.mockReset()
   clasificarGastoMock.mockReset()
   extraerCamposMock.mockImplementation(async () => null)
+  clasificarConAgenteMock.mockImplementation(async () => null)
   clasificarGastoMock.mockImplementation(async () => null)
 })
 
 const app = new Hono()
-app.route('/', createIngestaRouter({ ia: { extraerCampos: extraerCamposMock, clasificarGasto: clasificarGastoMock } }))
+app.route('/', createIngestaRouter({
+  ia: {
+    extraerCampos: extraerCamposMock,
+    clasificarConAgente: clasificarConAgenteMock,
+    clasificarGasto: clasificarGastoMock,
+  },
+}))
 
 const TOKEN = process.env.INGESTA_TOKEN
 const fuenteIdsCreados = []
@@ -76,6 +85,31 @@ describe('POST /api/ingesta', () => {
     expect(gasto.origen).toBe('mail')
     expect(gasto.tipos).toEqual(['Suscripcion'])
     expect(gasto.contexto).toBe('Personal')
+  })
+
+  test.skipIf(!TOKEN)('comercio nuevo: si el agente clasifica, Groq no se llama', async () => {
+    clasificarConAgenteMock.mockResolvedValueOnce({ tipos: ['Comida'], contexto: 'Personal' })
+    const fuenteId = `test-agente-${crypto.randomUUID()}`
+    fuenteIdsCreados.push(fuenteId)
+    const comercio = `ZZAGENTE${fuenteId.slice(-8)}`
+
+    const res = await post([{
+      id: fuenteId,
+      snippet: `Te informamos que se ha realizado una compra por $4.200 con Tarjeta de Crédito ****5256 en ${comercio} el 26/07/2026 13:40.`,
+      From: 'Banco Edwards <enviodigital@bancoedwards.cl>',
+      Subject: 'Compra con Tarjeta de Crédito',
+      internalDate: '1783356062000',
+    }])
+    expect(res.status).toBe(200)
+    const { resultados } = await res.json()
+    expect(resultados[0].estado).toBe('pendiente')
+    expect(clasificarGastoMock).not.toHaveBeenCalled()
+
+    const gasto = await buscarGasto(fuenteId)
+    expect(gasto.motivo).toBe(comercio)
+    expect(gasto.tipos).toEqual(['Comida'])
+    expect(gasto.contexto).toBe('Personal')
+    expect(gasto.origen).toBe('mail')
   })
 
   test.skipIf(!TOKEN)('desenvuelve el mensaje cuando llega envuelto en { json: {...} } (n8n "Using Fields Below")', async () => {
@@ -139,6 +173,8 @@ describe('POST /api/ingesta', () => {
     expect(Number(gasto.monto)).toBe(0)
     expect(gasto.payload_raw).toEqual(msg)
     expect(gasto.tipos).toEqual([])
+    expect(clasificarConAgenteMock).not.toHaveBeenCalled()
+    expect(clasificarGastoMock).not.toHaveBeenCalled()
   })
 
   test.skipIf(!TOKEN)('subject desconocido pero la IA rescata los campos -> pendiente', async () => {

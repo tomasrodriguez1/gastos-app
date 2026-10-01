@@ -114,13 +114,21 @@ webhook n8n" (que sigue existiendo para `useSyncN8n.js`, sin cambios).
 | Auth | Header `Authorization: Bearer <INGESTA_TOKEN>` — token dedicado, no passkey ni `ACCESS_TOKEN`. Ver `server/ingesta.js`, `server/auth.js` |
 | Payload | El recurso de mensaje de Gmail tal cual (o array de varios) — `id`, `snippet`, `From`, `Subject`, `internalDate`, etc. También acepta el mensaje envuelto en `{ json: {...} }` (forma natural del modo "Using Fields Below" del nodo HTTP Request de n8n) — se desenvuelve en el servidor |
 | Idempotencia | `id` del mensaje de Gmail = `gastos.fuente_id` (único); reintentos no duplican |
-| Resultado | Gasto con `estado='pendiente'` (o `'error_parseo'` si nada logra extraer los campos) — nunca se confirma automáticamente, queda en la bandeja de `/log` |
-| Implementación | `server/ingesta.js` (endpoint) + `server/ingesta/parseEdwardsCompra.js` (parser determinista) + `server/ingesta/groq.js` (fallback IA) |
+| Resultado | Gasto con `estado='pendiente'` (o `'error_parseo'` si nada logra extraer los campos) — nunca se confirma automáticamente, queda en la bandeja de `/bandeja` y `/log` |
+| Clasificación | Solo si quedó `pendiente`: memoria `comercio_mapeo` → clasificador del agente (`server/ingesta/agente.js`, mismo `OPENAI_MODEL`) → Groq `clasificarGasto` si el agente no está, falla o devuelve vacío → sin tipos si tampoco hay Groq. Grupo/subcategoría no se guardan: salen de `tipos` + `contexto` vía `src/utils/mapeo.js`. El prompt del agente incluye ese mapeo |
+| Implementación | `server/ingesta.js` (endpoint) + `server/ingesta/parseEdwardsCompra.js` (parser determinista) + `server/ingesta/agente.js` (clasificación) + `server/ingesta/groq.js` (extracción y clasificación de respaldo) |
+| Timeout n8n | El nodo HTTP conviene dejarlo en ~30s: la clasificación del agente tiene tope de 15s y, si falla, puede seguir Groq |
+
+Contrato que n8n debe postear (el workflow en sí — trigger de Gmail, filtros, reintentos — no vive en este repo):
+
+- `POST https://<app>/api/ingesta`
+- Header `Authorization: Bearer <INGESTA_TOKEN>`
+- Body: mensaje de Gmail con `id`, `snippet`, `From`, `Subject`, `internalDate`, o ese objeto envuelto en `{ json: {...} }`, o un array de varios
+- Filtro de compras: el formato firme es Edwards, asunto `Compra con Tarjeta de Crédito`, remitente con `bancoedwards.cl`
 
 **GAP:** solo se confirmó el formato de `Subject: "Compra con Tarjeta de Crédito"` de
 Edwards; otros asuntos (pagos, abonos, alertas) caen en `error_parseo` hasta agregar su patrón.
-**GAP:** el workflow de n8n en sí (Gmail trigger, filtros, reintentos) no vive en este repo —
-documentar por separado cuando esté armado.
+**GAP:** el workflow de n8n en sí (Gmail trigger, filtros, reintentos) no vive en este repo.
 
 ### `POST /api/agente/chat` (browser → app, F3)
 
@@ -152,23 +160,25 @@ lo revisa/edita y aprieta "Enviar". A diferencia de la clasificación best-effor
 
 ## AI / OCR
 
-**Groq** (`server/ingesta/groq.js`, `server/agente/transcripcion.js`) — dos usos: clasificación
-automática y fallback de extracción para gastos ingresados vía `/api/ingesta` (best-effort, nunca
-bloquea la ingesta ni confirma un gasto por sí solo — ver invariante en `server/ingesta.js`), y
-transcripción de notas de voz del chat del agente (`POST /api/agente/transcribir`, no
-best-effort: un fallo se muestra al usuario). Variable `GROQ_API_KEY` (opcional — sin ella, la
-ingesta sigue funcionando solo con el parser determinista, y el botón de nota de voz responde 503).
+**Groq** (`server/ingesta/groq.js`, `server/agente/transcripcion.js`) — dos usos en la ingesta:
+fallback de extracción de campos cuando el parser no reconoce el mail, y clasificación de
+respaldo si el clasificador del agente no devuelve tipos/contexto (best-effort, nunca bloquea
+la ingesta ni confirma un gasto por sí solo — ver invariante en `server/ingesta.js`). También
+transcribe notas de voz del chat (`POST /api/agente/transcribir`, no best-effort: un fallo se
+muestra al usuario). Variable `GROQ_API_KEY` (opcional — sin ella, la extracción queda en el
+parser determinista y la clasificación, en el agente o sin tipos; el botón de nota de voz
+responde 503).
 
-**OpenAI** (`server/agente.js`) — agente conversacional F3, con tool calling y streaming.
-Proveedor separado de Groq a propósito (ver DEC-011 en `docs/architecture/decisions.md`):
-Groq es barato y suficiente para clasificación batch sin tool calling; el agente necesita
-tool calling + streaming de pasos en tiempo real, algo que la ingesta de mail no requiere.
-Variable `OPENAI_API_KEY` (opcional a nivel infraestructura — sin ella, solo el endpoint del
-agente queda deshabilitado con 503; el resto de la app funciona igual).
+**OpenAI** (`server/agente.js`, `server/ingesta/agente.js`) — dos usos del mismo modelo
+(`OPENAI_MODEL`): el agente conversacional F3, con tool calling y streaming (DEC-011), y la
+clasificación one-shot de un mail cuyo comercio no está en memoria (DEC-012). Esa clasificación
+no abre chat, no streamea y no escribe: si falta la key, el modelo falla o devuelve vacío, la
+ingesta sigue con Groq. Variable `OPENAI_API_KEY` (opcional — sin ella, `POST /api/agente/chat`
+responde 503; la ingesta de mail no se corta).
 
-Ambos clasificadores comparten la misma memoria de comercios (`comercio_mapeo`, ver
-`docs/context/data_model_context.md`) como primera etapa de la cascada, antes de llamar a
-cualquiera de los dos proveedores.
+La memoria de comercios (`comercio_mapeo`, ver `docs/context/data_model_context.md`) es la
+primera etapa de la cascada, antes del agente y de Groq. En el mail: memoria → agente → Groq
+→ sin clasificar.
 
 ## Email / pagos / bancos
 
@@ -185,9 +195,9 @@ Los datos bancarios llegan indirectamente vía n8n. GAP: detalle de conexiones b
 | `VITE_N8N_WEBHOOK_URL` | .env (build time) | Dev + prod |
 | `CORS_ORIGIN` | .env | Dev (default localhost:6001) |
 | `INGESTA_TOKEN` | Coolify / .env | Todos (requerida para que `POST /api/ingesta` acepte requests) |
-| `GROQ_API_KEY` | Coolify / .env | Todos (opcional — clasificación de ingesta y transcripción de voz) |
+| `GROQ_API_KEY` | Coolify / .env | Todos (opcional — extracción y clasificación de respaldo en la ingesta, y transcripción de voz) |
 | `GROQ_WHISPER_MODEL` | Coolify / .env | Todos (opcional, default `whisper-large-v3-turbo`) |
-| `OPENAI_API_KEY` | Coolify / .env | Todos (opcional — sin ella, `/api/agente/chat` responde 503) |
+| `OPENAI_API_KEY` | Coolify / .env | Todos (opcional — sin ella, `/api/agente/chat` responde 503 y la ingesta clasifica con Groq o sin tipos) |
 
 ## Entornos
 

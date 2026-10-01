@@ -75,6 +75,8 @@ export async function extraerCampos(snippet) {
 }
 
 // Sugiere tipos/contexto a partir del catálogo real (nunca inventa valores fuera de él).
+// En la ingesta es el respaldo: se llama solo si el clasificador del agente
+// (server/ingesta/agente.js) no está, falla o devuelve vacío.
 // Devuelve { tipos: string[], contexto: string } | null.
 export async function clasificarGasto({ motivo, banco, tiposDisponibles, contextosDisponibles }) {
   if (!motivo || !tiposDisponibles?.length) return null

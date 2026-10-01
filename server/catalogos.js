@@ -1,6 +1,7 @@
 // Carga de catálogos reales (tipos, contextos, bancos, grupos/subcategorías)
-// para que ningún clasificador automático —Groq en la ingesta de mail, o el
-// agente conversacional— pueda producir un valor fuera del catálogo.
+// para que ningún clasificador automático —el modelo del agente o Groq en la
+// ingesta de mail, o el agente conversacional— pueda producir un valor fuera
+// del catálogo.
 // cargarCatalogos() vivía como función privada en server/ingesta.js; se
 // extrajo acá para que el agente (server/agente.js) la comparta sin duplicar
 // las queries.

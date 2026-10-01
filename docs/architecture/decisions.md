@@ -145,6 +145,29 @@ en el repo. Default de `OPENAI_MODEL`: `gpt-5.6-luna` (familia GPT-5.6, variante
 rápida/económica — function calling + streaming, 1M de contexto), confirmado contra la
 documentación oficial de OpenAI.
 
+## DEC-012 - El mail desconocido se clasifica con el modelo del agente
+
+Date: 2026-10-01
+Status: active
+Context: Un comercio que no está en `comercio_mapeo` se clasificaba con Groq
+(`llama-3.1-8b-instant`) dentro de `POST /api/ingesta`. Esa sugerencia de tipos/contexto
+es lo que llega a la bandeja, y un modelo más chico obliga a corregir más. El agente
+conversacional (`server/agente.js`, OpenAI) ya conoce el catálogo y el mapeo a
+grupo/subcategoría, pero su prompt espera un segundo turno de confirmación antes de
+`crear_gasto`, y esa tool guarda `origen='chat'` sin `fuente_id`. Un webhook de n8n no
+tiene ese segundo turno y perdería la idempotencia del id de Gmail.
+Decision: La ingesta sigue siendo el único entrypoint (`POST /api/ingesta`, parser,
+`fuente_id`, `origen='mail'`, `crearGastoPendiente`). Si no hay memoria, un clasificador
+one-shot (`server/ingesta/agente.js`) usa el mismo `OPENAI_MODEL` con `generateText` y
+salida estructurada de tipos/contexto, filtrada contra el catálogo. No abre conversación
+ni llama tools de escritura. Si no hay `OPENAI_API_KEY`, el modelo falla o devuelve vacío,
+sigue Groq `clasificarGasto`. El chat de `/agente` no cambia.
+Consequences: Un mail de un comercio nuevo puede llamar a OpenAI (tope 15s, best-effort).
+Sin esa key la ingesta no se corta: cae a Groq o queda sin tipos. DEC-011 sigue vigente
+para el chat (tool calling + streaming) y para no migrar `groq.js` al SDK. Grupo y
+subcategoría siguen sin persistirse: los deriva `src/utils/mapeo.js` a partir de los tipos
+y el contexto que eligió el clasificador.
+
 ## GAP: decisions to document
 
 - Elección específica de proveedor PostgreSQL (Railway vs Neon).

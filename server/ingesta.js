@@ -3,6 +3,7 @@ import sql from './db/client.js'
 import { verifyIngestaToken } from './auth.js'
 import { parseEdwardsCompra } from './ingesta/parseEdwardsCompra.js'
 import * as groqDefault from './ingesta/groq.js'
+import { clasificarConAgente as clasificarConAgenteDefault } from './ingesta/agente.js'
 import { obtenerCicloFinanciero } from '../src/utils/ciclos.js'
 import { cargarCatalogos } from './catalogos.js'
 import { buscarComercio } from './comercios.js'
@@ -56,9 +57,10 @@ async function procesarMensaje(msg, catalogos, ia) {
     usd = 0
   }
 
-  // Cascada de clasificación: memoria de comercios (gratis, instantánea) antes
-  // que el LLM. Solo se intenta si el gasto va a quedar pendiente de revisión
-  // — un error_parseo no tiene motivo confiable para buscar ni clasificar.
+  // Cascada de clasificación, solo si el gasto va a quedar pendiente — un
+  // error_parseo no tiene motivo confiable. Memoria primero (gratis). Si el
+  // comercio es nuevo, clasifica el modelo del agente; si no hay key, falla o
+  // devuelve vacío, Groq. Si tampoco hay clasificación, el gasto entra igual.
   let tipos = []
   let contexto = ''
   let presupuestoManual = null
@@ -69,7 +71,10 @@ async function procesarMensaje(msg, catalogos, ia) {
       contexto = memoria.contexto
       presupuestoManual = memoria.presupuesto_manual
     } else {
-      const clasificacion = await ia.clasificarGasto({
+      const clasificacionAgente = ia.clasificarConAgente
+        ? await ia.clasificarConAgente({ motivo, banco, monto, usd, fecha, catalogos })
+        : null
+      const clasificacion = clasificacionAgente || await ia.clasificarGasto({
         motivo,
         banco,
         tiposDisponibles: catalogos.tipos,
@@ -100,9 +105,16 @@ async function procesarMensaje(msg, catalogos, ia) {
   return { id, ok: true, gastoId, estado }
 }
 
-// `ia` es inyectable para poder testear la orquestación del endpoint sin llamar a Groq
-// de verdad — ver server/ingesta.test.js. En producción siempre usa el módulo real.
-export function createIngestaRouter({ ia = groqDefault } = {}) {
+const iaDefault = {
+  extraerCampos: groqDefault.extraerCampos,
+  clasificarGasto: groqDefault.clasificarGasto,
+  clasificarConAgente: clasificarConAgenteDefault,
+}
+
+// `ia` es inyectable para poder testear la orquestación del endpoint sin llamar
+// a OpenAI ni a Groq de verdad — ver server/ingesta.test.js. En producción
+// siempre usa el módulo real.
+export function createIngestaRouter({ ia = iaDefault } = {}) {
   const router = new Hono()
 
   router.post('/', async (c) => {

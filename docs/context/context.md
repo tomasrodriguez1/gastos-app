@@ -73,8 +73,10 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 
 `POST /api/ingesta` — n8n empuja mensajes de Gmail (banco Edwards) directo al servidor,
 autenticado con `INGESTA_TOKEN` (no passkey). Gastos nacen en `estado='pendiente'` y se
-revisan en `/log`. Detalle completo en `docs/architecture/integrations.md` y modelo de
-`estado` en `docs/context/data_model_context.md`.
+revisan en `/bandeja` y `/log`. Si el comercio no está en memoria, lo clasifica el modelo
+del agente (`server/ingesta/agente.js`); Groq queda como respaldo. No pasa por el chat.
+Detalle y contrato HTTP para n8n en `docs/architecture/integrations.md`; modelo de
+`estado` en `docs/context/data_model_context.md`. Ver DEC-012.
 
 ## API — Agente conversacional (F3)
 
@@ -165,8 +167,9 @@ Tabla `comercio_mapeo` (`server/comercios.js`) aprende de cada confirmación hum
 `/bandeja` o `/log`: al confirmar o corregir un gasto, `PATCH /api/gastos/:id`
 (`server/index.js`) hace upsert best-effort de `tipos`/`contexto`/`presupuesto_manual` por
 comercio normalizado (`src/utils/comercio.js`). Se consulta **antes** del LLM tanto en
-`/api/ingesta` como en `/api/agente/chat` — cascada: memoria (gratis) → LLM → sin
-clasificar. Gestión mínima en `GET/DELETE /api/comercios`, sin UI dedicada todavía.
+`/api/ingesta` como en `/api/agente/chat`. En el mail la cascada es memoria (gratis) →
+clasificador del agente → Groq → sin clasificar. Gestión mínima en `GET/DELETE /api/comercios`,
+sin UI dedicada todavía.
 
 ## API — Autenticación
 

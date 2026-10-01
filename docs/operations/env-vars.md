@@ -19,10 +19,10 @@ Nunca commitear valores reales. Usar `.env.example` como referencia.
 | `RUN_SCHEMA_INIT` | DB schema | All | No | `true` | Ejecutar `schema.pg.sql` al arrancar | `server/index.js` |
 | `VITE_N8N_WEBHOOK_URL` | n8n (client) | All | Yes** | `https://n8n.example.com/webhook/gastos` | Webhook para sync de gastos | `src/hooks/useSyncN8n.js` |
 | `INGESTA_TOKEN` | Ingesta externa | All | Yes*** | `your-random-ingesta-token-here` | Token Bearer que valida `POST /api/ingesta` (n8n → app). Sin token configurado, el endpoint rechaza todo | `server/auth.js`, `server/ingesta.js` |
-| `GROQ_API_KEY` | Ingesta externa (IA) | All | No | `gsk_...` | Habilita clasificación automática (tipos/contexto) y fallback de extracción de campos en `/api/ingesta`. Sin ella, la ingesta sigue funcionando solo con el parser determinista | `server/ingesta/groq.js` |
+| `GROQ_API_KEY` | Ingesta externa (IA) | All | No | `gsk_...` | Fallback de extracción de campos en `/api/ingesta` y clasificación de respaldo si el agente no clasifica. Sin ella, la extracción queda en el parser y la clasificación, en el agente o sin tipos | `server/ingesta/groq.js` |
 | `GROQ_MODEL` | Ingesta externa (IA) | All | No | `llama-3.1-8b-instant` | Modelo Groq a usar; confirmar el nombre vigente al desplegar (Groq puede deprecar modelos) | `server/ingesta/groq.js` |
-| `OPENAI_API_KEY` | Agente conversacional (F3) | All | No | `sk-...` | Habilita `POST /api/agente/chat`. Sin ella, el endpoint responde 503 sin afectar el resto de la app | `server/agente.js` |
-| `OPENAI_MODEL` | Agente conversacional (F3) | All | No | `gpt-5.6-luna` | Modelo OpenAI a usar — default es el modelo más rápido/económico de la familia GPT-5.6 (function calling + streaming, 1M de contexto) | `server/agente.js` |
+| `OPENAI_API_KEY` | Agente + clasificación de mail | All | No | `sk-...` | Habilita `POST /api/agente/chat` y la clasificación de comercios nuevos en `/api/ingesta`. Sin ella, el chat responde 503 y la ingesta clasifica con Groq o deja el gasto sin tipos | `server/agente.js`, `server/ingesta/agente.js` |
+| `OPENAI_MODEL` | Agente + clasificación de mail | All | No | `gpt-5.6-luna` | Modelo OpenAI del chat y del clasificador de mail — default es el modelo más rápido/económico de la familia GPT-5.6 (function calling + streaming, 1M de contexto) | `server/agente.js`, `server/ingesta/agente.js` |
 
 \* Ya no requerida para autenticación humana (passkeys la reemplazan), pero debe seguir
 configurada mientras dure la convivencia — ver DEC-009 y el procedimiento de retiro en
@@ -73,6 +73,8 @@ configurada mientras dure la convivencia — ver DEC-009 y el procedimiento de r
 
 ### Ingesta externa (n8n → `POST /api/ingesta`)
 - `INGESTA_TOKEN`
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
 - `GROQ_API_KEY`
 - `GROQ_MODEL`
 

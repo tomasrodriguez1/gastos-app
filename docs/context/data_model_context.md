@@ -54,7 +54,7 @@ Tabla única para gastos sincronizados y manuales.
 
 Gastos que llegan por `POST /api/ingesta` (ver `docs/architecture/integrations.md`) nacen en
 `estado='pendiente'` — nunca se confirman automáticamente, ni por el parser determinista ni
-por la clasificación de Groq. `/log` es la bandeja donde se revisan y confirman
+por la clasificación (agente o Groq). `/log` es la bandeja donde se revisan y confirman
 (`PATCH /api/gastos/:id` con `{ estado: 'confirmado' }`) o descartan (soft-delete vía
 `{ estado: 'descartado' }`, conserva `payload_raw` para auditoría — distinto de `DELETE`, que
 borra la fila). Si ni el parser ni Groq logran extraer los campos, el gasto queda en
