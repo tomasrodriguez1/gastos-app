@@ -4,9 +4,10 @@ import { BotonBandeja } from '../components/shared/BotonBandeja'
 import { FondosAhorro } from '../components/Dashboard/FondosAhorro'
 import { GraficoEvolucionPresupuesto } from '../components/Dashboard/GraficoEvolucionPresupuesto'
 import { usePrivacyMode } from '../contexts/PrivacyModeContext'
-import { calcularTotalIngresos, calcularTotalMes, calcularTotalPrevisto } from '../utils/calculos'
+import { calcularTotalIngresos, calcularTotalIngresosReales, calcularTotalMes, calcularTotalPrevisto } from '../utils/calculos'
 import { formatCLP, formatFecha, privacyFormat } from '../utils/formatters'
 import { formatCiclo, formatRangoCiclo, obtenerCicloActual } from '../utils/ciclos'
+import { useIngresos } from '../hooks/useIngresos'
 
 function MetricCard({ label, value, detail, tone = 'text-slate-200' }) {
   return (
@@ -53,7 +54,9 @@ export function DashboardPage({ gastos, obtenerPresupuesto, guardarPresupuesto, 
   const presupuestoMes = obtenerPresupuesto(ciclo)
   const gastosMes = gastos.filter(g => g.ciclo_financiero === ciclo).sort((a, b) => b.fecha.localeCompare(a.fecha))
 
+  const { ingresos: ingresosReales } = useIngresos(ciclo)
   const ingresos = calcularTotalIngresos(presupuestoMes)
+  const ingresoReal = calcularTotalIngresosReales(ingresosReales)
   const previsto = calcularTotalPrevisto(presupuestoMes)
   const real = calcularTotalMes(gastos, ciclo)
   const saldo = ingresos - real
@@ -91,7 +94,12 @@ export function DashboardPage({ gastos, obtenerPresupuesto, guardarPresupuesto, 
       )}
 
       <section className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4">
-        <MetricCard label="Ingresos" value={privacyFormat(ingresos, isPrivacyModeEnabled)} detail="Presupuesto del ciclo" tone="text-emerald-400" />
+        <MetricCard
+          label="Ingresos"
+          value={privacyFormat(ingresos, isPrivacyModeEnabled)}
+          detail={`Previsto · Real: ${privacyFormat(ingresoReal, isPrivacyModeEnabled)}`}
+          tone="text-emerald-400"
+        />
         <MetricCard label="Gasto real" value={privacyFormat(real, isPrivacyModeEnabled)} detail={`${avance}% del presupuesto`} />
         <MetricCard label="Presupuestado" value={privacyFormat(previsto, isPrivacyModeEnabled)} detail="Total planificado" tone="text-sky-300" />
         <MetricCard

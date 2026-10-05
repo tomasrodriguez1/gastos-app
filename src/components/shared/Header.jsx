@@ -66,6 +66,16 @@ function IconTarjeta() {
   )
 }
 
+function IconFondos() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 8a7 7 0 1 0-7 7h7a0 0 0 0 0 0 0V8z" />
+      <circle cx="16.5" cy="7.5" r="0.75" fill="currentColor" stroke="none" />
+      <path d="M5 13c-1 1-2 2.5-2 4" />
+    </svg>
+  )
+}
+
 function IconAgente() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -135,6 +145,7 @@ const MOBILE_NAV_MAS = [
   { to: '/cashflow', icon: IconCashflow, label: 'Cashflow' },
   { to: '/analisis', icon: IconAnalisis, label: 'Análisis' },
   { to: '/tarjeta', icon: IconTarjeta, label: 'Tarjeta' },
+  { to: '/fondos', icon: IconFondos, label: 'Fondos' },
   { to: '/passkeys', icon: IconLlave, label: 'Cuenta' },
 ]
 
@@ -182,6 +193,7 @@ export function Sidebar() {
             <NavLink to="/gastos" className={navClass}>Gastos</NavLink>
             <NavLink to="/agente" className={navClass}>Agente</NavLink>
             <NavLink to="/tarjeta" className={navClass}>Tarjeta</NavLink>
+            <NavLink to="/fondos" className={navClass}>Fondos</NavLink>
             <NavLink to="/presupuesto" className={navClass}>Presupuesto</NavLink>
             <NavLink to="/passkeys" className={navClass}>Cuenta</NavLink>
           </nav>

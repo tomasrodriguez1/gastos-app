@@ -74,14 +74,14 @@ export async function calcularSaldoEsperado(reservaId, fechaNueva, db = sql) {
  * Registra (o corrige, vía upsert por fecha) el saldo leído de una reserva.
  * Devuelve { error } si la reserva no existe.
  */
-export async function registrarSaldo({ reservaId, monto, fecha }, db = sql) {
+export async function registrarSaldo({ reservaId, monto, fecha, origen = 'foto_agente' }, db = sql) {
   const esperado = await calcularSaldoEsperado(reservaId, fecha, db)
   if (esperado === null) return { error: 'Reserva no encontrada' }
   const diferencia = esperado.monto == null ? null : monto - esperado.monto
 
   await db`
     INSERT INTO reserva_saldo (reserva_id, fecha, monto_leido, monto_esperado, diferencia, origen)
-    VALUES (${reservaId}, ${fecha}, ${monto}, ${esperado.monto}, ${diferencia}, 'foto_agente')
+    VALUES (${reservaId}, ${fecha}, ${monto}, ${esperado.monto}, ${diferencia}, ${origen})
     ON CONFLICT (reserva_id, fecha) DO UPDATE SET
       monto_leido = EXCLUDED.monto_leido,
       monto_esperado = EXCLUDED.monto_esperado,
@@ -292,6 +292,28 @@ export function createReservaRouter({ db = sql } = {}) {
     const resultado = await listarSaldosReserva(c.req.param('id'), {}, db)
     if (resultado.error) return c.json({ error: resultado.error }, resultado.status)
     return c.json(resultado.saldos)
+  })
+
+  router.post('/:id/saldos', async (c) => {
+    const reservaId = Number(c.req.param('id'))
+    const reserva = await obtenerReserva(reservaId, db)
+    if (!reserva) return c.json({ error: 'Reserva no encontrada' }, 404)
+
+    const body = await c.req.json()
+    const monto = Number(body?.monto)
+    const fecha = body?.fecha
+    if (!Number.isFinite(monto)) return c.json({ error: 'Monto inválido' }, 400)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha || '')) return c.json({ error: 'Fecha inválida' }, 400)
+
+    const resultado = await registrarSaldo({ reservaId, monto, fecha, origen: 'manual' }, db)
+    if (resultado.error) return c.json({ error: resultado.error }, 400)
+    return c.json({
+      reservaId,
+      monto_leido: monto,
+      monto_esperado: resultado.montoEsperado,
+      diferencia: resultado.diferencia,
+      no_calza: resultado.noCalza,
+    }, 201)
   })
 
   return router

@@ -168,6 +168,30 @@ para el chat (tool calling + streaming) y para no migrar `groq.js` al SDK. Grupo
 subcategoría siguen sin persistirse: los deriva `src/utils/mapeo.js` a partir de los tipos
 y el contexto que eligió el clasificador.
 
+## DEC-013 - Ingresos reales en tabla `ingreso` separada de `presupuesto_ingreso`
+
+Date: 2026-10-05
+Status: active
+Context: `presupuesto_ingreso` es solo la previsión por ciclo (un número editado a mano, que se
+reemplaza entero en cada PUT del presupuesto) — no existía forma de registrar que un ingreso
+real efectivamente llegó, con fecha, y verlo acumulado. Meter esos registros como filas de
+`gastos` con signo negativo rompería `montoReal()`/`montoDelCiclo()` (marcados como intocables
+sin revisión) y mezclaría dos conceptos distintos en la misma tabla.
+Decision: Tabla `ingreso` nueva (fecha, fuente, monto, nota, origen), igual criterio que
+`reserva` vs `presupuesto_fondo`: un registro histórico de hechos vive separado de un plan que
+se reescribe. Se puede registrar a mano en `/presupuesto` o desde el agente conversacional
+(`registrar_ingreso`, F3) con `origen='chat'`. Sin `UNIQUE` por fecha — a diferencia de
+`reserva_saldo`, un ingreso real puede repetirse el mismo día sin ser un error.
+Alternatives considered: fila en `gastos` con monto negativo (descartada, ver arriba); ampliar
+`presupuesto_ingreso` con un campo "real" (descartada, el previsto es un valor único por fuente
+y ciclo, no soporta múltiples eventos con fecha propia).
+Consequences: Nueva tabla y router (`server/ingresos.js`, `server/db/migrate-ingresos.js`),
+montados en `server/index.js` junto a los demás módulos standalone (`reserva`,
+`fondo_tarjeta_movimiento`). El Dashboard y `/presupuesto` muestran previsto y real como dos
+números separados — el cálculo de "Saldo" del Dashboard sigue usando el previsto; cambiarlo a
+real es una decisión aparte, no tomada acá (ver GAP en `docs/context/context.md`). Sin
+detección de duplicados para ingresos repetidos.
+
 ## GAP: decisions to document
 
 - Elección específica de proveedor PostgreSQL (Railway vs Neon).

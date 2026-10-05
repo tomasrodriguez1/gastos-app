@@ -25,8 +25,9 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 | `/log` | Log de últimos gastos ingresados (todos los meses), ordenado por `created_at`, resalta lo nuevo desde la última visita, edición inline. También es la bandeja de revisión de gastos `pendiente`/`error_parseo` llegados por `/api/ingesta` (filtro por estado, confirmar individual o en bloque) |
 | `/bandeja` | Bandeja dedicada de gastos `pendiente`/`error_parseo` (filtros por banco/tipo/contexto/búsqueda, confirmar individual o en bloque) — acceso vía `BotonBandeja` |
 | `/agente` | Agente conversacional (F3): captura en lenguaje natural, triage de bandeja (listar/resumir/editar, nunca confirma), consultas de solo lectura del ciclo, aviso de duplicados al crear. Streaming de pasos con `useChat`. Layout en dos columnas en desktop: chat a la izquierda y bandeja (`BandejaLista`) embebida y colapsable a la derecha. También accesible desde cualquier página vía `AgenteFlotante` |
-| `/presupuesto` | Editor de presupuesto por ciclo financiero (ingresos, categorías, fondos) |
+| `/presupuesto` | Editor de presupuesto por ciclo financiero (ingresos previstos, categorías, fondos) + registro de ingresos reales (tabla `ingreso`, separada de la previsión): alta manual con fecha/fuente/monto/nota, lista del ciclo con borrado y total, también registrable por el agente |
 | `/tarjeta` | Vista consolidada de tarjetas Edwards/BICE (multi-selección) en CLP o USD: gasto total pendiente, ya facturado / no facturado, fondo común aportado manualmente (`fondo_tarjeta_movimiento`: aportes, ajustes y pagos automáticos) y falta aportar, con barra de cobertura y desglose por tarjeta. Conciliación de estado y registro posterior del pago (una tarjeta a la vez). Día de cierre configurable por tarjeta (`tarjeta_ciclo`, chip en la barra de filtros) para distinguir movimientos ya facturados de los que aún no |
+| `/fondos` | Agrupa dos de los tres sistemas de "fondo" (ver F6 abajo): reservas de ahorro externas (crear/editar/archivar, registrar saldo leído, historial esperado vs real — antes solo gestionable por el agente) y un resumen de solo lectura del fondo de tarjeta con link a `/tarjeta`. Los fondos de ahorro vinculados al presupuesto siguen en el Dashboard — no se movieron |
 | `/passkeys` | Gestión de passkeys: ver, agregar, eliminar (requiere sesión) |
 
 ## Stack
@@ -131,11 +132,13 @@ no se envía automáticamente, se revisa/edita antes de apretar "Enviar". Requie
 sin ella el botón falla con 503 sin afectar el resto del chat. Detalle en
 `docs/architecture/integrations.md`.
 
-**Reservas de ahorro (F6):** el agente gestiona bolsillos externos (ej. Mercado Pago: mantención
-auto, patente, vacaciones, plata para terceros) — no los fondos de ahorro del dashboard ni el
-fondo de tarjetas de `/tarjeta` (`fondo_tarjeta_movimiento`). Tools: `listar_reservas`, `crear_reserva`, `editar_reserva`
+**Reservas de ahorro (F6):** bolsillos externos (ej. Mercado Pago: mantención auto, patente,
+vacaciones, plata para terceros) — no los fondos de ahorro del dashboard ni el fondo de tarjetas
+de `/tarjeta` (`fondo_tarjeta_movimiento`). Gestionables desde `/fondos` (crear/editar/archivar,
+registrar saldo, ver historial) o por el agente. Tools: `listar_reservas`, `crear_reserva`, `editar_reserva`
 (nombre/emoji/tasa/archivar; no cambia la categoría vinculada ni borra), `listar_saldos_reserva`
-y `registrar_saldos_reserva`. `crear_reserva` valida grupo/subcategoría contra el catálogo
+y `registrar_saldos_reserva` (ahora también disponible como `POST /api/reservas/:id/saldos` desde
+la UI, con `origen='manual'` en vez de `'foto_agente'`). `crear_reserva` valida grupo/subcategoría contra el catálogo
 (`validarVinculadoContraCatalogo`) y reusa `POST /api/reservas` vía `crearReserva()`: no inventa
 grupos, no crea `presupuesto_fondo`, y si el nombre ya existe inactivo sugiere reactivar.
 El prompt exige confirmación explícita en el turno siguiente antes de crear, editar o registrar
@@ -146,6 +149,12 @@ una corrección posterior el mismo día es volver a llamarla con el monto correc
 se acaba de crear en el mismo turno, usa el id que devolvió `crear_reserva` (ya no depende de un
 snapshot del prompt). Detalle del cálculo de "esperado" (retiros implícitos por categoría
 vinculada + crecimiento estimado) en `docs/context/data_model_context.md`.
+
+**Ingresos reales:** distinto de "ingresos previstos" del presupuesto (previsión planificada,
+`presupuesto_ingreso`, no se toca desde el agente). Tools `listar_ingresos` (lectura, por ciclo)
+y `registrar_ingreso` (fuente/monto/fecha/nota, `origen='chat'`), con el mismo patrón de resumen +
+confirmación explícita en el turno siguiente que `crear_gasto`/`crear_reserva`. Sin detección de
+duplicados — ver GAP abajo.
 
 **Historial de conversaciones (persistencia):** cada mensaje (`UIMessage` con su `parts[]`,
 incluidos los tool-calls) se guarda en `agente_conversaciones`/`agente_mensajes`
@@ -208,5 +217,8 @@ etc.) no cambió — sigue detrás del mismo gate global, ahora combinado (sesi�
   puede crecer la fila/DB con el tiempo si se suben muchas fotos.
 - GAP: no hay forma de borrar o renombrar una conversación del agente desde la UI — solo
   listar (`GET /api/agente/conversaciones`) y reabrir.
-- GAP: no hay UI dedicada para gestionar reservas F6 (crear/editar/listar bolsillos); el
-  camino soportado es el agente y `GET/POST/PATCH /api/reservas`.
+- GAP: ingresos reales (tabla `ingreso`) no tienen detección de duplicados — ni la UI de
+  `/presupuesto` ni el agente avisan si el mismo ingreso se registra dos veces el mismo día.
+- GAP: la card "Ingresos" del Dashboard y el "Saldo" siguen calculándose sobre el previsto
+  (`presupuesto_ingreso`), no sobre el ingreso real — el real solo se muestra como dato adicional.
+  Cambiar esa semántica (que el saldo use el ingreso real) es una decisión aparte, no tomada acá.

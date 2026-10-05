@@ -136,6 +136,15 @@ export function calcularTotalIngresos(presupuestoMes) {
   return Object.values(presupuestoMes.ingresos).reduce((s, v) => s + (v || 0), 0)
 }
 
+// Suma de ingresos reales (tabla `ingreso`, registrados a mano o por el agente) de un ciclo —
+// distinto de calcularTotalIngresos, que es la previsión planificada (presupuesto_ingreso).
+export function calcularTotalIngresosReales(ingresosReales, ciclo) {
+  if (!ingresosReales?.length) return 0
+  return ingresosReales
+    .filter(i => !ciclo || i.ciclo_financiero === ciclo)
+    .reduce((s, i) => s + (i.monto || 0), 0)
+}
+
 export function calcularTotalPrevisto(presupuestoMes) {
   if (!presupuestoMes?.categorias) return 0
   let total = 0

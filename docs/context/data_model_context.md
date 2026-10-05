@@ -251,6 +251,26 @@ confiable server-side) y se reportan aparte, no se esconden.
 **Corrección de una lectura:** no hay tool ni estado de revisión aparte — `UNIQUE(reserva_id,
 fecha)` hace que un segundo `registrar_saldos_reserva` el mismo día haga upsert sobre el anterior.
 
+### `ingreso`
+
+Ingresos reales (fecha, fuente, monto), registrados a mano en `/presupuesto` (junto a "Ingresos
+previstos") o por el agente conversacional (`registrar_ingreso`, F3). Separado de
+`presupuesto_ingreso` por el mismo criterio que `reserva` vs `presupuesto_fondo`: uno es un
+registro histórico de hechos, el otro una previsión que se reescribe entera en cada PUT del
+ciclo.
+
+```sql
+ingreso(id, fecha, ciclo_financiero, fuente, monto, nota, origen 'manual'|'chat', created_at, updated_at)
+```
+
+`ciclo_financiero` se calcula con `obtenerCicloFinanciero(fecha)` al crear/editar — mismo criterio
+que `gastos.ciclo_financiero`. Sin `UNIQUE`: a diferencia de `reserva_saldo`, un ingreso puede
+repetirse el mismo día/fuente (dos pagos reales) sin que sea un error. Se puede borrar sin
+restricción (nada lo referencia, a diferencia de un `pago` de `fondo_tarjeta_movimiento`).
+
+GAP: sin detección de duplicados (ni en la UI ni en el agente) — un ingreso repetido el mismo
+día/fuente no se avisa.
+
 ### Autenticación (WebAuthn / Passkeys)
 
 Ver DEC-009 en `docs/architecture/decisions.md`. Reemplaza `ACCESS_TOKEN` (que se mantiene
@@ -290,6 +310,7 @@ reserva_tarjeta.banco ~ gastos.banco (convención, no FK)
 fondo_tarjeta_movimiento.banco ~ gastos.banco (solo tipo 'pago'; convención, no FK)
 reserva 1──* reserva_saldo
 reserva.vinculado → grupo/subcategoria (JSON, no FK) — mismo shape que presupuesto_fondo.vinculado
+ingreso — sin relaciones (standalone, igual que reserva_saldo)
 ```
 
 ## Máquinas de estado
@@ -323,6 +344,7 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | — | `gastos.financiado_por`, `presupuesto_fondo.estado` (PG-only, `server/db/migrate-fondo-uso.js`) — uso de fondos de ahorro |
 | — | `reserva`, `reserva_saldo` (PG-only, `server/db/migrate-reservas.js`) — tracking de saldos reales vs esperados en reservas externas (F6) |
 | — | `fondo_tarjeta_movimiento` (PG-only, `server/db/migrate-fondo-tarjeta.js`) — fondo común manual para pagar tarjetas |
+| — | `ingreso` (PG-only, `server/db/migrate-ingresos.js`) — ingresos reales, separados de la previsión de `presupuesto_ingreso` |
 
 **PG:** schema aplicado vía `initSchema()` leyendo `schema.pg.sql`. GAP: sistema de migraciones versionadas para PG — las tablas nuevas siguen el mismo patrón `CREATE TABLE IF NOT EXISTS` que el resto del archivo.
 

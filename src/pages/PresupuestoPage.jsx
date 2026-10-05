@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { SelectorCiclo } from '../components/shared/SelectorCiclo'
 import { EditorPresupuesto } from '../components/Presupuesto/EditorPresupuesto'
+import { IngresosReales } from '../components/Presupuesto/IngresosReales'
 import { FondosAhorro } from '../components/Dashboard/FondosAhorro'
 import { desplazarPeriodo, obtenerCicloActual } from '../utils/ciclos'
 
@@ -74,6 +75,7 @@ export function PresupuestoPage({ gastos, ciclos, obtenerPresupuesto, guardarPre
         onGuardar={datos => guardarPresupuesto(ciclo, datos)}
         onNuevaSubcategoria={catalogos.recargarGrupos}
       />
+      <IngresosReales ciclo={ciclo} fuentesSugeridas={Object.keys(presupuestoMes?.ingresos || {})} />
       <FondosAhorro
         presupuestoMes={presupuestoMes}
         mes={ciclo}

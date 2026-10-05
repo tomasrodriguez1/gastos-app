@@ -9,6 +9,7 @@ import { BandejaPage } from './pages/BandejaPage'
 import { AgentePage } from './pages/AgentePage'
 import { PresupuestoPage } from './pages/PresupuestoPage'
 import { TarjetaPage } from './pages/TarjetaPage'
+import { FondosPage } from './pages/FondosPage'
 import { PasskeysPage } from './pages/PasskeysPage'
 import { AgenteChatProvider } from './contexts/AgenteChatContext'
 import { AgenteFlotante } from './components/Agente/AgenteFlotante'
@@ -200,6 +201,10 @@ export default function App() {
                   onActualizarGasto={actualizarCualquierGasto}
                 />
               }
+            />
+            <Route
+              path="/fondos"
+              element={<FondosPage {...sharedProps} reconciliacion={reconciliacion} />}
             />
             <Route path="/passkeys" element={<PasskeysPage />} />
           </Routes>

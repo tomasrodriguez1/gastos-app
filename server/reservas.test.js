@@ -96,14 +96,14 @@ function dbFalsa({ reservas = [], saldos = [], gastos = [] } = {}) {
       return state.gastos.filter(g => g.estado === 'confirmado' && g.fecha > fechaAnterior && g.fecha <= fechaNueva)
     }
     if (consulta.includes('INSERT INTO reserva_saldo')) {
-      const [reservaId, fecha, monto, esperado, diferencia] = values
+      const [reservaId, fecha, monto, esperado, diferencia, origen] = values
       const existente = state.saldos.find(s => s.reserva_id === reservaId && s.fecha === fecha)
       if (existente) {
-        Object.assign(existente, { monto_leido: monto, monto_esperado: esperado, diferencia })
+        Object.assign(existente, { monto_leido: monto, monto_esperado: esperado, diferencia, origen })
       } else {
         state.saldos.push({
           id: state.saldos.length + 1, reserva_id: reservaId, fecha,
-          monto_leido: monto, monto_esperado: esperado, diferencia, origen: 'foto_agente',
+          monto_leido: monto, monto_esperado: esperado, diferencia, origen,
         })
       }
       return []
@@ -219,6 +219,43 @@ describe('POST /api/reservas', () => {
     })
     expect(respuesta.status).toBe(201)
     expect(state.reservas.some(r => r.nombre === 'Vacaciones')).toBe(true)
+  })
+})
+
+describe('POST /api/reservas/:id/saldos', () => {
+  test('registra el saldo manual y devuelve esperado/diferencia', async () => {
+    const { db, state } = dbFalsa({ reservas: [reserva()] })
+    const router = createReservaRouter({ db })
+    const respuesta = await router.request('/1/saldos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ monto: 45000, fecha: '2026-08-20' }),
+    })
+    expect(respuesta.status).toBe(201)
+    expect(state.saldos).toHaveLength(1)
+    expect(state.saldos[0].origen).toBe('manual')
+  })
+
+  test('404 si la reserva no existe', async () => {
+    const { db } = dbFalsa({ reservas: [] })
+    const router = createReservaRouter({ db })
+    const respuesta = await router.request('/99/saldos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ monto: 45000, fecha: '2026-08-20' }),
+    })
+    expect(respuesta.status).toBe(404)
+  })
+
+  test('400 si la fecha no tiene formato válido', async () => {
+    const { db } = dbFalsa({ reservas: [reserva()] })
+    const router = createReservaRouter({ db })
+    const respuesta = await router.request('/1/saldos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ monto: 45000, fecha: 'ayer' }),
+    })
+    expect(respuesta.status).toBe(400)
   })
 })
 

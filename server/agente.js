@@ -43,6 +43,7 @@ import {
   obtenerReserva,
   validarVinculadoContraCatalogo,
 } from './reservas.js'
+import { crearIngreso, listarIngresos } from './ingresos.js'
 import { obtenerCicloActual } from '../src/utils/ciclos.js'
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-luna'
@@ -154,6 +155,15 @@ function promptSistema(catalogos, hoy, reservas, cicloActual) {
     'quedes solo con la lista del prompt. Si el usuario corrige un monto, actualizá el resumen y volvé',
     'a preguntar. registrar_saldos_reserva es idempotente por fecha: un segundo llamado el mismo día',
     'corrige el anterior, sin tool de corrección aparte.',
+    '',
+    'Ingresos reales (sueldo, transferencias recibidas, etc.) — distinto de "ingresos previstos" del',
+    'presupuesto, que es solo un número planificado por ciclo y no se toca desde acá. Si el usuario',
+    'dice que le llegó o depositó plata ("me pagaron el sueldo", "deposité 50 lucas"), es un ingreso',
+    'real: extraé fuente, monto y fecha (hoy si no dice otra cosa). Si no estás seguro de si ya lo',
+    'registró este ciclo, llamá primero a listar_ingresos. Mostrá un resumen (fuente, monto, fecha) y',
+    'ESPERÁ confirmación explícita en el turno siguiente — igual que con crear_gasto — antes de llamar',
+    'a registrar_ingreso. No hay detección de duplicados automática: si no estás seguro, preguntá si',
+    'ya lo había registrado antes de crear otro.',
   ].join('\n')
 }
 
@@ -549,6 +559,44 @@ function registrarSaldosReservaTool() {
   })
 }
 
+// Ingresos reales: mismo criterio que reservas F6 — escribe directo (sin
+// 'estado pendiente' en DB), la garantía de revisión humana vive en el
+// prompt (resumen + confirmación explícita en el turno siguiente).
+const listarIngresosTool = tool({
+  description:
+    'Lista los ingresos reales registrados en un ciclo financiero (default: el actual). Útil para ' +
+    'chequear si el usuario ya registró un ingreso antes de crear otro.',
+  inputSchema: z.object({
+    ciclo: z.string().regex(/^\d{4}-\d{2}$/).optional().describe('YYYY-MM; por defecto el ciclo actual'),
+  }),
+  execute: async ({ ciclo }) => {
+    const ingresos = await listarIngresos({ ciclo: ciclo || obtenerCicloActual() })
+    return { total: ingresos.length, ingresos }
+  },
+})
+
+const registrarIngresoTool = tool({
+  description:
+    'Registra un ingreso real (sueldo, transferencia recibida, etc.) con fecha, fuente y monto. ' +
+    'Nunca toca "ingresos previstos" del presupuesto (eso es un número planificado, se edita solo ' +
+    'en /presupuesto). Requiere confirmación explícita del usuario en el turno anterior.',
+  inputSchema: z.object({
+    fuente: z.string().describe('De dónde vino la plata, ej. "Sueldo", "Transferencia Juan"'),
+    monto: z.number().positive().describe('Monto del ingreso en pesos chilenos'),
+    fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Fecha del ingreso (hoy si no se especifica otra)'),
+    nota: z.string().optional().describe('Aclaración opcional'),
+  }),
+  execute: async ({ fuente, monto, fecha, nota }) => {
+    const resultado = await crearIngreso({ fecha, fuente, monto, nota, origen: 'chat' })
+    if (resultado.error) return { error: resultado.error }
+    return {
+      ok: true,
+      ingreso: resultado.ingreso,
+      resumen: `Ingreso registrado: ${fuente} — $${monto} (${fecha})`,
+    }
+  },
+})
+
 export const agenteRouter = new Hono()
 
 agenteRouter.post(
@@ -601,6 +649,8 @@ agenteRouter.post(
       crear_reserva: crearReservaToolFactory(catalogos),
       editar_reserva: editarReservaTool,
       listar_saldos_reserva: listarSaldosReservaTool,
+      listar_ingresos: listarIngresosTool,
+      registrar_ingreso: registrarIngresoTool,
       resumen_ciclo: resumenCicloTool,
       buscar_gastos: buscarGastosTool,
     },
