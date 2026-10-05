@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -132,28 +132,56 @@ function IconMas() {
   )
 }
 
-// ─── Sidebar desktop (sin cambios) ───────────────────────────────────────────
+const NAVEGACION_DESKTOP = [
+  {
+    grupo: 'Hoy',
+    items: [
+      { to: '/', end: true, icon: IconDashboard, label: 'Inicio' },
+      { to: '/gastos', icon: IconGastos, label: 'Gastos' },
+      { to: '/bandeja', icon: IconGastos, label: 'Bandeja', pendientes: true },
+    ],
+  },
+  {
+    grupo: 'Planificar',
+    items: [
+      { to: '/presupuesto', icon: IconPresupuesto, label: 'Presupuesto' },
+      { to: '/fondos', icon: IconFondos, label: 'Fondos' },
+      { to: '/tarjeta', icon: IconTarjeta, label: 'Tarjetas' },
+    ],
+  },
+  {
+    grupo: 'Entender',
+    items: [
+      { to: '/cashflow', icon: IconCashflow, label: 'Flujo del ciclo' },
+      { to: '/analisis', icon: IconAnalisis, label: 'Análisis' },
+    ],
+  },
+]
 
 const MOBILE_NAV_PRINCIPAL = [
-  { to: '/', end: true, icon: IconDashboard, label: 'Dashboard' },
+  { to: '/', end: true, icon: IconDashboard, label: 'Inicio' },
   { to: '/gastos', icon: IconGastos, label: 'Gastos' },
-  { to: '/agente', icon: IconAgente, label: 'Agente' },
-  { to: '/presupuesto', icon: IconPresupuesto, label: 'Presup.' },
+  { to: '/presupuesto', icon: IconPresupuesto, label: 'Presupuesto' },
 ]
 
 const MOBILE_NAV_MAS = [
-  { to: '/cashflow', icon: IconCashflow, label: 'Cashflow' },
+  { to: '/bandeja', icon: IconGastos, label: 'Bandeja', pendientes: true },
+  { to: '/cashflow', icon: IconCashflow, label: 'Flujo' },
   { to: '/analisis', icon: IconAnalisis, label: 'Análisis' },
-  { to: '/tarjeta', icon: IconTarjeta, label: 'Tarjeta' },
   { to: '/fondos', icon: IconFondos, label: 'Fondos' },
+  { to: '/tarjeta', icon: IconTarjeta, label: 'Tarjetas' },
   { to: '/passkeys', icon: IconLlave, label: 'Cuenta' },
 ]
 
-export function Sidebar() {
+export function Sidebar({ gastos = [], gastosLocales = [] }) {
   const { isPrivacyModeEnabled, togglePrivacyMode } = usePrivacyMode()
   const { logout } = useAuth()
   const location = useLocation()
   const [menuMasAbierto, setMenuMasAbierto] = useState(false)
+  const [menuRegistrarAbierto, setMenuRegistrarAbierto] = useState(false)
+
+  const pendientes = [...gastos, ...gastosLocales]
+    .filter(gasto => gasto.estado === 'pendiente' || gasto.estado === 'error_parseo').length
 
   const navClass = ({ isActive }) =>
     `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
@@ -171,6 +199,21 @@ export function Sidebar() {
 
   const rutaActivaEnMas = MOBILE_NAV_MAS.some((item) => item.to === location.pathname)
 
+  function cerrarMenus() {
+    setMenuMasAbierto(false)
+    setMenuRegistrarAbierto(false)
+  }
+
+  function alternarMas() {
+    setMenuMasAbierto(abierto => !abierto)
+    setMenuRegistrarAbierto(false)
+  }
+
+  function alternarRegistrar() {
+    setMenuRegistrarAbierto(abierto => !abierto)
+    setMenuMasAbierto(false)
+  }
+
   return (
     <>
       {/* ── Desktop sidebar ─────────────────────────────────────── */}
@@ -186,21 +229,38 @@ export function Sidebar() {
               {isPrivacyModeEnabled ? 'Mostrar' : 'Ocultar'}
             </button>
           </div>
-          <nav className="flex flex-col gap-1">
-            <NavLink to="/" end className={navClass}>Dashboard</NavLink>
-            <NavLink to="/cashflow" className={navClass}>Cashflow</NavLink>
-            <NavLink to="/analisis" className={navClass}>Análisis</NavLink>
-            <NavLink to="/gastos" className={navClass}>Gastos</NavLink>
-            <NavLink to="/agente" className={navClass}>Agente</NavLink>
-            <NavLink to="/tarjeta" className={navClass}>Tarjeta</NavLink>
-            <NavLink to="/fondos" className={navClass}>Fondos</NavLink>
-            <NavLink to="/presupuesto" className={navClass}>Presupuesto</NavLink>
-            <NavLink to="/passkeys" className={navClass}>Cuenta</NavLink>
+          <nav className="flex flex-col gap-5" aria-label="Navegación principal">
+            {NAVEGACION_DESKTOP.map(({ grupo, items }) => (
+              <div key={grupo}>
+                <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">{grupo}</p>
+                <div className="flex flex-col gap-1">
+                  {items.map(({ to, end, icon: Icon, label, pendientes: mostrarPendientes }) => (
+                    <NavLink key={to} to={to} end={end} className={navClass}>
+                      <Icon />
+                      <span className="flex-1">{label}</span>
+                      {mostrarPendientes && pendientes > 0 && (
+                        <span className="min-w-5 rounded-full bg-amber-500 px-1.5 py-0.5 text-center text-[10px] font-bold text-slate-950">
+                          {pendientes}
+                        </span>
+                      )}
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            ))}
           </nav>
           <div className="mt-auto pt-4">
+            <NavLink to="/agente" className="mb-2 flex w-full items-center gap-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/15">
+              <IconAgente />
+              Abrir agente
+            </NavLink>
+            <NavLink to="/passkeys" className={navClass}>
+              <IconLlave />
+              Cuenta
+            </NavLink>
             <button
               onClick={logout}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:text-foreground hover:bg-white/4 transition-colors"
+              className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:text-foreground hover:bg-white/4 transition-colors"
             >
               <IconLogout />
               Cerrar sesión
@@ -210,10 +270,10 @@ export function Sidebar() {
       </aside>
 
       {/* ── Mobile bottom nav ───────────────────────────────────── */}
-      {menuMasAbierto && (
+      {(menuMasAbierto || menuRegistrarAbierto) && (
         <div
           className="fixed inset-0 z-[199] md:hidden bg-black/50"
-          onClick={() => setMenuMasAbierto(false)}
+          onClick={cerrarMenus}
         />
       )}
 
@@ -221,21 +281,28 @@ export function Sidebar() {
         {menuMasAbierto && (
           <div className="border-b border-slate-800 px-3 pt-3 pb-2">
             <div className="grid grid-cols-4 gap-1">
-              {MOBILE_NAV_MAS.map(({ to, icon: Icon, label }) => (
+              {MOBILE_NAV_MAS.map(({ to, icon: Icon, label, pendientes: mostrarPendientes }) => (
                 <NavLink
                   key={to}
                   to={to}
                   className={mobileNavClass}
-                  onClick={() => setMenuMasAbierto(false)}
+                  onClick={cerrarMenus}
                 >
-                  <Icon />
+                  <span className="relative">
+                    <Icon />
+                    {mostrarPendientes && pendientes > 0 && (
+                      <span className="absolute -top-2 -right-3 min-w-[15px] rounded-full bg-amber-500 px-1 text-center text-[9px] font-bold leading-[15px] text-slate-950">
+                        {pendientes}
+                      </span>
+                    )}
+                  </span>
                   <span>{label}</span>
                 </NavLink>
               ))}
               <button
                 onClick={() => {
                   togglePrivacyMode()
-                  setMenuMasAbierto(false)
+                  cerrarMenus()
                 }}
                 className={`flex flex-col items-center gap-1 px-2 py-1 text-xs font-medium transition-colors min-w-0 ${
                   isPrivacyModeEnabled ? 'text-[var(--accent)]' : 'text-muted'
@@ -246,7 +313,7 @@ export function Sidebar() {
               </button>
               <button
                 onClick={() => {
-                  setMenuMasAbierto(false)
+                  cerrarMenus()
                   logout()
                 }}
                 className="flex flex-col items-center gap-1 px-2 py-1 text-xs font-medium text-muted transition-colors min-w-0"
@@ -257,20 +324,68 @@ export function Sidebar() {
             </div>
           </div>
         )}
+        {menuRegistrarAbierto && (
+          <div className="border-b border-slate-800 px-3 py-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Link
+                to="/gastos?nuevo=1"
+                onClick={cerrarMenus}
+                className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-3 text-left text-sm font-medium text-sky-300 transition-colors active:scale-[0.98]"
+              >
+                <span className="block">Nuevo gasto</span>
+                <span className="mt-0.5 block text-xs font-normal text-sky-300/70">Registrarlo manualmente</span>
+              </Link>
+              <Link
+                to="/agente"
+                onClick={cerrarMenus}
+                className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 text-left text-sm font-medium text-emerald-300 transition-colors active:scale-[0.98]"
+              >
+                <span className="block">Hablar con agente</span>
+                <span className="mt-0.5 block text-xs font-normal text-emerald-300/70">Escribir o adjuntar una boleta</span>
+              </Link>
+            </div>
+          </div>
+        )}
         <div className="flex items-center h-16 px-1">
-          {MOBILE_NAV_PRINCIPAL.map(({ to, end, icon: Icon, label }) => (
+          {MOBILE_NAV_PRINCIPAL.slice(0, 2).map(({ to, end, icon: Icon, label }) => (
             <NavLink key={to} to={to} end={end} className={mobileNavClass}>
               <Icon />
               <span>{label}</span>
             </NavLink>
           ))}
           <button
-            onClick={() => setMenuMasAbierto((v) => !v)}
+            type="button"
+            onClick={alternarRegistrar}
+            aria-expanded={menuRegistrarAbierto}
+            className={`relative flex flex-col items-center gap-1 px-2 py-1 text-xs font-medium transition-colors min-w-0 flex-1 ${
+              menuRegistrarAbierto ? 'text-[var(--accent)]' : 'text-slate-200'
+            }`}
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-400 text-xl font-light leading-none text-slate-950">+</span>
+            <span>Registrar</span>
+          </button>
+          {MOBILE_NAV_PRINCIPAL.slice(2).map(({ to, end, icon: Icon, label }) => (
+            <NavLink key={to} to={to} end={end} className={mobileNavClass}>
+              <Icon />
+              <span>{label}</span>
+            </NavLink>
+          ))}
+          <button
+            type="button"
+            onClick={alternarMas}
+            aria-expanded={menuMasAbierto}
             className={`flex flex-col items-center gap-1 px-2 py-1 text-xs font-medium transition-colors min-w-0 flex-1 ${
               menuMasAbierto || rutaActivaEnMas ? 'text-[var(--accent)]' : 'text-muted'
             }`}
           >
-            <IconMas />
+            <span className="relative">
+              <IconMas />
+              {pendientes > 0 && (
+                <span className="absolute -top-2 -right-3 min-w-[15px] rounded-full bg-amber-500 px-1 text-center text-[9px] font-bold leading-[15px] text-slate-950">
+                  {pendientes}
+                </span>
+              )}
+            </span>
             <span>Más</span>
           </button>
         </div>

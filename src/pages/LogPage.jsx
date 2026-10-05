@@ -103,7 +103,7 @@ export function LogPage({ gastos, gastosLocales, catalogos, onActualizarGasto, o
     <main className="max-w-7xl mx-auto px-3 py-4 sm:px-6 sm:py-6 space-y-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-lg font-heading text-white">Log de ingresos</h1>
+          <h1 className="text-lg font-heading text-white">Actividad</h1>
           <p className="text-xs text-slate-500">Últimos gastos ingresados, ordenados por momento de inserción</p>
         </div>
         <Link

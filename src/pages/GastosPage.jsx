@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { SelectorCiclo } from '../components/shared/SelectorCiclo'
 import { BotonActualizar } from '../components/shared/BotonActualizar'
 import { BotonBandeja } from '../components/shared/BotonBandeja'
@@ -21,12 +21,15 @@ const FILTROS_INIT = {
 }
 
 export function GastosPage({ gastos, gastosLocales, ciclos, mesesCalendario, onAgregarGasto, onEliminarGasto, onActualizarGasto, catalogos, onSync, syncing, syncError, pendingSync, onConfirmarSync, onCancelarSync, obtenerPresupuesto }) {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [ciclo, setCiclo] = useState(obtenerCicloActual)
   const [filtros, setFiltros] = useState(FILTROS_INIT)
-  const [mostrarForm, setMostrarForm] = useState(false)
+  const [mostrarFormManual, setMostrarFormManual] = useState(false)
   const [mostrarDuplicados, setMostrarDuplicados] = useState(false)
 
   const { grupos, resumen, loading: loadingDup, error: errorDup, cargar: cargarDup, excluirPar, refrescar: refrescarDup } = useDuplicados()
+  const abrirNuevoDesdeNavegacion = searchParams.get('nuevo') === '1'
+  const mostrarForm = mostrarFormManual || abrirNuevoDesdeNavegacion
 
   // Pre-carga del resumen al cambiar de ciclo para mostrar el badge
   useEffect(() => {
@@ -81,7 +84,15 @@ export function GastosPage({ gastos, gastosLocales, ciclos, mesesCalendario, onA
 
   function handleGuardar(gasto) {
     onAgregarGasto(gasto)
-    setMostrarForm(false)
+    cerrarFormulario()
+  }
+
+  function cerrarFormulario() {
+    setMostrarFormManual(false)
+    if (!abrirNuevoDesdeNavegacion) return
+    const siguientesParams = new URLSearchParams(searchParams)
+    siguientesParams.delete('nuevo')
+    setSearchParams(siguientesParams, { replace: true })
   }
 
   return (
@@ -122,11 +133,11 @@ export function GastosPage({ gastos, gastosLocales, ciclos, mesesCalendario, onA
             to="/log"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 text-xs font-medium hover:bg-slate-700/60 transition-all"
           >
-            Log
+            Actividad
           </Link>
           <BotonBandeja compact gastos={[...gastos, ...gastosLocales]} />
           <button
-            onClick={() => setMostrarForm(true)}
+            onClick={() => setMostrarFormManual(true)}
             className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-400 text-xs font-medium hover:bg-violet-500/20 transition-all"
           >
             <span className="text-sm leading-none">+</span>
@@ -161,11 +172,11 @@ export function GastosPage({ gastos, gastosLocales, ciclos, mesesCalendario, onA
             to="/log"
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 text-sm font-medium hover:bg-slate-700/60 transition-all"
           >
-            Log
+            Actividad
           </Link>
           <BotonBandeja gastos={[...gastos, ...gastosLocales]} />
           <button
-            onClick={() => setMostrarForm(true)}
+            onClick={() => setMostrarFormManual(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-400 text-sm font-medium hover:bg-violet-500/20 transition-all"
           >
             <span className="text-base leading-none">+</span>
@@ -187,7 +198,7 @@ export function GastosPage({ gastos, gastosLocales, ciclos, mesesCalendario, onA
       {mostrarForm && (
         <FormNuevoGasto
           onGuardar={handleGuardar}
-          onCerrar={() => setMostrarForm(false)}
+          onCerrar={cerrarFormulario}
           catalogos={catalogos}
         />
       )}

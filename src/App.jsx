@@ -95,7 +95,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[var(--background)]">
       <AgenteChatProvider onRefetchGastos={refetchGastos}>
-        <Sidebar />
+        <Sidebar gastos={gastos} gastosLocales={gastosLocales} />
         <AgenteFlotante gastos={gastos} gastosLocales={gastosLocales} />
         <div className="pb-16 md:pb-0 md:pl-64">
           {errorGuardado && (

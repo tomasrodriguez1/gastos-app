@@ -322,8 +322,8 @@ function TarjetaFondo({
   ].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
   const objetivo = fondo.objetivo || 0
   const aportar = fondo.previsto_aportar || 0
-  const pct = objetivo > 0 ? Math.min((aportes / objetivo) * 100, 100) : 0
-  const faltante = Math.max(objetivo - aportes, 0)
+  const pct = objetivo > 0 ? Math.max(0, Math.min((saldo / objetivo) * 100, 100)) : 0
+  const faltante = Math.max(objetivo - saldo, 0)
   const mesesRestantes = aportar > 0 && faltante > 0 ? Math.ceil(faltante / aportar) : null
   const mesesHasta = mesesHastaMeta(fondo.fecha_meta, mes)
   const aporteNecesario = objetivo > 0 && faltante > 0 && mesesHasta != null && mesesHasta > 0
