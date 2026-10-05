@@ -5,6 +5,8 @@
 import { toMonto } from '../db/numeric.js'
 
 export function deserializarGasto(row) {
+  const gasto = { ...row }
+  delete gasto.conciliado
   const tipos = Array.isArray(row.tipos)
     ? row.tipos
     : (typeof row.tipos === 'string' ? JSON.parse(row.tipos || '[]') : [])
@@ -12,7 +14,7 @@ export function deserializarGasto(row) {
     ? JSON.parse(row.presupuesto_manual)
     : (row.presupuesto_manual ?? null)
   return {
-    ...row,
+    ...gasto,
     tipos,
     presupuesto_manual,
     monto: toMonto(row.monto),
@@ -25,7 +27,6 @@ export function deserializarGasto(row) {
     pagado: row.pagado === true,
     plata_en_cuenta: row.plata_en_cuenta === true,
     en_presupuesto: row.en_presupuesto !== false,
-    conciliado: row.conciliado === true,
     financiado_por: row.financiado_por || null,
   }
 }

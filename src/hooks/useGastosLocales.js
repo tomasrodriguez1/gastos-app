@@ -45,7 +45,6 @@ export function useGastosLocales() {
       usd: gasto.usd ?? 0,
       plata_en_cuenta: gasto.plata_en_cuenta ?? false,
       en_presupuesto: gasto.en_presupuesto ?? true,
-      conciliado: gasto.conciliado ?? false,
       budget: false,
       manual: true,
       created_at: ahora,

@@ -170,7 +170,7 @@ app.post('/api/datos', async (c) => {
           INSERT INTO gastos (id, sync_key, fecha, mes, ciclo_financiero, motivo, banco, tipos, contexto,
             monto, monto_real, usd, monto_clp_manual, split, presupuesto_manual,
             contexto_override, monto_presupuesto_manual, pagado, plata_en_cuenta,
-            en_presupuesto, conciliado, financiado_por, es_manual, updated_at)
+            en_presupuesto, financiado_por, es_manual, updated_at)
           VALUES (
             ${crypto.randomUUID()}, ${syncKey},
             ${g.fecha}, ${mesCalendario}, ${cicloFinanciero}, ${g.motivo},
@@ -180,7 +180,7 @@ app.post('/api/datos', async (c) => {
             ${g.presupuesto_manual ?? null},
             ${g.contexto_override ?? null}, ${g.monto_presupuesto_manual ?? null},
             ${g.pagado ? true : false}, ${g.plata_en_cuenta ? true : false},
-            ${g.en_presupuesto !== false}, ${g.conciliado ? true : false},
+            ${g.en_presupuesto !== false},
             ${g.financiado_por || null}, false, NOW()
           )
           ON CONFLICT(sync_key) DO UPDATE SET
@@ -224,7 +224,7 @@ app.post('/api/datos', async (c) => {
           INSERT INTO gastos (id, sync_key, fecha, mes, ciclo_financiero, motivo, banco, tipos, contexto,
             monto, monto_real, usd, monto_clp_manual, split, presupuesto_manual,
             contexto_override, monto_presupuesto_manual, pagado, plata_en_cuenta,
-            en_presupuesto, conciliado, financiado_por, es_manual, updated_at)
+            en_presupuesto, financiado_por, es_manual, updated_at)
           VALUES (
             ${id}, NULL,
             ${g.fecha}, ${mesCalendario}, ${cicloFinanciero}, ${g.motivo || ''},
@@ -234,7 +234,7 @@ app.post('/api/datos', async (c) => {
             ${g.presupuesto_manual ?? null},
             ${g.contexto_override ?? null}, ${g.monto_presupuesto_manual ?? null},
             ${g.pagado ? true : false}, ${g.plata_en_cuenta ? true : false},
-            ${g.en_presupuesto !== false}, ${g.conciliado ? true : false},
+            ${g.en_presupuesto !== false},
             ${g.financiado_por || null}, true, NOW()
           )
           ON CONFLICT(id) DO UPDATE SET
@@ -256,7 +256,6 @@ app.post('/api/datos', async (c) => {
             pagado = EXCLUDED.pagado,
             plata_en_cuenta = EXCLUDED.plata_en_cuenta,
             en_presupuesto = EXCLUDED.en_presupuesto,
-            conciliado = EXCLUDED.conciliado,
             financiado_por = EXCLUDED.financiado_por,
             updated_at = NOW()
         `

@@ -22,7 +22,6 @@ CREATE TABLE IF NOT EXISTS gastos (
   pagado                   BOOLEAN DEFAULT FALSE,
   plata_en_cuenta          BOOLEAN NOT NULL DEFAULT FALSE,
   en_presupuesto           BOOLEAN NOT NULL DEFAULT TRUE,
-  conciliado               BOOLEAN NOT NULL DEFAULT FALSE,
   financiado_por           TEXT,
   estado                   TEXT NOT NULL DEFAULT 'confirmado',
   origen                   TEXT NOT NULL DEFAULT 'manual',

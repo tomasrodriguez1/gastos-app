@@ -32,7 +32,6 @@ Tabla única para gastos sincronizados y manuales.
 | `plata_en_cuenta` | BOOLEAN | El importe completo del gasto ya está reservado en el fondo de pago de TC. Desde el fondo manual (`fondo_tarjeta_movimiento`) `/tarjeta` ya no lo muestra ni lo usa en sus KPIs; `/api/tarjeta/resumen` lo sigue devolviendo como `fondo_actual`/`falta_depositar` |
 | `en_presupuesto` | BOOLEAN | Si el gasto impacta las agregaciones presupuestarias |
 | `financiado_por` | TEXT | Nombre del fondo de ahorro que financió el gasto; NULL si sale del ciclo |
-| `conciliado` | BOOLEAN | El movimiento fue incluido en un estado de cuenta cuyo total cuadró |
 | `estado` | TEXT | `confirmado` (default, todo lo pre-existente) \| `pendiente` \| `error_parseo` \| `descartado` — ver "Bandeja de ingesta" abajo |
 | `origen` | TEXT | `manual` (default) \| `mail` \| `chat` (F3, agente conversacional) \| `telefono` (atajo iOS, `POST /api/ingesta/telefono`) — de dónde entró el gasto |
 | `fuente_id` | TEXT | Id externo (p.ej. id de mensaje de Gmail) para idempotencia de ingesta; único (parcial WHERE NOT NULL) |
@@ -49,6 +48,9 @@ Tabla única para gastos sincronizados y manuales.
 - Sync UPSERT preserva overrides manuales con `COALESCE`.
 - Filas pure-USD excluidas de totales agregados.
 - UI puede usar `fecha|motivo` como id lógico; PATCH/DELETE usan UUID o `sync_key`.
+
+**Compatibilidad histórica:** instalaciones anteriores pueden conservar una columna
+`gastos.conciliado`, pero ya no forma parte del modelo activo ni se lee o escribe desde la API.
 
 ### Bandeja de ingesta (`estado`)
 
@@ -243,10 +245,9 @@ En `/tarjeta`: Por pagar = Σ`monto` (no pagados) · Por cobrar = Σ`split` · G
 no reduce la deuda de tarjeta. Un `monto_presupuesto_manual` explícito tiene prioridad para evitar
 restar el split dos veces.
 
-La reconciliación se limita a Edwards y BICE y mantiene CLP/USD separados. `conciliado=true`
-representa que el gasto formó parte de un estado cuadrado; `pagado=true` se asigna después, cuando
-el pago efectivamente salió. Fondo actual y falta depositar siguen incluyendo conciliados mientras
-no estén pagados.
+El registro de pago se limita a Edwards y BICE y mantiene CLP/USD separados. `pagado=true` se
+asigna cuando el pago efectivamente salió; no hay una etapa intermedia de conciliación. Fondo actual
+y falta depositar siguen incluyendo los movimientos hasta que estén pagados.
 
 ### `reserva` / `reserva_saldo`
 
@@ -356,8 +357,8 @@ ingreso — sin relaciones (standalone, igual que reserva_saldo)
 
 ## Máquinas de estado
 
-La tarjeta usa dos etapas booleanas: `conciliado` y luego `pagado`. Duplicados tienen confianza
-(alta/media/baja) calculada, no persistida.
+La tarjeta usa el estado `pagado`; el registro de pago es atómico y también crea el egreso del fondo
+de tarjetas. Duplicados tienen confianza (alta/media/baja) calculada, no persistida.
 
 ## Permisos / RLS
 
@@ -380,7 +381,7 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | — | `passkey_credentials`, `webauthn_challenges`, `auth_sessions` (PG-only, ver DEC-009) |
 | — | `estado`, `origen`, `fuente_id`, `payload_raw` en `gastos` (PG-only, `server/db/migrate-ingesta.js`) — bandeja de ingesta externa |
 | — | `comercio_mapeo` (PG-only, `server/db/migrate-comercios.js`) — memoria de comercios (F2) |
-| — | `plata_en_cuenta`, `en_presupuesto`, `conciliado` en `gastos` (PG-only, `server/db/migrate-tarjeta-reconciliacion.js`) — reconciliación F5 |
+| — | `plata_en_cuenta`, `en_presupuesto` en `gastos` (PG-only, `server/db/migrate-tarjeta-reconciliacion.js`) — métricas de tarjeta F5 |
 | — | `agente_conversaciones`, `agente_mensajes` (PG-only, `server/db/migrate-agente-historial.js`) — historial del agente conversacional (F3) |
 | — | `gastos.financiado_por`, `presupuesto_fondo.estado` (PG-only, `server/db/migrate-fondo-uso.js`) — uso de fondos de ahorro |
 | — | `reserva`, `reserva_saldo` (PG-only, `server/db/migrate-reservas.js`) — tracking de saldos reales vs esperados en reservas externas (F6) |

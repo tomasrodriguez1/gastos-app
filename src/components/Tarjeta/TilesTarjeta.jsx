@@ -172,13 +172,13 @@ function DesgloseBancos({ filas, total, moneda }) {
             <tr key={banco}>
               <td className="px-4 py-2 text-slate-300">{banco}</td>
               {columnas.map(col => <td key={col.key} className="px-4 py-2 text-right"><Monto valor={metricas[col.key]} moneda={moneda} className={col.color} /></td>)}
-              <td className="px-4 py-2 text-right font-mono-numbers text-xs text-slate-500">{metricas.conciliados + metricas.sin_conciliar}</td>
+              <td className="px-4 py-2 text-right font-mono-numbers text-xs text-slate-500">{metricas.movimientos}</td>
             </tr>
           ))}
           <tr className="bg-slate-900/30 font-semibold">
             <td className="px-4 py-2 text-slate-300">Total</td>
             {columnas.map(col => <td key={col.key} className="px-4 py-2 text-right"><Monto valor={total[col.key]} moneda={moneda} className={col.color} /></td>)}
-            <td className="px-4 py-2 text-right font-mono-numbers text-xs text-slate-500">{total.conciliados + total.sin_conciliar}</td>
+            <td className="px-4 py-2 text-right font-mono-numbers text-xs text-slate-500">{total.movimientos}</td>
           </tr>
         </tbody>
       </table>
@@ -187,7 +187,7 @@ function DesgloseBancos({ filas, total, moneda }) {
 }
 
 export function TilesTarjeta({ moneda, etiquetaSeleccion, metricas, global, porBanco, saldoFondo, onAportar, onAjustarSaldo }) {
-  const movimientos = metricas.conciliados + metricas.sin_conciliar
+  const movimientos = metricas.movimientos
   const faltaAportar = (global.por_pagar || 0) - saldoFondo
   const conCiclo = metricas.facturados + metricas.no_facturados > 0
 

@@ -8,7 +8,6 @@ const gasto = (overrides = {}) => ({
   usd: 0,
   split: 0,
   pagado: false,
-  conciliado: false,
   plata_en_cuenta: false,
   estado: 'confirmado',
   tipos: [],
@@ -19,7 +18,7 @@ describe('resumen de tarjeta', () => {
   test('separa CLP y USD y mantiene la partición del fondo', () => {
     const resumen = crearResumenTarjeta([
       gasto({ monto: 1000, plata_en_cuenta: true, split: 200 }),
-      gasto({ monto: 500, conciliado: true }),
+      gasto({ monto: 500 }),
       gasto({ monto: 0, usd: 12.34, banco: 'BICE' }),
       gasto({ monto: 9999, estado: 'descartado' }),
       gasto({ monto: 9999, banco: 'Otro' }),
@@ -29,7 +28,7 @@ describe('resumen de tarjeta', () => {
     expect(resumen.totales.CLP.fondo_actual).toBe(1000)
     expect(resumen.totales.CLP.falta_depositar).toBe(500)
     expect(resumen.totales.CLP.gasto_propio_neto).toBe(1300)
-    expect(resumen.totales.CLP.conciliados).toBe(1)
+    expect(resumen.totales.CLP.movimientos).toBe(2)
     expect(resumen.totales.USD.por_pagar).toBe(12.34)
     expect(resumen.totales.USD.por_cobrar).toBe(0)
   })
@@ -186,14 +185,6 @@ function dbFalsa(filasIniciales, movimientosIniciales = []) {
     if (consulta.includes('SELECT * FROM gastos WHERE id = ANY')) {
       return filas.filter(fila => values[0].includes(fila.id))
     }
-    if (consulta.includes('SET conciliado = TRUE')) {
-      filas.filter(fila => values[0].includes(fila.id)).forEach(fila => { fila.conciliado = true })
-      return []
-    }
-    if (consulta.includes('SET conciliado = FALSE')) {
-      filas.filter(fila => values[0].includes(fila.id)).forEach(fila => { fila.conciliado = false })
-      return []
-    }
     if (consulta.includes('SET pagado = TRUE')) {
       filas.filter(fila => values[0].includes(fila.id)).forEach(fila => { fila.pagado = true })
       return []
@@ -213,32 +204,30 @@ function post(router, ruta, body) {
 }
 
 describe('operaciones transaccionales de tarjeta', () => {
-  test('un descuadre responde 409 y no concilia', async () => {
+  test('un descuadre responde 409 y no registra el pago', async () => {
     const { db, filas } = dbFalsa([gasto({ id: 'g-1', monto: 1000 })])
     const router = createTarjetaRouter({ db })
-    const respuesta = await post(router, '/conciliar', {
-      banco: 'Edwards', moneda: 'CLP', total_estado: 900, gasto_ids: ['g-1'],
+    const respuesta = await post(router, '/pagar', {
+      banco: 'Edwards', moneda: 'CLP', total_pagado: 900, gasto_ids: ['g-1'],
     })
     expect(respuesta.status).toBe(409)
     expect((await respuesta.json()).diferencia).toBe(-100)
-    expect(filas[0].conciliado).toBe(false)
+    expect(filas[0].pagado).toBe(false)
   })
 
-  test('concilia y luego paga el mismo conjunto si ambos totales cuadran', async () => {
+  test('paga directamente el conjunto seleccionado si el total cuadra', async () => {
     const { db, filas } = dbFalsa([
       gasto({ id: 'g-1', monto: 1000 }),
       gasto({ id: 'g-2', monto: 500 }),
     ])
     const router = createTarjetaRouter({ db })
     const base = { banco: 'Edwards', moneda: 'CLP', gasto_ids: ['g-1', 'g-2'] }
-    expect((await post(router, '/conciliar', { ...base, total_estado: 1500 })).status).toBe(200)
-    expect(filas.every(fila => fila.conciliado)).toBe(true)
     expect((await post(router, '/pagar', { ...base, total_pagado: 1500 })).status).toBe(200)
     expect(filas.every(fila => fila.pagado)).toBe(true)
   })
 
   test('registrar un pago descuenta el total del fondo de tarjetas', async () => {
-    const { db, movimientos } = dbFalsa([gasto({ id: 'g-1', monto: 1000, conciliado: true })])
+    const { db, movimientos } = dbFalsa([gasto({ id: 'g-1', monto: 1000 })])
     const router = createTarjetaRouter({ db })
     const respuesta = await post(router, '/pagar', { banco: 'Edwards', moneda: 'CLP', gasto_ids: ['g-1'], total_pagado: 1000 })
     expect(respuesta.status).toBe(200)
@@ -246,15 +235,18 @@ describe('operaciones transaccionales de tarjeta', () => {
     expect(movimientos[0]).toMatchObject({ tipo: 'pago', moneda: 'CLP', monto: -1000, banco: 'Edwards' })
   })
 
-  test('rechaza pagar sin conciliación previa y desconciliar un movimiento pagado', async () => {
-    const { db } = dbFalsa([gasto({ id: 'g-1', monto: 1000 })])
+  test('rechaza volver a pagar un movimiento ya pagado', async () => {
+    const { db } = dbFalsa([gasto({ id: 'g-1', monto: 1000, pagado: true })])
     const router = createTarjetaRouter({ db })
     const base = { banco: 'Edwards', moneda: 'CLP', gasto_ids: ['g-1'] }
     expect((await post(router, '/pagar', { ...base, total_pagado: 1000 })).status).toBe(409)
+  })
 
-    const pagado = dbFalsa([gasto({ id: 'g-2', conciliado: true, pagado: true })])
-    const routerPagado = createTarjetaRouter({ db: pagado.db })
-    expect((await post(routerPagado, '/desconciliar', { banco: 'Edwards', moneda: 'CLP', gasto_ids: ['g-2'] })).status).toBe(409)
+  test('no expone endpoints de conciliación', async () => {
+    const { db } = dbFalsa([])
+    const router = createTarjetaRouter({ db })
+    expect((await post(router, '/conciliar', {})).status).toBe(404)
+    expect((await post(router, '/desconciliar', {})).status).toBe(404)
   })
 })
 

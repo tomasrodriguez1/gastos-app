@@ -80,8 +80,7 @@ function nuevoAcumulador() {
     fondo_actual: 0,
     falta_depositar: 0,
     por_cobrar: 0,
-    conciliados: 0,
-    sin_conciliar: 0,
+    movimientos: 0,
     facturados: 0,
     no_facturados: 0,
     monto_facturado: 0,
@@ -98,8 +97,7 @@ function acumular(destino, row, reglas, moneda, diaCierre) {
   destino.por_cobrar += split
   if (row.plata_en_cuenta === true) destino.fondo_actual += importe
   else destino.falta_depositar += importe
-  if (row.conciliado === true) destino.conciliados += 1
-  else destino.sin_conciliar += 1
+  destino.movimientos += 1
   if (yaFacturado === true) { destino.facturados += 1; destino.monto_facturado += importe }
   else if (yaFacturado === false) { destino.no_facturados += 1; destino.monto_no_facturado += importe }
 
@@ -113,8 +111,7 @@ function acumular(destino, row, reglas, moneda, diaCierre) {
   acumulado.por_cobrar += split
   if (row.plata_en_cuenta === true) acumulado.fondo_actual += importe
   else acumulado.falta_depositar += importe
-  if (row.conciliado === true) acumulado.conciliados += 1
-  else acumulado.sin_conciliar += 1
+  acumulado.movimientos += 1
   if (yaFacturado === true) { acumulado.facturados += 1; acumulado.monto_facturado += importe }
   else if (yaFacturado === false) { acumulado.no_facturados += 1; acumulado.monto_no_facturado += importe }
 }
@@ -130,8 +127,7 @@ function finalizar(acumulador, moneda) {
       falta_depositar: convertir(categoria.falta_depositar),
       por_cobrar: convertir(categoria.por_cobrar),
       gasto_propio_neto: convertir(categoria.por_pagar - categoria.por_cobrar),
-      conciliados: categoria.conciliados,
-      sin_conciliar: categoria.sin_conciliar,
+      movimientos: categoria.movimientos,
       facturados: categoria.facturados,
       no_facturados: categoria.no_facturados,
       monto_facturado: convertir(categoria.monto_facturado),
@@ -145,8 +141,7 @@ function finalizar(acumulador, moneda) {
     falta_depositar: convertir(acumulador.falta_depositar),
     por_cobrar: convertir(acumulador.por_cobrar),
     gasto_propio_neto: convertir(acumulador.por_pagar - acumulador.por_cobrar),
-    conciliados: acumulador.conciliados,
-    sin_conciliar: acumulador.sin_conciliar,
+    movimientos: acumulador.movimientos,
     facturados: acumulador.facturados,
     no_facturados: acumulador.no_facturados,
     monto_facturado: convertir(acumulador.monto_facturado),
@@ -179,31 +174,25 @@ export function crearResumenTarjeta(rows, reglas = [], ciclos = {}) {
   }
 }
 
-function validarBase(body, requiereTotal) {
+function validarPago(body) {
   const banco = body?.banco
   const moneda = body?.moneda
   const ids = Array.isArray(body?.gasto_ids) ? [...new Set(body.gasto_ids.filter(id => typeof id === 'string' && id))] : []
   if (!BANCOS_TARJETA.includes(banco)) return { error: 'Banco no permitido' }
   if (!MONEDAS_TARJETA.includes(moneda)) return { error: 'Moneda no permitida' }
   if (ids.length === 0) return { error: 'Seleccioná al menos un movimiento' }
-  if (!requiereTotal) return { banco, moneda, ids }
-  const totalCampo = body.total_estado ?? body.total_pagado
-  const totalUnidades = unidadesDesdeTotal(totalCampo, moneda)
+  const totalUnidades = unidadesDesdeTotal(body?.total_pagado, moneda)
   if (totalUnidades == null) return { error: 'Total inválido' }
   return { banco, moneda, ids, totalUnidades }
 }
 
-function validarFilas(rows, base, operacion) {
+function validarFilas(rows, base) {
   if (rows.length !== base.ids.length) return 'Uno o más movimientos no existen'
   for (const row of rows) {
     if (row.banco !== base.banco) return 'Todos los movimientos deben pertenecer al banco seleccionado'
     if (monedaGasto(row) !== base.moneda) return 'Todos los movimientos deben usar la moneda seleccionada'
     if (row.estado === 'descartado') return 'No se pueden operar movimientos descartados'
     if (row.pagado === true) return 'Uno o más movimientos ya están pagados'
-    if (operacion === 'conciliar' && row.conciliado === true) return 'Uno o más movimientos ya están conciliados'
-    if ((operacion === 'pagar' || operacion === 'desconciliar') && row.conciliado !== true) {
-      return 'Uno o más movimientos no están conciliados'
-    }
   }
   return null
 }
@@ -329,63 +318,14 @@ export function createTarjetaRouter({ db = sql } = {}) {
     return c.json({ ok: true })
   })
 
-  router.post('/conciliar', async (c) => {
-    const base = validarBase(await c.req.json(), true)
-    if (base.error) return respuestaError(c, base.error)
-    let resultado
-    try {
-      resultado = await db.begin(async (tx) => {
-        const rows = await tx`SELECT * FROM gastos WHERE id = ANY(${base.ids}) FOR UPDATE`
-        const error = validarFilas(rows, base, 'conciliar')
-        if (error) return { error, status: 409 }
-        const calculado = rows.reduce((suma, row) => suma + importeEnUnidades(row, base.moneda), 0)
-        if (calculado !== base.totalUnidades) {
-          return {
-            error: 'El total del estado no cuadra con los movimientos seleccionados',
-            status: 409,
-            total_calculado: desdeUnidades(calculado, base.moneda),
-            diferencia: desdeUnidades(base.totalUnidades - calculado, base.moneda),
-          }
-        }
-        await tx`UPDATE gastos SET conciliado = TRUE, updated_at = NOW() WHERE id = ANY(${base.ids})`
-        return { ok: true, actualizados: rows.length, total: desdeUnidades(calculado, base.moneda) }
-      })
-    } catch (error) {
-      console.error('[tarjeta/conciliar]', error.message)
-      return respuestaError(c, 'No se pudo conciliar el estado', 500)
-    }
-    if (resultado.error) return respuestaError(c, resultado.error, resultado.status, resultado)
-    return c.json(resultado)
-  })
-
-  router.post('/desconciliar', async (c) => {
-    const base = validarBase(await c.req.json(), false)
-    if (base.error) return respuestaError(c, base.error)
-    let resultado
-    try {
-      resultado = await db.begin(async (tx) => {
-        const rows = await tx`SELECT * FROM gastos WHERE id = ANY(${base.ids}) FOR UPDATE`
-        const error = validarFilas(rows, base, 'desconciliar')
-        if (error) return { error, status: 409 }
-        await tx`UPDATE gastos SET conciliado = FALSE, updated_at = NOW() WHERE id = ANY(${base.ids})`
-        return { ok: true, actualizados: rows.length }
-      })
-    } catch (error) {
-      console.error('[tarjeta/desconciliar]', error.message)
-      return respuestaError(c, 'No se pudo revertir la conciliación', 500)
-    }
-    if (resultado.error) return respuestaError(c, resultado.error, resultado.status)
-    return c.json(resultado)
-  })
-
   router.post('/pagar', async (c) => {
-    const base = validarBase(await c.req.json(), true)
+    const base = validarPago(await c.req.json())
     if (base.error) return respuestaError(c, base.error)
     let resultado
     try {
       resultado = await db.begin(async (tx) => {
         const rows = await tx`SELECT * FROM gastos WHERE id = ANY(${base.ids}) FOR UPDATE`
-        const error = validarFilas(rows, base, 'pagar')
+        const error = validarFilas(rows, base)
         if (error) return { error, status: 409 }
         const calculado = rows.reduce((suma, row) => suma + importeEnUnidades(row, base.moneda), 0)
         if (calculado !== base.totalUnidades) {

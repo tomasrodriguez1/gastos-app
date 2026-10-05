@@ -14,7 +14,7 @@ const FILTROS_FACTURADO = [
   { value: 'no_facturado', label: 'No facturado', campo: 'monto_no_facturado' },
 ]
 const CAMPOS_MONTO = ['por_pagar', 'fondo_actual', 'falta_depositar', 'por_cobrar', 'gasto_propio_neto', 'monto_facturado', 'monto_no_facturado']
-const CAMPOS_CONTEO = ['conciliados', 'sin_conciliar', 'facturados', 'no_facturados']
+const CAMPOS_CONTEO = ['movimientos', 'facturados', 'no_facturados']
 const VACIO = {
   ...Object.fromEntries([...CAMPOS_MONTO, ...CAMPOS_CONTEO].map(campo => [campo, 0])),
   categorias: [],
@@ -105,11 +105,8 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
     await reconciliacion.refrescar()
   }
 
-  async function ejecutar(accion, banco, gastoIds, total) {
-    const payload = { banco, moneda, gasto_ids: gastoIds }
-    if (accion === 'conciliar') payload.total_estado = total
-    if (accion === 'pagar') payload.total_pagado = total
-    const resultado = await reconciliacion[accion](payload)
+  async function registrarPago(banco, gastoIds, total) {
+    const resultado = await reconciliacion.pagar({ banco, moneda, gasto_ids: gastoIds, total_pagado: total })
     await onRefetchGastos()
     return resultado
   }
@@ -121,7 +118,7 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
       <div className="space-y-3">
         <div>
           <h1 className="font-heading text-xl text-white">Tarjetas de crédito</h1>
-          <p className="mt-1 text-xs text-slate-500">Deuda pendiente, lo ya facturado y cuánto tenés aportado para pagarla. Conciliá el estado y registrá el pago como dos etapas separadas.</p>
+          <p className="mt-1 text-xs text-slate-500">Deuda pendiente, lo ya facturado y cuánto tenés aportado para pagarla. Seleccioná los movimientos y registrá el pago cuando efectivamente salga.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border border-slate-700 bg-slate-800 p-0.5" role="group" aria-label="Tarjetas">
@@ -165,9 +162,7 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
           moneda={moneda}
           mostrarBanco={bancos.length > 1}
           onActualizarGasto={actualizarGasto}
-          onConciliar={(banco, ids, total) => ejecutar('conciliar', banco, ids, total)}
-          onDesconciliar={(banco, ids) => ejecutar('desconciliar', banco, ids)}
-          onPagar={(banco, ids, total) => ejecutar('pagar', banco, ids, total)}
+          onPagar={registrarPago}
         />
 
         <aside className="space-y-5">

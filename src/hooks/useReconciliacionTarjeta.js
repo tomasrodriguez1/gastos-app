@@ -88,8 +88,6 @@ export function useReconciliacionTarjeta() {
     ajustarSaldoFondo,
     eliminarMovimientoFondo,
     guardarCiclo,
-    conciliar: payload => ejecutar('conciliar', payload),
-    desconciliar: payload => ejecutar('desconciliar', payload),
     pagar: payload => ejecutar('pagar', payload),
   }
 }

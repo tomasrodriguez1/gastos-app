@@ -24,7 +24,7 @@ function Toggle({ activo, onClick, activoLabel, inactivoLabel, title }) {
   )
 }
 
-export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, onConciliar, onDesconciliar, onPagar }) {
+export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, onPagar }) {
   const [seleccionados, setSeleccionados] = useState(new Set())
   const [totalOperacion, setTotalOperacion] = useState('')
   const [editandoId, setEditandoId] = useState(null)
@@ -35,10 +35,8 @@ export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, 
   const seleccion = useMemo(() => gastos.filter((gasto, indice) => seleccionados.has(getGastoId(gasto, indice))), [gastos, seleccionados])
   const idsSeleccionados = seleccion.map(gasto => gasto.id)
   const bancosSeleccion = [...new Set(seleccion.map(gasto => gasto.banco))]
-  // Cada estado de cuenta es de un banco: conciliar/pagar solo con una tarjeta.
+  // Cada pago corresponde a una tarjeta: no se mezclan bancos en una operación.
   const bancoUnico = bancosSeleccion.length === 1 ? bancosSeleccion[0] : null
-  const todosSinConciliar = seleccion.length > 0 && seleccion.every(gasto => !gasto.conciliado)
-  const todosConciliados = seleccion.length > 0 && seleccion.every(gasto => gasto.conciliado)
   const totalSeleccionado = seleccion.reduce((suma, gasto) => suma + montoGasto(gasto, moneda), 0)
   const todosMarcados = gastos.length > 0 && seleccionados.size === gastos.length
 
@@ -57,17 +55,15 @@ export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, 
     setError('')
   }
 
-  async function ejecutar(tipo) {
-    if ((tipo === 'conciliar' || tipo === 'pagar') && totalOperacion.trim() === '') {
-      setError('Ingresá el total del estado o pago.')
+  async function registrarPago() {
+    if (totalOperacion.trim() === '') {
+      setError('Ingresá el total pagado.')
       return
     }
     setProcesando(true)
     setError('')
     try {
-      if (tipo === 'conciliar') await onConciliar(bancoUnico, idsSeleccionados, Number(totalOperacion))
-      if (tipo === 'desconciliar') await onDesconciliar(bancoUnico, idsSeleccionados)
-      if (tipo === 'pagar') await onPagar(bancoUnico, idsSeleccionados, Number(totalOperacion))
+      await onPagar(bancoUnico, idsSeleccionados, Number(totalOperacion))
       setSeleccionados(new Set())
       setTotalOperacion('')
     } catch (e) {
@@ -99,7 +95,7 @@ export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, 
       <div className="border-b border-slate-700/50 bg-slate-900/30 p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <label className="mb-1 block text-[10px] uppercase tracking-wider text-slate-500">Total estado / pago</label>
+            <label className="mb-1 block text-[10px] uppercase tracking-wider text-slate-500">Total pagado</label>
             <input
               type="number"
               step={moneda === 'USD' ? '0.01' : '1'}
@@ -109,15 +105,13 @@ export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, 
               className="w-44 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-right font-mono-numbers text-sm text-slate-200 outline-none focus:border-sky-500"
             />
           </div>
-          <button disabled={!todosSinConciliar || !bancoUnico || procesando} onClick={() => ejecutar('conciliar')} className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs font-medium text-sky-400 disabled:cursor-not-allowed disabled:opacity-30">Conciliar estado</button>
-          <button disabled={!todosConciliados || !bancoUnico || procesando} onClick={() => ejecutar('pagar')} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-400 disabled:cursor-not-allowed disabled:opacity-30">Registrar pago</button>
-          <button disabled={!todosConciliados || !bancoUnico || procesando} onClick={() => ejecutar('desconciliar')} className="rounded-lg border border-slate-600/50 px-3 py-2 text-xs text-slate-400 disabled:cursor-not-allowed disabled:opacity-30">Desconciliar</button>
+          <button disabled={seleccion.length === 0 || !bancoUnico || procesando} onClick={registrarPago} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-400 disabled:cursor-not-allowed disabled:opacity-30">Registrar pago</button>
           <div className="ml-auto text-right text-xs text-slate-500">
             <div>{seleccion.length} seleccionados</div>
             <div className="font-mono-numbers text-slate-300">{formatMonto(totalSeleccionado, moneda)}</div>
           </div>
         </div>
-        {bancosSeleccion.length > 1 && <p className="mt-3 text-xs text-amber-400">Seleccionaste movimientos de {bancosSeleccion.join(' y ')}: conciliá y pagá una tarjeta a la vez.</p>}
+        {bancosSeleccion.length > 1 && <p className="mt-3 text-xs text-amber-400">Seleccionaste movimientos de {bancosSeleccion.join(' y ')}: registrá un pago por tarjeta.</p>}
         {error && <p className="mt-3 text-xs text-rose-400">{error}</p>}
       </div>
 
@@ -132,7 +126,6 @@ export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, 
               <th className="w-28 px-3 py-3 text-right">Monto</th>
               <th className="w-28 px-3 py-3 text-right">Por cobrar</th>
               <th className="w-28 px-3 py-3 text-center">Budget</th>
-              <th className="w-24 px-3 py-3 text-center">Conciliación</th>
               <th className="w-24 px-3 py-3 text-center">Ciclo</th>
             </tr>
           </thead>
@@ -154,7 +147,6 @@ export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, 
                     )}
                   </td>
                   <td className="px-3 py-2.5 text-center"><Toggle activo={gasto.en_presupuesto !== false} onClick={() => onActualizarGasto(id, { en_presupuesto: gasto.en_presupuesto === false })} activoLabel="Incluido" inactivoLabel="Fuera" title="Impacta el presupuesto" /></td>
-                  <td className="px-3 py-2.5 text-center">{gasto.conciliado ? <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[11px] text-sky-400">Conciliado</span> : <span className="text-[11px] text-amber-500/70">Pendiente</span>}</td>
                   <td className="px-3 py-2.5 text-center">
                     {gasto.facturado === true && <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[11px] text-violet-400">Facturado</span>}
                     {gasto.facturado === false && <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-400">No facturado</span>}

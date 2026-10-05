@@ -52,7 +52,7 @@ Principales grupos:
 - Gastos CRUD + sync-keys + duplicados
 - Presupuesto por ciclo financiero (`GET /api/presupuesto/ciclos`, `GET/PUT /api/presupuesto/:ciclo`)
 - Gastos por ciclo (`GET /api/gastos?ciclo=YYYY-MM`) con filtro calendario secundario combinable (`&mes=YYYY-MM`)
-- Reconciliación de tarjeta (`GET /api/tarjeta/resumen`, `POST /api/tarjeta/conciliar|desconciliar|pagar`) — totales derivados y operaciones atómicas para Edwards/BICE
+- Pagos de tarjeta (`GET /api/tarjeta/resumen`, `POST /api/tarjeta/pagar`) — totales derivados y pago atómico para Edwards/BICE
 - Fondo de tarjetas (`GET /api/tarjeta/fondo`, `POST /api/tarjeta/fondo/aportes`, `PUT /api/tarjeta/fondo/saldo`, `DELETE /api/tarjeta/fondo/movimientos/:id`) — fondo común manual por moneda; `pagar` descuenta automáticamente
 - Reserva de tarjeta legacy (`GET/PUT /api/reserva-tarjeta`) — LEGACY, ya no usado por la UI; se conserva por el dato histórico
 - Reservas de ahorro F6 (`GET/POST /api/reservas`, `PATCH /api/reservas/:id`, `GET/POST /api/reservas/:id/saldos`) — bolsillos externos (Mercado Pago); UI en `/fondos` además del agente. `POST /:id/saldos` (`{ monto, fecha }`) es el camino manual — registra con `origen='manual'`, usando la misma `registrarSaldo()` que ya usaba el agente con `origen='foto_agente'`. La respuesta (y cada fila de `GET /:id/saldos`) incluye `retiros`/`crecimiento`: el desglose de cuánto de la diferencia fueron gastos de la categoría vinculada vs rendimiento estimado
@@ -62,7 +62,7 @@ Principales grupos:
 - Reglas de mapeo CRUD + test
 - Autenticación (`/api/auth/*`) — ver detalle abajo
 
-### Reconciliación de tarjetas (F5)
+### Pagos de tarjetas (F5)
 
 Limitada a Edwards y BICE; CLP y USD se calculan y validan por separado. Todos los endpoints
 quedan detrás del gate global normal.
@@ -70,9 +70,7 @@ quedan detrás del gate global normal.
 | Endpoint | Payload | Efecto |
 |----------|---------|--------|
 | `GET /api/tarjeta/resumen` | — | Totales globales/por banco y desglose por categoría derivados de gastos no pagados/no descartados |
-| `POST /api/tarjeta/conciliar` | `{ banco, moneda, total_estado, gasto_ids }` | Verifica el total seleccionado y marca `conciliado=true` atómicamente |
-| `POST /api/tarjeta/desconciliar` | `{ banco, moneda, gasto_ids }` | Revierte la conciliación mientras ningún movimiento esté pagado |
-| `POST /api/tarjeta/pagar` | `{ banco, moneda, total_pagado, gasto_ids }` | Verifica movimientos previamente conciliados, marca `pagado=true` y registra un movimiento `pago` (−total) en `fondo_tarjeta_movimiento`, todo atómicamente |
+| `POST /api/tarjeta/pagar` | `{ banco, moneda, total_pagado, gasto_ids }` | Verifica banco, moneda, IDs y total; marca `pagado=true` y registra un movimiento `pago` (−total) en `fondo_tarjeta_movimiento`, todo atómicamente |
 | `GET /api/tarjeta/fondo` | — | `{ saldos: { CLP, USD }, movimientos: [últimos 50] }` |
 | `POST /api/tarjeta/fondo/aportes` | `{ moneda, monto > 0, fecha?, nota? }` | Registra un aporte manual |
 | `PUT /api/tarjeta/fondo/saldo` | `{ moneda, saldo }` | Lleva el saldo a un valor absoluto registrando la diferencia como `ajuste` |
