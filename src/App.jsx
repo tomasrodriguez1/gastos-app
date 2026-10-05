@@ -204,7 +204,7 @@ export default function App() {
             />
             <Route
               path="/fondos"
-              element={<FondosPage {...sharedProps} reconciliacion={reconciliacion} />}
+              element={<FondosPage {...sharedProps} gastos={todoLosGastos} reconciliacion={reconciliacion} />}
             />
             <Route path="/passkeys" element={<PasskeysPage />} />
           </Routes>

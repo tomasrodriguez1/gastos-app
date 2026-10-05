@@ -332,6 +332,22 @@ export function calcularAcumuladoFondo(gastos, vinculado) {
     }, 0)
 }
 
+// Mismo filtro que calcularAcumuladoFondo, pero devuelve la lista de gastos en vez de la suma —
+// para mostrarlos como "ingresos" de un fondo vinculado (la plata que ya cuenta como ahorrada).
+export function listarAportesFondoVinculado(gastos, vinculado) {
+  if (!vinculado) return []
+  return gastos
+    .filter(g => !esGastoUsdPuro(g))
+    .filter(g => !esFinanciadoPorFondo(g))
+    .filter(g => !vinculado.desde || g.ciclo_financiero >= vinculado.desde)
+    .filter(g => {
+      const ctx = g.contexto_override || g.contexto || ''
+      const r = g.presupuesto_manual || getSubcategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
+      return r && r.grupo === vinculado.grupo && r.subcategoria === vinculado.subcategoria
+    })
+    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
+}
+
 export function montoUsoFondo(g) {
   if (g.estado === 'descartado' || esGastoUsdPuro(g)) return 0
   if (g.monto_presupuesto_manual != null) return g.monto_presupuesto_manual
@@ -347,6 +363,13 @@ export function listarUsosFondo(gastos, nombreFondo) {
 
 export function calcularUsadoFondo(gastos, nombreFondo) {
   return listarUsosFondo(gastos, nombreFondo).reduce((sum, g) => sum + montoUsoFondo(g), 0)
+}
+
+// Saldo de un fondo de ahorro manual (sin vincular) a partir de su libro de movimientos
+// (aporte +, ajuste ±) — reemplaza presupuesto_fondo.acumulado como fuente del saldo. Un fondo
+// vinculado sigue usando calcularSaldoFondo (gastos de la categoría), no esta función.
+export function calcularSaldoFondoManual(movimientos) {
+  return (movimientos || []).reduce((s, m) => s + (m.monto || 0), 0)
 }
 
 export function calcularSaldoFondo(fondo, nombre, gastos) {

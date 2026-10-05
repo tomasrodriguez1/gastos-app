@@ -27,7 +27,7 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 | `/agente` | Agente conversacional (F3): captura en lenguaje natural, triage de bandeja (listar/resumir/editar, nunca confirma), consultas de solo lectura del ciclo, aviso de duplicados al crear. Streaming de pasos con `useChat`. Layout en dos columnas en desktop: chat a la izquierda y bandeja (`BandejaLista`) embebida y colapsable a la derecha. También accesible desde cualquier página vía `AgenteFlotante` |
 | `/presupuesto` | Editor de presupuesto por ciclo financiero (ingresos previstos, categorías, fondos) + registro de ingresos reales (tabla `ingreso`, separada de la previsión): alta manual con fecha/fuente/monto/nota, lista del ciclo con borrado y total, también registrable por el agente |
 | `/tarjeta` | Vista consolidada de tarjetas Edwards/BICE (multi-selección) en CLP o USD: gasto total pendiente, ya facturado / no facturado, fondo común aportado manualmente (`fondo_tarjeta_movimiento`: aportes, ajustes y pagos automáticos) y falta aportar, con barra de cobertura y desglose por tarjeta. Conciliación de estado y registro posterior del pago (una tarjeta a la vez). Día de cierre configurable por tarjeta (`tarjeta_ciclo`, chip en la barra de filtros) para distinguir movimientos ya facturados de los que aún no |
-| `/fondos` | Agrupa dos de los tres sistemas de "fondo" (ver F6 abajo): reservas de ahorro externas (crear/editar/archivar, registrar saldo leído, historial esperado vs real — antes solo gestionable por el agente) y un resumen de solo lectura del fondo de tarjeta con link a `/tarjeta`. Los fondos de ahorro vinculados al presupuesto siguen en el Dashboard — no se movieron |
+| `/fondos` | Agrupa los tres sistemas de "fondo" (ver F6 abajo) en una sola vista, los tres con el mismo formato aporte(+)/pago(−)/ajuste(±) — ver DEC-015: fondos de ahorro del presupuesto (`presupuesto_fondo`, mismo componente `FondosAhorro` y mismo dato que el Dashboard — aportar/usar/archivar desde cualquiera de las dos páginas actualiza lo mismo; "Ver movimientos" combina aportes [gastos de la categoría si está vinculado, o el libro `fondo_ahorro_movimiento` si es manual — ahí sí es la fuente del saldo] con pagos [siempre gastos con `financiado_por`, nunca duplicados]), reservas de ahorro externas (crear/editar/archivar, registrar saldo leído con desglose Pago/Aporte/Ajuste, historial — antes solo gestionable por el agente) y el fondo de tarjeta con su historial completo de movimientos (mismo componente que `/tarjeta`, ya era el modelo de referencia) y link para gestionarlo ahí. El Dashboard conserva su propio bloque de fondos de ahorro (no se quitó, solo se duplicó la vista) |
 | `/passkeys` | Gestión de passkeys: ver, agregar, eliminar (requiere sesión) |
 
 ## Stack
@@ -219,6 +219,10 @@ etc.) no cambió — sigue detrás del mismo gate global, ahora combinado (sesi�
   listar (`GET /api/agente/conversaciones`) y reabrir.
 - GAP: ingresos reales (tabla `ingreso`) no tienen detección de duplicados — ni la UI de
   `/presupuesto` ni el agente avisan si el mismo ingreso se registra dos veces el mismo día.
+- GAP: `fondo_ahorro_movimiento` (libro de aportes/ajustes de fondos de ahorro manuales, ahora
+  la fuente real del saldo — ver DEC-015) no tiene fila inicial para fondos creados/editados
+  antes de esa migración; el saldo desde ese punto en adelante es correcto pero el historial de
+  un fondo viejo puede arrancar sin explicación.
 - GAP: la card "Ingresos" del Dashboard y el "Saldo" siguen calculándose sobre el previsto
   (`presupuesto_ingreso`), no sobre el ingreso real — el real solo se muestra como dato adicional.
   Cambiar esa semántica (que el saldo use el ingreso real) es una decisión aparte, no tomada acá.

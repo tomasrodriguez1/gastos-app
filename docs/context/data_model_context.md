@@ -79,7 +79,36 @@ categoría. Gastos `confirmado` sin grupo (tipos como `Ajuste`/`Turno`/`Otro`, v
 
 **`vinculado` JSON:** `{ grupo, subcategoria, desde? }` — cambios propagan a gastos vinculados.
 
-**Uso del fondo:** no se borra ni se cubre con un ingreso falso. El gasto real queda con `financiado_por = nombre del fondo`; el saldo mostrado es `aportes − usos`. `estado='cerrado'` lo archiva (sigue en el ciclo, no se copia al siguiente). Renombrar el fondo actualiza `gastos.financiado_por`.
+**Uso del fondo:** no se borra ni se cubre con un ingreso falso. El gasto real queda con `financiado_por = nombre del fondo`; el saldo mostrado es `aportes − usos`. `estado='cerrado'` lo archiva (sigue en el ciclo, no se copia al siguiente). Renombrar el fondo actualiza `gastos.financiado_por` **y** `fondo_ahorro_movimiento.fondo_nombre` (mismo bloque de `fondo_cambios` en `guardarPresupuestoCicloDB`).
+
+**"Ver movimientos" de un fondo (vista en Dashboard y `/fondos`), formato unificado con
+`fondo_tarjeta_movimiento`: aporte (+), pago (−), ajuste (±).**
+
+- **Pago**, para cualquier fondo (vinculado o manual): **nunca** es una fila nueva — sigue siendo,
+  como siempre, un gasto con `financiado_por = nombre del fondo` (`listarUsosFondo`/
+  `calcularUsadoFondo` en `src/utils/calculos.js`). No se duplica la contabilidad del gasto, mismo
+  criterio que ya rige `fondo_tarjeta_movimiento`/`reserva_tarjeta`.
+- **Aporte**, para un fondo **vinculado**: son los gastos de su categoría (mismo filtro que
+  `calcularAcumuladoFondo`, expuesto como lista vía `listarAportesFondoVinculado`) — tampoco es
+  una fila nueva, se deriva de `gastos` igual que siempre.
+- **Aporte/Ajuste**, para un fondo **manual** (sin vincular): sí vive en `fondo_ahorro_movimiento`
+  (tabla, ver abajo) — **acá sí es la fuente del saldo**: `aportes = SUM(monto)`. Reemplaza al
+  campo suelto `presupuesto_fondo.acumulado`, que queda **vestigial** para fondos manuales (sigue
+  existiendo en schema y `guardarPresupuestoCicloDB`/`copiarCicloAnterior` lo siguen leyendo/
+  escribiendo porque no se tocó esa ruta, pero nada lo usa ya para mostrar el saldo). `tipo` nunca
+  es `'pago'` en esta tabla — ver arriba.
+  - `tipo='aporte'`: "+ Aportar" manual, siempre positivo.
+  - `tipo='ajuste'` (puede ser negativo): saldo inicial al crear un fondo manual, saldo sembrado
+    al desvincular uno (reemplaza el viejo `resto.acumulado = calcularAcumuladoFondo(...)`), o la
+    diferencia al corregir el "Saldo acumulado" desde "Editar fondo".
+  - Movimientos de fondos creados/editados **antes** de esta unificación no tienen fila inicial —
+    el saldo desde ese punto en adelante es correcto, pero el historial de un fondo viejo puede
+    arrancar "de la nada". Mismo criterio ya aceptado para `fondo_tarjeta_movimiento` (Edwards no
+    se migró al reemplazar `reserva_tarjeta`).
+
+```sql
+fondo_ahorro_movimiento(id, fondo_nombre, fecha, tipo 'aporte'|'ajuste', monto, nota, created_at)
+```
 
 ### Catálogos
 
@@ -233,8 +262,20 @@ con `presupuesto_fondo` (que se recrea/reemplaza cada mes vía PUT).
 
 ```sql
 reserva(id, nombre UNIQUE, emoji, vinculado JSONB {grupo, subcategoria?}, tasa_anual, activa)
-reserva_saldo(id, reserva_id FK, fecha, monto_leido, monto_esperado, diferencia, origen, UNIQUE(reserva_id, fecha))
+reserva_saldo(id, reserva_id FK, fecha, monto_leido, monto_esperado, diferencia, origen,
+              retiros, crecimiento, UNIQUE(reserva_id, fecha))
 ```
+
+`retiros` y `crecimiento` (columnas nullable agregadas por `migrate-reserva-retiros.js`,
+después de la migración original) persisten el desglose que `calcularSaldoEsperado` ya
+calculaba pero no guardaba, para mostrarlo en el historial de `/fondos` sin recalcular. `null`
+en una lectura sin línea base (primera lectura) o en filas registradas antes de esta migración.
+
+Presentación unificada con el formato aporte(+)/pago(−)/ajuste(±) de los otros dos fondos (sin
+cambio de datos, solo de UI en `ReservasList.jsx`): `retiros` se muestra como **Pago** (gastos de
+la categoría vinculada), `crecimiento` como **Aporte** (rendimiento estimado), y `diferencia`
+—que ya es matemáticamente lo que ninguno de los dos anteriores explica,
+`monto_leido = montoAnterior − retiros + crecimiento + diferencia`— como **Ajuste**.
 
 **Cálculo del esperado** (`calcularSaldoEsperado` en `server/reservas.js`): a diferencia de
 `presupuesto_fondo.vinculado` (que no tiene ningún cómputo automático server-side hoy — su
@@ -345,6 +386,9 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | — | `reserva`, `reserva_saldo` (PG-only, `server/db/migrate-reservas.js`) — tracking de saldos reales vs esperados en reservas externas (F6) |
 | — | `fondo_tarjeta_movimiento` (PG-only, `server/db/migrate-fondo-tarjeta.js`) — fondo común manual para pagar tarjetas |
 | — | `ingreso` (PG-only, `server/db/migrate-ingresos.js`) — ingresos reales, separados de la previsión de `presupuesto_ingreso` |
+| — | `fondo_ahorro_movimiento` (PG-only, `server/db/migrate-fondo-ahorro-movimientos.js`) — libro de aportes/ajustes de fondos de ahorro manuales |
+| — | `fondo_ahorro_movimiento.tipo` (PG-only, `server/db/migrate-fondo-ahorro-tipo.js`) — distingue aporte de ajuste; pasa a ser la fuente del saldo de un fondo manual (antes solo informativo) |
+| — | `reserva_saldo.retiros`/`.crecimiento` (PG-only, `server/db/migrate-reserva-retiros.js`) — desglose persistido de cada lectura de saldo |
 
 **PG:** schema aplicado vía `initSchema()` leyendo `schema.pg.sql`. GAP: sistema de migraciones versionadas para PG — las tablas nuevas siguen el mismo patrón `CREATE TABLE IF NOT EXISTS` que el resto del archivo.
 

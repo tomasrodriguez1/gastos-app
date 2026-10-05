@@ -1,12 +1,27 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { formatCLP } from '../../utils/formatters'
 import { GRUPOS_PRESUPUESTO } from '../../utils/categorias'
-import { calcularAcumuladoFondo, calcularSaldoFondo, esGastoUsdPuro, listarUsosFondo, montoUsoFondo } from '../../utils/calculos'
+import {
+  calcularAcumuladoFondo, calcularSaldoFondoManual, calcularUsadoFondo, esGastoUsdPuro,
+  listarAportesFondoVinculado, listarUsosFondo, montoPresupuestable, montoUsoFondo,
+} from '../../utils/calculos'
 import { resolverDesdeVinculado, vinculadoCambioUbicacion } from '../../utils/fondos'
 
 const ICONS_DEFAULT = { 'Mantenimiento Auto': '🔧', 'Patente Auto': '📋', 'Viajes': '✈️' }
 
 const EMOJIS = ['💰', '🚗', '✈️', '🏠', '🎓', '💍', '🔧', '📋', '🏖️', '💻', '🎯', '🏥']
+
+const ETIQUETAS_MOVIMIENTO = { aporte: 'Aporte', pago: 'Pago', ajuste: 'Ajuste' }
+
+async function postMovimientoFondo(nombre, { fecha, monto, tipo, nota }) {
+  const res = await fetch(`/api/fondos-ahorro/${encodeURIComponent(nombre)}/movimientos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fecha, monto, tipo, nota }),
+  })
+  if (!res.ok) throw new Error('No se pudo registrar el movimiento')
+  return res.json()
+}
 
 function mesesHastaMeta(fechaMeta, mesReferencia) {
   if (!fechaMeta || !mesReferencia) return null
@@ -24,6 +39,7 @@ function FormFondo({
   gruposPresupuesto = GRUPOS_PRESUPUESTO,
   mes,
   acumuladoSiDesvincula,
+  saldoActualManual,
 }) {
   const esEditar = modo === 'editar'
   const [form, setForm] = useState(() => ({
@@ -31,7 +47,7 @@ function FormFondo({
     emoji: fondoInicial?.emoji || '💰',
     objetivo: fondoInicial?.objetivo ? String(fondoInicial.objetivo) : '',
     aporte: fondoInicial?.previsto_aportar ? String(fondoInicial.previsto_aportar) : '',
-    acumulado: fondoInicial?.acumulado != null ? String(fondoInicial.acumulado) : '',
+    acumulado: fondoInicial && !fondoInicial.vinculado ? String(saldoActualManual ?? 0) : '',
     fecha_meta: fondoInicial?.fecha_meta || '',
     grupo: fondoInicial?.vinculado?.grupo || '',
     subcategoria: fondoInicial?.vinculado?.subcategoria || '',
@@ -168,6 +184,11 @@ function FormFondo({
                 placeholder="0"
                 className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm font-mono-numbers text-slate-200 placeholder-slate-500 outline-none focus:border-sky-500"
               />
+              {esEditar && fondoInicial && !fondoInicial.vinculado && (
+                <p className="text-xs text-slate-600 mt-1.5">
+                  Si lo cambiás, la diferencia con el saldo actual queda registrada como un ajuste en "Ver movimientos".
+                </p>
+              )}
             </div>
           )}
 
@@ -271,17 +292,34 @@ function gastosVinculables(gastos, mes) {
 function TarjetaFondo({
   nombre, fondo, onAportar, onEliminar, onEditar, onCrearGasto, onActualizarGasto,
   onArchivar, onReabrir, mes, gastos = [], gruposPresupuesto = GRUPOS_PRESUPUESTO,
+  movimientos = [], cargandoMovimientos = false, onMovimientoRegistrado,
 }) {
   const [modo, setModo] = useState(null)
   const [monto, setMonto] = useState('')
   const [formAporte, setFormAporte] = useState(null)
   const [formUso, setFormUso] = useState(null)
   const [confirmEliminar, setConfirmEliminar] = useState(false)
+  const [mostrarMovimientos, setMostrarMovimientos] = useState(false)
 
   const cerrado = fondo.estado === 'cerrado'
   const esAuto = Boolean(fondo.vinculado)
-  const { aportes, usado, saldo } = calcularSaldoFondo(fondo, nombre, gastos)
+  const aportes = esAuto ? calcularAcumuladoFondo(gastos, fondo.vinculado) : calcularSaldoFondoManual(movimientos)
+  const usado = calcularUsadoFondo(gastos, nombre)
+  const saldo = aportes - usado
   const usos = listarUsosFondo(gastos, nombre)
+  const movimientosUnificados = [
+    ...(esAuto
+      ? listarAportesFondoVinculado(gastos, fondo.vinculado).map(g => ({
+          key: `g-${g.id}`, fecha: g.fecha, tipo: 'aporte', monto: montoPresupuestable(g), label: g.motivo,
+        }))
+      : movimientos.map(m => ({
+          key: `m-${m.id}`, fecha: m.fecha, tipo: m.tipo, monto: m.monto,
+          label: m.nota || (m.tipo === 'ajuste' ? null : 'Aporte manual'),
+        }))),
+    ...usos.map(g => ({
+      key: `u-${g.id}`, fecha: g.fecha, tipo: 'pago', monto: -montoUsoFondo(g), label: g.motivo, gastoId: g.id,
+    })),
+  ].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
   const objetivo = fondo.objetivo || 0
   const aportar = fondo.previsto_aportar || 0
   const pct = objetivo > 0 ? Math.min((aportes / objetivo) * 100, 100) : 0
@@ -336,11 +374,17 @@ function TarjetaFondo({
     setFormAporte(null)
   }
 
-  function handleGuardar(e) {
+  async function handleGuardar(e) {
     e.preventDefault()
     const valor = Number(monto)
     if (isNaN(valor) || valor < 0) return
     onAportar(nombre, aportes + valor)
+    if (valor > 0) {
+      try {
+        await postMovimientoFondo(nombre, { fecha: hoy, monto: valor, tipo: 'aporte' })
+      } catch { /* queda reflejado igual en el próximo refresh */ }
+      onMovimientoRegistrado?.()
+    }
     setModo(null)
     setMonto('')
   }
@@ -708,29 +752,43 @@ function TarjetaFondo({
         </div>
       </div>
 
-      {usos.length > 0 && (
-        <div className="pt-1 border-t border-slate-700/40 space-y-1.5">
-          <div className="text-[10px] uppercase tracking-wider text-slate-600">Usos</div>
-          {usos.slice(0, 5).map(g => (
-            <div key={g.id} className="flex items-center justify-between gap-2 text-xs">
-              <span className="truncate text-slate-400" title={g.motivo}>{g.fecha} · {g.motivo}</span>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="font-mono-numbers text-amber-400/90">{formatCLP(montoUsoFondo(g))}</span>
-                {!cerrado && onActualizarGasto && (
-                  <button
-                    type="button"
-                    onClick={() => handleDesvincularUso(g.id)}
-                    className="text-slate-600 hover:text-red-400"
-                    title="Dejar de financiar con este fondo"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
+      <div className="pt-1 border-t border-slate-700/40">
+        <button type="button" onClick={() => setMostrarMovimientos(v => !v)} className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
+          {!esAuto && cargandoMovimientos ? 'Cargando…' : mostrarMovimientos ? 'Ocultar movimientos' : 'Ver movimientos'}
+        </button>
+        {mostrarMovimientos && (
+          movimientosUnificados.length === 0 ? (
+            <p className="text-xs text-slate-600 mt-1.5">Sin movimientos todavía.</p>
+          ) : (
+            <div className="space-y-1 mt-1.5">
+              {movimientosUnificados.slice(0, 8).map(m => (
+                <div key={m.key} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="truncate text-slate-400" title={m.label || ''}>
+                    {m.fecha} · {ETIQUETAS_MOVIMIENTO[m.tipo]}{m.label ? ` · ${m.label}` : ''}
+                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className={`font-mono-numbers ${
+                      m.tipo === 'ajuste' ? 'text-sky-400/90' : m.monto < 0 ? 'text-amber-400/90' : 'text-emerald-400/90'
+                    }`}>
+                      {m.monto > 0 ? '+' : ''}{formatCLP(m.monto)}
+                    </span>
+                    {m.tipo === 'pago' && !cerrado && onActualizarGasto && (
+                      <button
+                        type="button"
+                        onClick={() => handleDesvincularUso(m.gastoId)}
+                        className="text-slate-600 hover:text-red-400"
+                        title="Dejar de financiar con este fondo"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          )
+        )}
+      </div>
 
       {!cerrado && (
         <button
@@ -751,9 +809,29 @@ export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalo
   const [guardando, setGuardando] = useState(false)
   const [errorLocal, setErrorLocal] = useState(null)
   const [mostrarCerrados, setMostrarCerrados] = useState(false)
+  const [movimientosPorFondo, setMovimientosPorFondo] = useState({})
+  const [cargandoMovimientos, setCargandoMovimientos] = useState(true)
   const fondos = presupuestoMes?.fondos || {}
   const fondosActivos = Object.entries(fondos).filter(([, f]) => f.estado !== 'cerrado')
   const fondosCerrados = Object.entries(fondos).filter(([, f]) => f.estado === 'cerrado')
+
+  async function refrescarMovimientos() {
+    try {
+      const rows = await fetch('/api/fondos-ahorro/movimientos').then(r => r.json())
+      const agrupado = {}
+      for (const row of rows) (agrupado[row.fondo_nombre] ||= []).push(row)
+      setMovimientosPorFondo(agrupado)
+    } catch {
+      // deja lo que ya había cargado; la próxima acción reintenta
+    } finally {
+      setCargandoMovimientos(false)
+    }
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refrescarMovimientos()
+  }, [])
 
   async function guardarFondos(nuevosFondos, fondoCambios = null) {
     setErrorLocal(null)
@@ -775,12 +853,14 @@ export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalo
   }
 
   function datosFondoDesdeForm(datos) {
-    const { nombre, ...resto } = datos
+    const { nombre, acumulado, ...resto } = datos
     delete resto.vinculadoAnterior
-    return { nombre, datos: resto }
+    return { nombre, datos: resto, saldoObjetivo: Number(acumulado) || 0 }
   }
 
   async function handleAportar(nombre, nuevoSaldo) {
+    // presupuesto_fondo.acumulado ya no es la fuente del saldo de un fondo manual (ver
+    // fondo_ahorro_movimiento) — esto queda como escritura best-effort, vestigial.
     await guardarFondos({ ...fondos, [nombre]: { ...fondos[nombre], acumulado: nuevoSaldo } })
   }
 
@@ -791,17 +871,30 @@ export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalo
   }
 
   async function handleCrear(datos) {
-    const { nombre, datos: resto } = datosFondoDesdeForm(datos)
+    const { nombre, datos: resto, saldoObjetivo } = datosFondoDesdeForm(datos)
     if (fondos[nombre]) {
       setErrorLocal(`Ya existe un fondo llamado «${nombre}».`)
       return
     }
     const ok = await guardarFondos({ ...fondos, [nombre]: { ...resto, estado: 'activo' } })
-    if (ok) setCreando(false)
+    if (ok) {
+      if (!resto.vinculado && saldoObjetivo) {
+        try {
+          await postMovimientoFondo(nombre, {
+            fecha: new Date().toISOString().slice(0, 10),
+            monto: saldoObjetivo,
+            tipo: 'ajuste',
+            nota: 'Saldo inicial',
+          })
+        } catch { /* el fondo ya quedó creado; el saldo se puede corregir editándolo */ }
+        await refrescarMovimientos()
+      }
+      setCreando(false)
+    }
   }
 
   async function handleEditar(nombreAnterior, datos) {
-    const { nombre, datos: resto } = datosFondoDesdeForm(datos)
+    const { nombre, datos: resto, saldoObjetivo } = datosFondoDesdeForm(datos)
     const fondoPrevio = fondos[nombreAnterior]
 
     if (nombre !== nombreAnterior && fondos[nombre]) {
@@ -809,10 +902,11 @@ export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalo
       return
     }
 
-    // Al desvincular, conservar el saldo que mostraba el fondo automático
-    if (fondoPrevio?.vinculado && !resto.vinculado) {
-      resto.acumulado = calcularAcumuladoFondo(gastos, fondoPrevio.vinculado)
-    }
+    // Al desvincular, el saldo que mostraba el fondo automático se siembra como ajuste inicial
+    // del ledger manual (antes se pisaba directo en presupuesto_fondo.acumulado).
+    const ajusteDesvincular = (fondoPrevio?.vinculado && !resto.vinculado)
+      ? calcularAcumuladoFondo(gastos, fondoPrevio.vinculado)
+      : null
 
     const nuevosFondos = { ...fondos }
     if (nombreAnterior !== nombre) delete nuevosFondos[nombreAnterior]
@@ -840,7 +934,24 @@ export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalo
     }
 
     const ok = await guardarFondos(nuevosFondos, fondoCambios)
-    if (ok) setEditando(null)
+    if (ok) {
+      if (!resto.vinculado) {
+        const hoy = new Date().toISOString().slice(0, 10)
+        try {
+          if (ajusteDesvincular != null && ajusteDesvincular !== 0) {
+            await postMovimientoFondo(nombre, { fecha: hoy, monto: ajusteDesvincular, tipo: 'ajuste', nota: 'Saldo al desvincular' })
+          } else if (!fondoPrevio?.vinculado) {
+            const saldoActual = calcularSaldoFondoManual(movimientosPorFondo[nombreAnterior] || [])
+            const delta = saldoObjetivo - saldoActual
+            if (delta) {
+              await postMovimientoFondo(nombre, { fecha: hoy, monto: delta, tipo: 'ajuste', nota: 'Corrección manual' })
+            }
+          }
+        } catch { /* el fondo ya quedó guardado; se puede corregir volviendo a editar el saldo */ }
+        await refrescarMovimientos()
+      }
+      setEditando(null)
+    }
   }
 
   async function handleArchivar(nombre) {
@@ -867,6 +978,9 @@ export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalo
         onActualizarGasto={onActualizarGasto}
         onArchivar={handleArchivar}
         onReabrir={handleReabrir}
+        movimientos={movimientosPorFondo[nombre] || []}
+        cargandoMovimientos={cargandoMovimientos}
+        onMovimientoRegistrado={refrescarMovimientos}
       />
     )
   }
@@ -934,6 +1048,9 @@ export function FondosAhorro({ presupuestoMes, mes, onGuardarPresupuesto, catalo
             fondos[editando].vinculado
               ? calcularAcumuladoFondo(gastos, fondos[editando].vinculado)
               : undefined
+          }
+          saldoActualManual={
+            fondos[editando].vinculado ? undefined : calcularSaldoFondoManual(movimientosPorFondo[editando] || [])
           }
           onGuardar={datos => handleEditar(editando, datos)}
           onCerrar={() => setEditando(null)}

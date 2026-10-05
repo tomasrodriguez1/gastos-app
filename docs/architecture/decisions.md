@@ -192,6 +192,73 @@ números separados — el cálculo de "Saldo" del Dashboard sigue usando el prev
 real es una decisión aparte, no tomada acá (ver GAP en `docs/context/context.md`). Sin
 detección de duplicados para ingresos repetidos.
 
+## DEC-014 - `fondo_ahorro_movimiento` es un log informativo, no la fuente del saldo
+
+Date: 2026-10-05
+Status: superseded by DEC-015 (unas horas más tarde el mismo día: se pidió explícitamente el
+cambio de comportamiento que acá se había descartado — ver esa entrada)
+Context: Al pedir ver "ingresos y egresos" de los fondos de ahorro del presupuesto
+(`presupuesto_fondo`), un fondo vinculado a categoría ya tenía ambos lados derivables de
+`gastos` (sin cambios de schema); un fondo manual (sin vincular) solo tenía los egresos
+("Usos", vía `gastos.financiado_por`) — los aportes manuales ("+ Aportar") solo incrementaban
+`presupuesto_fondo.acumulado`, un número sin historial por fecha.
+Decision: Tabla nueva `fondo_ahorro_movimiento` (fondo_nombre, fecha, monto, nota) que se
+inserta además de (no en vez de) la actualización de `acumulado` en cada "+ Aportar" manual.
+Es deliberadamente informativa: `acumulado` sigue siendo el campo autoritativo del saldo —
+"Editar fondo" lo sigue pudiendo pisar directo, y el saldo mostrado (`calcularSaldoFondo`) no
+cambia. Convertir `acumulado` en `SUM(fondo_ahorro_movimiento.monto)` (como ya funciona
+`fondo_tarjeta_movimiento`) sería más consistente a largo plazo pero es un cambio de
+comportamiento más grande (afecta creación, edición, desvinculación) que no se pidió acá.
+Alternatives considered: derivar el saldo desde la tabla nueva (descartada por alcance, ver
+arriba); no persistir nada y mostrar solo "último aporte" (descartada, el pedido era ver una
+lista).
+Consequences: Dos fuentes para la misma información, sin garantía de que queden sincronizadas
+si `acumulado` se edita por fuera de "+ Aportar" (p.ej. "Editar fondo"). Aportes previos a este
+cambio no tienen fila — la lista puede verse incompleta en fondos antiguos. Renombrar el fondo
+actualiza `fondo_ahorro_movimiento.fondo_nombre` igual que ya hacía con `gastos.financiado_por`.
+
+## DEC-015 - Formato unificado aporte(+)/pago(−)/ajuste(±) en los 3 fondos, sin duplicar el gasto
+
+Date: 2026-10-05
+Status: active
+Context: Fondo de tarjeta (`fondo_tarjeta_movimiento`), fondos de ahorro del presupuesto
+(`presupuesto_fondo`) y reservas (`reserva_saldo`) mostraban ingresos/egresos con tres formatos
+distintos. Se pidió unificarlos al modelo que ya usa el fondo de tarjeta. El reto: un "pago"
+(uso) de un fondo de ahorro ya es, desde siempre, un gasto con `financiado_por = nombre` — una
+fila real, con signo implícito, por fecha. Convertirlo en una fila nueva en
+`fondo_ahorro_movimiento` lo duplicaría (la misma regla ya protegida para
+`fondo_tarjeta_movimiento`/`reserva_tarjeta`: "vincularlo al presupuesto duplicaría el gasto").
+Decision:
+- **Pago**, en cualquier fondo de ahorro (vinculado o manual): nunca es una fila en
+  `fondo_ahorro_movimiento` — sigue siendo el gasto con `financiado_por`. `tipo` en esa tabla
+  solo admite `'aporte'`/`'ajuste'`.
+- **Aporte**, fondo **vinculado**: sigue siendo gastos de su categoría (sin cambios, ya no se
+  duplicaba).
+- **Aporte/Ajuste**, fondo **manual**: `fondo_ahorro_movimiento` pasa de informativo a ser la
+  fuente real del saldo (`SUM(monto)`), reemplazando `presupuesto_fondo.acumulado` (que queda
+  vestigial — no se borra de schema, simplemente nadie lo lee después de este cambio). "+
+  Aportar" inserta `aporte`; crear con saldo inicial, desvincular, o corregir el "Saldo
+  acumulado" desde "Editar fondo" insertan `ajuste` (puede ser negativo).
+- **Reservas**: sin cambio de datos — `retiros`/`crecimiento`/`diferencia` (ya calculados y
+  persistidos, ver entrada de `reserva_saldo` arriba) se relabelean como Pago/Aporte/Ajuste en la
+  UI. Siguen siendo lecturas de un saldo externo (Mercado Pago), no movimientos reales que la app
+  controle — no tiene sentido forzarlas a un libro de transacciones propio.
+Alternatives considered: hacer que "Usar" también escriba una fila `pago` en
+`fondo_ahorro_movimiento` en paralelo al gasto (descartada — duplica la contabilidad, y como un
+gasto manual puede vivir con `es_manual=true` en la misma tabla `gastos`, igual que uno
+sincronizado, no hay necesidad real de una segunda fuente); convertir las lecturas de reserva en
+transacciones aporte/pago/ajuste reales (descartada — el usuario deposita/retira *fuera* de esta
+app, en Mercado Pago; la app solo lee fotos/dictados de un saldo externo).
+Consequences: `GET /api/fondos-ahorro/movimientos` (nuevo, sin filtro por nombre) para que el
+Dashboard/`/fondos` pueda calcular el saldo de todos los fondos manuales con un solo fetch, en
+vez de recalcular desde `presupuesto_fondo.acumulado`. El campo `acumulado` de
+`presupuesto_fondo` sigue existiendo, se sigue copiando en "Copiar ciclo anterior", pero ya no
+significa nada para un fondo manual — efecto colateral positivo: como `fondo_ahorro_movimiento`
+no tiene columna `ciclo` (es global por nombre), el saldo de un fondo manual ya no depende de que
+el usuario recuerde copiar el ciclo anterior. Fondos manuales con aportes anteriores a esta
+migración no tienen fila inicial en el ledger (mismo criterio ya aceptado para
+`fondo_tarjeta_movimiento`/Edwards).
+
 ## GAP: decisions to document
 
 - Elección específica de proveedor PostgreSQL (Railway vs Neon).

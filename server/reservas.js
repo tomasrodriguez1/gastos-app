@@ -67,7 +67,7 @@ export async function calcularSaldoEsperado(reservaId, fechaNueva, db = sql) {
   const tasa = reserva.tasa_anual != null ? toMonto(reserva.tasa_anual) : 0
   const crecimiento = montoAnterior * tasa * (dias / 365)
 
-  return { monto: montoAnterior - retiros + crecimiento, retiros, usdExcluido, fechaAnterior: anterior.fecha }
+  return { monto: montoAnterior - retiros + crecimiento, retiros, crecimiento, usdExcluido, fechaAnterior: anterior.fecha }
 }
 
 /**
@@ -78,19 +78,25 @@ export async function registrarSaldo({ reservaId, monto, fecha, origen = 'foto_a
   const esperado = await calcularSaldoEsperado(reservaId, fecha, db)
   if (esperado === null) return { error: 'Reserva no encontrada' }
   const diferencia = esperado.monto == null ? null : monto - esperado.monto
+  const retiros = esperado.monto == null ? null : esperado.retiros
+  const crecimiento = esperado.monto == null ? null : esperado.crecimiento
 
   await db`
-    INSERT INTO reserva_saldo (reserva_id, fecha, monto_leido, monto_esperado, diferencia, origen)
-    VALUES (${reservaId}, ${fecha}, ${monto}, ${esperado.monto}, ${diferencia}, ${origen})
+    INSERT INTO reserva_saldo (reserva_id, fecha, monto_leido, monto_esperado, diferencia, origen, retiros, crecimiento)
+    VALUES (${reservaId}, ${fecha}, ${monto}, ${esperado.monto}, ${diferencia}, ${origen}, ${retiros}, ${crecimiento})
     ON CONFLICT (reserva_id, fecha) DO UPDATE SET
       monto_leido = EXCLUDED.monto_leido,
       monto_esperado = EXCLUDED.monto_esperado,
       diferencia = EXCLUDED.diferencia,
+      retiros = EXCLUDED.retiros,
+      crecimiento = EXCLUDED.crecimiento,
       updated_at = NOW()
   `
   return {
     montoEsperado: esperado.monto,
     diferencia,
+    retiros,
+    crecimiento,
     usdExcluido: esperado.usdExcluido,
     noCalza: excedeTolerancia(diferencia, esperado.monto),
   }
@@ -261,6 +267,8 @@ export async function listarSaldosReserva(reservaId, { limite = 20 } = {}, db = 
         monto_leido: toMonto(s.monto_leido),
         monto_esperado: montoEsperado,
         diferencia,
+        retiros: s.retiros == null ? null : toMonto(s.retiros),
+        crecimiento: s.crecimiento == null ? null : toMonto(s.crecimiento),
         no_calza: excedeTolerancia(diferencia, montoEsperado),
         origen: s.origen,
       }
@@ -312,6 +320,8 @@ export function createReservaRouter({ db = sql } = {}) {
       monto_leido: monto,
       monto_esperado: resultado.montoEsperado,
       diferencia: resultado.diferencia,
+      retiros: resultado.retiros,
+      crecimiento: resultado.crecimiento,
       no_calza: resultado.noCalza,
     }, 201)
   })

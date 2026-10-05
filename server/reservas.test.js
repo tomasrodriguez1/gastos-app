@@ -96,14 +96,14 @@ function dbFalsa({ reservas = [], saldos = [], gastos = [] } = {}) {
       return state.gastos.filter(g => g.estado === 'confirmado' && g.fecha > fechaAnterior && g.fecha <= fechaNueva)
     }
     if (consulta.includes('INSERT INTO reserva_saldo')) {
-      const [reservaId, fecha, monto, esperado, diferencia, origen] = values
+      const [reservaId, fecha, monto, esperado, diferencia, origen, retiros, crecimiento] = values
       const existente = state.saldos.find(s => s.reserva_id === reservaId && s.fecha === fecha)
       if (existente) {
-        Object.assign(existente, { monto_leido: monto, monto_esperado: esperado, diferencia, origen })
+        Object.assign(existente, { monto_leido: monto, monto_esperado: esperado, diferencia, origen, retiros, crecimiento })
       } else {
         state.saldos.push({
           id: state.saldos.length + 1, reserva_id: reservaId, fecha,
-          monto_leido: monto, monto_esperado: esperado, diferencia, origen,
+          monto_leido: monto, monto_esperado: esperado, diferencia, origen, retiros, crecimiento,
         })
       }
       return []
@@ -185,6 +185,22 @@ describe('registrarSaldo', () => {
     const { db } = dbFalsa({ reservas: [] })
     const resultado = await registrarSaldo({ reservaId: 99, monto: 1000, fecha: '2026-08-20' }, db)
     expect(resultado.error).toBeDefined()
+  })
+
+  test('persiste retiros y crecimiento cuando hay línea base', async () => {
+    const { db, state } = dbFalsa({
+      reservas: [reserva()],
+      saldos: [{ reserva_id: 1, fecha: '2026-08-01', monto_leido: 100000 }],
+      gastos: [gasto({ fecha: '2026-08-10', monto: 20000, presupuesto_manual: { grupo: 'AUTO', subcategoria: 'Mantención' } })],
+    })
+    await registrarSaldo({ reservaId: 1, monto: 80000, fecha: '2026-08-20' }, db)
+    const nuevo = state.saldos.find(s => s.fecha === '2026-08-20')
+    expect(nuevo.retiros).toBe(20000)
+    expect(nuevo.crecimiento).toBe(0) // tasa_anual 0 en el fixture
+
+    const soloPrimeraLectura = await registrarSaldo({ reservaId: 1, monto: 5000, fecha: '2026-07-01' }, db)
+    expect(soloPrimeraLectura.retiros).toBeNull()
+    expect(soloPrimeraLectura.crecimiento).toBeNull()
   })
 })
 

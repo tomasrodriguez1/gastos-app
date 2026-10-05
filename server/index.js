@@ -18,9 +18,13 @@ import { migrateFondoTarjeta } from './db/migrate-fondo-tarjeta.js'
 import { migrateAgenteHistorial } from './db/migrate-agente-historial.js'
 import { migrateFondoUso } from './db/migrate-fondo-uso.js'
 import { migrateReservas } from './db/migrate-reservas.js'
+import { migrateReservaRetiros } from './db/migrate-reserva-retiros.js'
 import { reservaRouter } from './reservas.js'
 import { migrateIngresos } from './db/migrate-ingresos.js'
 import { ingresoRouter } from './ingresos.js'
+import { migrateFondoAhorroMovimientos } from './db/migrate-fondo-ahorro-movimientos.js'
+import { migrateFondoAhorroTipo } from './db/migrate-fondo-ahorro-tipo.js'
+import { fondoAhorroRouter } from './fondosAhorro.js'
 import { listarComercios, olvidarComercio } from './comercios.js'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
 import { deserializarGasto } from './gastos/serializacion.js'
@@ -40,7 +44,10 @@ await migrateFondoTarjeta()
 await migrateAgenteHistorial()
 await migrateFondoUso()
 await migrateReservas()
+await migrateReservaRetiros()
 await migrateIngresos()
+await migrateFondoAhorroMovimientos()
+await migrateFondoAhorroTipo()
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()
 }
@@ -74,6 +81,7 @@ app.route('/api/agente', agenteRouter)
 app.route('/api/tarjeta', tarjetaRouter)
 app.route('/api/reservas', reservaRouter)
 app.route('/api/ingresos', ingresoRouter)
+app.route('/api/fondos-ahorro', fondoAhorroRouter)
 
 // ─── GASTOS ──────────────────────────────────────────────────────────────────
 
@@ -591,6 +599,11 @@ async function guardarPresupuestoCicloDB(ciclo, datos) {
             RETURNING id
           `
           gastosActualizados += renamed.length
+          await tx`
+            UPDATE fondo_ahorro_movimiento
+            SET fondo_nombre = ${cambio.nombreNuevo}
+            WHERE fondo_nombre = ${cambio.nombreAnterior}
+          `
         }
       }
     }

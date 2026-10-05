@@ -249,8 +249,19 @@ function TarjetaReserva({ reserva, onEditar, onArchivar, onReabrir, onRegistrarS
           {resultadoSaldo.monto_esperado == null ? (
             'Primera lectura, sin línea base para comparar.'
           ) : (
-            <>Leído {formatCLP(resultadoSaldo.monto_leido)} vs esperado {formatCLP(resultadoSaldo.monto_esperado)}
-              {resultadoSaldo.no_calza ? ` — no calza (dif. ${formatCLP(resultadoSaldo.diferencia)})` : ' — cuadra'}</>
+            <div className="space-y-1">
+              <div>Leído {formatCLP(resultadoSaldo.monto_leido)} vs esperado {formatCLP(resultadoSaldo.monto_esperado)}
+                {resultadoSaldo.no_calza ? ' — no calza' : ' — cuadra'}</div>
+              {(resultadoSaldo.retiros > 0 || resultadoSaldo.crecimiento > 0 || resultadoSaldo.diferencia !== 0) && (
+                <div className="text-[11px] opacity-80 flex flex-wrap gap-x-3">
+                  {resultadoSaldo.retiros > 0 && <span>Pago: −{formatCLP(resultadoSaldo.retiros)}</span>}
+                  {resultadoSaldo.crecimiento > 0 && <span>Aporte: +{formatCLP(resultadoSaldo.crecimiento)}</span>}
+                  {resultadoSaldo.diferencia !== 0 && (
+                    <span>Ajuste: {resultadoSaldo.diferencia > 0 ? '+' : ''}{formatCLP(resultadoSaldo.diferencia)}</span>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -265,12 +276,23 @@ function TarjetaReserva({ reserva, onEditar, onArchivar, onReabrir, onRegistrarS
         ) : (
           <div className="space-y-1.5 pt-1 border-t border-slate-700/40">
             {historial.slice(0, 8).map(s => (
-              <div key={s.fecha} className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-slate-500">{formatFecha(s.fecha)}</span>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono-numbers text-slate-300">{formatCLP(s.monto_leido)}</span>
-                  {s.no_calza && <span className="text-amber-400" title="No calza con lo esperado">⚠</span>}
+              <div key={s.fecha} className="space-y-0.5">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-500">{formatFecha(s.fecha)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono-numbers text-slate-300">{formatCLP(s.monto_leido)}</span>
+                    {s.no_calza && <span className="text-amber-400" title="No calza con lo esperado">⚠</span>}
+                  </div>
                 </div>
+                {(s.retiros > 0 || s.crecimiento > 0 || s.diferencia) && (
+                  <div className="text-[10px] text-slate-600 text-right space-x-2">
+                    {s.retiros > 0 && <span className="text-amber-500/80">Pago −{formatCLP(s.retiros)}</span>}
+                    {s.crecimiento > 0 && <span className="text-emerald-500/80">Aporte +{formatCLP(s.crecimiento)}</span>}
+                    {s.diferencia != null && s.diferencia !== 0 && (
+                      <span className="text-sky-500/80">Ajuste {s.diferencia > 0 ? '+' : ''}{formatCLP(s.diferencia)}</span>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -55,8 +55,9 @@ Principales grupos:
 - Reconciliación de tarjeta (`GET /api/tarjeta/resumen`, `POST /api/tarjeta/conciliar|desconciliar|pagar`) — totales derivados y operaciones atómicas para Edwards/BICE
 - Fondo de tarjetas (`GET /api/tarjeta/fondo`, `POST /api/tarjeta/fondo/aportes`, `PUT /api/tarjeta/fondo/saldo`, `DELETE /api/tarjeta/fondo/movimientos/:id`) — fondo común manual por moneda; `pagar` descuenta automáticamente
 - Reserva de tarjeta legacy (`GET/PUT /api/reserva-tarjeta`) — LEGACY, ya no usado por la UI; se conserva por el dato histórico
-- Reservas de ahorro F6 (`GET/POST /api/reservas`, `PATCH /api/reservas/:id`, `GET/POST /api/reservas/:id/saldos`) — bolsillos externos (Mercado Pago); UI en `/fondos` además del agente. `POST /:id/saldos` (`{ monto, fecha }`) es el camino manual — registra con `origen='manual'`, usando la misma `registrarSaldo()` que ya usaba el agente con `origen='foto_agente'`
+- Reservas de ahorro F6 (`GET/POST /api/reservas`, `PATCH /api/reservas/:id`, `GET/POST /api/reservas/:id/saldos`) — bolsillos externos (Mercado Pago); UI en `/fondos` además del agente. `POST /:id/saldos` (`{ monto, fecha }`) es el camino manual — registra con `origen='manual'`, usando la misma `registrarSaldo()` que ya usaba el agente con `origen='foto_agente'`. La respuesta (y cada fila de `GET /:id/saldos`) incluye `retiros`/`crecimiento`: el desglose de cuánto de la diferencia fueron gastos de la categoría vinculada vs rendimiento estimado
 - Ingresos reales (`GET /api/ingresos?ciclo=YYYY-MM`, `POST /api/ingresos`, `PATCH/DELETE /api/ingresos/:id`) — registro manual (UI en `/presupuesto`) o por el agente (`origen='chat'`); separado de `presupuesto_ingreso` (previsión, se reescribe cada PUT)
+- Aportes a fondos de ahorro sin vincular (`GET/POST /api/fondos-ahorro/:nombre/movimientos`) — log informativo de cada "+ Aportar" manual en el Dashboard/`/fondos`; no reemplaza `presupuesto_fondo.acumulado`, que sigue siendo el saldo autoritativo
 - Catálogos CRUD
 - Reglas de mapeo CRUD + test
 - Autenticación (`/api/auth/*`) — ver detalle abajo
