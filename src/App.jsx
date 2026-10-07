@@ -19,6 +19,9 @@ import { usePresupuesto } from './hooks/usePresupuesto'
 import { useSyncN8n } from './hooks/useSyncN8n'
 import { useCatalogos } from './hooks/useCatalogos'
 import { useReconciliacionTarjeta } from './hooks/useReconciliacionTarjeta'
+import { useFGP } from './hooks/useFGP'
+import { AvisoFGP } from './components/shared/AvisoFGP'
+import { calcularFondoFGP } from './utils/fgp'
 import { cargarReglas } from './utils/mapeo'
 import { obtenerCicloActual } from './utils/ciclos'
 
@@ -31,7 +34,7 @@ export default function App() {
   const { gastosLocales, agregar, actualizar: actualizarLocal, eliminar, recargar: recargarLocales } = useGastosLocales()
 
   async function refetchGastos() {
-    await Promise.all([recargarGastos(), recargarLocales(), reconciliacion.refrescar()])
+    await Promise.all([recargarGastos(), recargarLocales(), reconciliacion.refrescar(), fgp.refrescar()])
   }
 
   function eliminarCualquierGasto(id) {
@@ -43,8 +46,9 @@ export default function App() {
     if (gastosLocales.some(g => g.id === id)) return actualizarLocal(id, changes)
     return actualizarGasto(id, changes)
   }
-  const { obtenerCiclo, guardar, copiarCicloAnterior, cargado: presupuestoCargado, errorGuardado } = usePresupuesto()
+  const { presupuesto: presupuestos, obtenerCiclo, guardar, copiarCicloAnterior, cargado: presupuestoCargado, errorGuardado } = usePresupuesto()
   const reconciliacion = useReconciliacionTarjeta()
+  const fgp = useFGP({ onCambioExterno: reconciliacion.refrescar })
 
   function setGastosYRefrescarTarjeta(nuevosGastos) {
     setGastos(nuevosGastos)
@@ -79,6 +83,9 @@ export default function App() {
   const mesesCalendario = [...new Set([...mesesCalendarioDisponibles, ...mesesCalendarioLocales])].sort().reverse()
 
   const todoLosGastos = [...gastos, ...gastosLocales]
+  const resumenFGP = fgp.cargando ? null : calcularFondoFGP({
+    gastos: todoLosGastos, presupuestos, movimientos: fgp.movimientos, cicloActual: obtenerCicloActual(),
+  })
 
   const sharedProps = {
     ciclos,
@@ -103,6 +110,7 @@ export default function App() {
               {errorGuardado} — recargá la página y volvé a intentarlo
             </div>
           )}
+          <AvisoFGP resumen={resumenFGP} />
           <Routes>
             <Route
               path="/"
@@ -120,6 +128,7 @@ export default function App() {
                   pendingSync={pendingSync}
                   onConfirmarSync={confirmarSync}
                   onCancelarSync={cancelarSync}
+                  resumenFGP={resumenFGP}
                 />
               }
             />
@@ -204,7 +213,7 @@ export default function App() {
             />
             <Route
               path="/fondos"
-              element={<FondosPage {...sharedProps} gastos={todoLosGastos} reconciliacion={reconciliacion} />}
+              element={<FondosPage {...sharedProps} gastos={todoLosGastos} reconciliacion={reconciliacion} fgp={fgp} resumenFGP={resumenFGP} />}
             />
             <Route path="/passkeys" element={<PasskeysPage />} />
           </Routes>

@@ -25,6 +25,8 @@ import { ingresoRouter } from './ingresos.js'
 import { migrateFondoAhorroMovimientos } from './db/migrate-fondo-ahorro-movimientos.js'
 import { migrateFondoAhorroTipo } from './db/migrate-fondo-ahorro-tipo.js'
 import { fondoAhorroRouter } from './fondosAhorro.js'
+import { migrateFGP } from './db/migrate-fgp.js'
+import { fgpRouter } from './fgp.js'
 import { listarComercios, olvidarComercio } from './comercios.js'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
 import { deserializarGasto } from './gastos/serializacion.js'
@@ -48,6 +50,7 @@ await migrateReservaRetiros()
 await migrateIngresos()
 await migrateFondoAhorroMovimientos()
 await migrateFondoAhorroTipo()
+await migrateFGP()
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()
 }
@@ -82,6 +85,7 @@ app.route('/api/tarjeta', tarjetaRouter)
 app.route('/api/reservas', reservaRouter)
 app.route('/api/ingresos', ingresoRouter)
 app.route('/api/fondos-ahorro', fondoAhorroRouter)
+app.route('/api/fgp', fgpRouter)
 
 // ─── GASTOS ──────────────────────────────────────────────────────────────────
 

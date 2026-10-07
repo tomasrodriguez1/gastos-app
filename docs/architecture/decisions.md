@@ -259,6 +259,36 @@ el usuario recuerde copiar el ciclo anterior. Fondos manuales con aportes anteri
 migración no tienen fila inicial en el ledger (mismo criterio ya aceptado para
 `fondo_tarjeta_movimiento`/Edwards).
 
+## DEC-016 - FGP como fondo con arrastre y traspaso explícito al fondo de tarjeta
+
+Date: 2026-10-06
+Context: el FGP era solo una vista del ciclo (previsto vs gastado de las líneas `fgp=true`): lo
+que sobraba se perdía y los excesos no quedaban registrados. En la práctica la plata del FGP se
+aparta del sueldo y, cuando se gasta con tarjeta, se pasa al fondo común de tarjeta
+(`fondo_tarjeta_movimiento`); los excesos se terminan pagando con el sueldo siguiente.
+Decision:
+- **Arrastre**: lo que sobra de un ciclo pasa al siguiente; un exceso se come el saldo.
+- **Aporte y gasto derivados** (previsto de las líneas FGP de cada ciclo y gastos de esas líneas),
+  calculados en el cliente (`src/utils/fgp.js`) con todos los presupuestos ya cargados — mismo
+  criterio que los fondos vinculados: no se duplica el gasto en otra tabla.
+- **`fgp_movimiento`** guarda solo lo no derivable: `traspaso_tc` (por gasto), `cobertura`,
+  `deficit` y `ajuste`.
+- **Traspaso a TC explícito**, no automático: "mover" crea un aporte real en el fondo de tarjeta
+  (uno por lote) y "marcar" solo registra que ya se movió a mano (para el historial previo).
+  Ambos por gasto, por ciclo o todo.
+- **Déficit** = cobertura cuyo origen es el sueldo siguiente; queda como compromiso visible hasta
+  que pasa ese ciclo.
+Alternatives considered: extender `presupuesto_fondo.vinculado` a varias líneas (descartada — en
+un fondo vinculado los gastos de la categoría son *aportes*; en el FGP son *pagos*, semántica
+opuesta); aporte automático al fondo TC al confirmar cada gasto (descartada — la plata se mueve
+físicamente a mano y el usuario quiere elegir cuándo, por gasto o en bloque); persistir el saldo
+por ciclo (descartada — cambiar el presupuesto o recategorizar un gasto pasado lo dejaría
+desfasado).
+Consequences: el saldo depende de que los presupuestos pasados conserven sus marcas `fgp`. Deshacer
+un traspaso real borra su aporte en el fondo TC (CASCADE), así ambos libros quedan consistentes.
+La cobertura desde fondo de ahorro solo está disponible para fondos manuales (los vinculados
+derivan su saldo de gastos, no admiten un ajuste negativo).
+
 ## GAP: decisions to document
 
 - Elección específica de proveedor PostgreSQL (Railway vs Neon).

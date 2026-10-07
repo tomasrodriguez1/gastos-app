@@ -112,6 +112,42 @@ categoría. Gastos `confirmado` sin grupo (tipos como `Ajuste`/`Turno`/`Otro`, v
 fondo_ahorro_movimiento(id, fondo_nombre, fecha, tipo 'aporte'|'ajuste', monto, nota, created_at)
 ```
 
+### FGP — Fondo Gastos Previstos (`fgp_movimiento`)
+
+Las líneas `presupuesto_categoria.fgp=true` forman un fondo **con arrastre entre ciclos** (ver
+DEC-016). Saldo, calculado en el cliente por `calcularFondoFGP` (`src/utils/fgp.js`):
+
+```
+saldo = Σ previsto FGP (ciclos con líneas FGP ≤ ciclo actual)
+      − Σ gastos de esas líneas (montoDelCiclo, mismo filtro que calcularGastosPorSubcategoria)
+      + coberturas + déficits + ajustes
+```
+
+- Las líneas se leen **por ciclo**: un gasto cuenta si su subcategoría es FGP en el presupuesto de
+  *su* ciclo. El historial arranca en el primer ciclo con alguna línea FGP.
+- Gastos con `financiado_por` no comen el FGP (`montoDelCiclo` = 0).
+- **Pendiente de mover a TC**: gasto FGP `confirmado`, banco Edwards/BICE, guardado en servidor (no
+  `gastosLocales`) y sin fila `traspaso_tc`. Monto = `montoDelCiclo` (sin el `split`, que lo
+  devuelve un tercero).
+
+```sql
+fgp_movimiento(id, tipo 'traspaso_tc'|'cobertura'|'deficit'|'ajuste', ciclo YYYY-MM, fecha,
+               monto, gasto_id, tarjeta_movimiento_id → fondo_tarjeta_movimiento ON DELETE CASCADE,
+               fondo_ahorro_movimiento_id → fondo_ahorro_movimiento ON DELETE CASCADE,
+               origen, nota, created_at)
+UNIQUE (gasto_id) WHERE tipo = 'traspaso_tc'
+```
+
+| tipo | Saldo FGP | Qué es |
+|------|-----------|--------|
+| `traspaso_tc` | no afecta | El gasto ya pasó al fondo de tarjeta. Con `tarjeta_movimiento_id` si generó un aporte real (un aporte por lote); `NULL` si solo se marcó como "ya movido" (historial) |
+| `cobertura` | + | Plata traída para tapar un exceso. Desde un fondo de ahorro manual inserta además un `ajuste` negativo en `fondo_ahorro_movimiento` (misma transacción) |
+| `deficit` | + | Exceso que se paga con el sueldo del ciclo siguiente a `ciclo`. Mientras ese ciclo no pase se muestra como compromiso ("Del sueldo de Nov: $X extra a la tarjeta") |
+| `ajuste` | ± | Corrección del saldo ("Ajustar saldo" guarda la diferencia) |
+
+Borrar en `/tarjeta` el aporte creado por un traspaso borra las filas `traspaso_tc` del lote
+(CASCADE): esos gastos vuelven a quedar pendientes. Tabla creada en `server/db/migrate-fgp.js`.
+
 ### Catálogos
 
 | Tabla | Relación |

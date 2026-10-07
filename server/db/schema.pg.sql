@@ -271,6 +271,31 @@ CREATE TABLE IF NOT EXISTS reserva_saldo (
 
 CREATE INDEX IF NOT EXISTS idx_reserva_saldo_reserva_fecha ON reserva_saldo(reserva_id, fecha DESC);
 
+-- ─── FGP — FONDO GASTOS PREVISTOS ───────────────────────────────────────────
+-- El FGP arrastra saldo entre ciclos: aporte = previsto de las líneas fgp=true de
+-- cada ciclo, gasto = gastos de esas líneas (ambos derivados, no se guardan).
+-- Esta tabla guarda solo lo no derivable: traspasos de gastos al fondo de tarjeta,
+-- coberturas, déficits a pagar con el próximo sueldo y ajustes. Se crea en
+-- server/db/migrate-fgp.js (depende de fondo_ahorro_movimiento, que vive en su
+-- propia migración). Ver docs/context/data_model_context.md.
+
+CREATE TABLE IF NOT EXISTS fgp_movimiento (
+  id                         SERIAL PRIMARY KEY,
+  tipo                       TEXT NOT NULL CHECK (tipo IN ('traspaso_tc', 'cobertura', 'deficit', 'ajuste')),
+  ciclo                      TEXT NOT NULL CHECK (ciclo ~ '^\d{4}-\d{2}$'),
+  fecha                      TEXT NOT NULL CHECK (fecha ~ '^\d{4}-\d{2}-\d{2}$'),
+  monto                      NUMERIC NOT NULL,
+  gasto_id                   TEXT,
+  tarjeta_movimiento_id      INTEGER REFERENCES fondo_tarjeta_movimiento(id) ON DELETE CASCADE,
+  fondo_ahorro_movimiento_id INTEGER REFERENCES fondo_ahorro_movimiento(id) ON DELETE CASCADE,
+  origen                     TEXT,
+  nota                       TEXT,
+  created_at                 TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fgp_traspaso_gasto ON fgp_movimiento(gasto_id) WHERE tipo = 'traspaso_tc';
+CREATE INDEX IF NOT EXISTS idx_fgp_movimiento_fecha ON fgp_movimiento(fecha DESC, id DESC);
+
 -- ─── AUTENTICACIÓN (WebAuthn / Passkeys) ────────────────────────────────────
 -- Reemplaza ACCESS_TOKEN. Ver docs/architecture/decisions.md DEC-009.
 -- `config` (arriba en este archivo, ver sección CONFIG) guarda además una fila

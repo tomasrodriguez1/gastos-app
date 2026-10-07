@@ -1,7 +1,8 @@
+import { Link } from 'react-router-dom'
 import { calcularGastosPorSubcategoria } from '../../utils/calculos'
 import { formatCLP } from '../../utils/formatters'
 
-export function FondoFGP({ gastos, mes, presupuestoMes }) {
+export function FondoFGP({ gastos, mes, presupuestoMes, resumenFGP }) {
   const gastosPorSub = calcularGastosPorSubcategoria(gastos, mes)
 
   const items = []
@@ -100,6 +101,21 @@ export function FondoFGP({ gastos, mes, presupuestoMes }) {
           Total reservado: <span className="font-mono-numbers text-slate-400">{formatCLP(totalPrevisto)}</span>
         </span>
       </div>
+
+      {/* Fondo con arrastre entre ciclos (ver src/utils/fgp.js) */}
+      {resumenFGP?.desde && (
+        <div className="px-5 py-3 border-t border-slate-700/40 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+          <span className="text-slate-500">
+            Saldo acumulado: <span className={`font-mono-numbers font-semibold ${resumenFGP.saldo >= 0 ? 'text-sky-400' : 'text-red-400'}`}>{formatCLP(resumenFGP.saldo)}</span>
+          </span>
+          {resumenFGP.totalPendienteTC > 0 && (
+            <span className="text-amber-300">
+              Por mover a TC: <span className="font-mono-numbers font-semibold">{formatCLP(resumenFGP.totalPendienteTC)}</span>
+            </span>
+          )}
+          <Link to="/fondos#fgp" className="ml-auto text-sky-400 hover:text-sky-300">Gestionar fondo →</Link>
+        </div>
+      )}
     </div>
   )
 }

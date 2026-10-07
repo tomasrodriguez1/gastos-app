@@ -14,7 +14,7 @@ import { PanelMetricasAccionables, PanelTopGastos } from '../components/Dashboar
 import { AlertasPresupuesto } from '../components/Dashboard/AlertasPresupuesto'
 import { obtenerCicloActual, obtenerCicloAnterior } from '../utils/ciclos'
 
-export function CashflowPage({ gastos, ciclos, obtenerPresupuesto, guardarPresupuesto, onSync, syncing, syncError, pendingSync, onConfirmarSync, onCancelarSync, catalogos, onAgregarGasto, onRefetchGastos, onActualizarGasto }) {
+export function CashflowPage({ gastos, ciclos, obtenerPresupuesto, guardarPresupuesto, onSync, syncing, syncError, pendingSync, onConfirmarSync, onCancelarSync, catalogos, onAgregarGasto, onRefetchGastos, onActualizarGasto, resumenFGP }) {
   const [ciclo, setCiclo] = useState(obtenerCicloActual)
   const [vista, setVista] = useState('ciclo')
   const presupuestoMes = obtenerPresupuesto(ciclo)
@@ -69,7 +69,7 @@ export function CashflowPage({ gastos, ciclos, obtenerPresupuesto, guardarPresup
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,65fr)_minmax(0,35fr)] gap-6">
-            <FondoFGP gastos={gastos} mes={ciclo} presupuestoMes={presupuestoMes} />
+            <FondoFGP gastos={gastos} mes={ciclo} presupuestoMes={presupuestoMes} resumenFGP={resumenFGP} />
             <AlertasPresupuesto gastos={gastos} mes={ciclo} presupuestoMes={presupuestoMes} />
           </div>
 
