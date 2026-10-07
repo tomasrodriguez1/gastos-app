@@ -136,7 +136,7 @@ export async function requireSession(c, next) {
 const buckets = new Map()
 
 export function getClientIp(c) {
-  // GAP: la extracción real detrás del proxy de Coolify debe confirmarse en despliegue
+  // GAP: la extracción real detrás del proxy de Railway debe confirmarse en despliegue
   // (X-Forwarded-For vs cabecera de confianza equivalente).
   const forwarded = c.req.header('x-forwarded-for')
   if (forwarded) return forwarded.split(',')[0].trim()
@@ -167,12 +167,16 @@ export function rateLimited(c, key, opts) {
  * Reemplaza el middleware global de ACCESS_TOKEN. Deja pasar si:
  *  1. Hay una sesión de passkey válida (nuevo mecanismo), o
  *  2. Se cumple el flujo legacy de ACCESS_TOKEN (cookie o `?t=`), idéntico al anterior.
- * Las rutas bajo /api/auth/* quedan exentas: cada endpoint aplica su propio gate interno.
+ * Las rutas bajo /api/auth/*, /api/ingesta, /mcp y /api/agente/telegram/* quedan exentas: cada una aplica su propio gate interno.
  */
 export function createAuthMiddleware(accessToken) {
   return async (c, next) => {
     const path = new URL(c.req.url).pathname
     if (path.startsWith('/api/auth/') || path.startsWith('/api/ingesta')) return next()
+    // /mcp tiene su propio Bearer (MCP_TOKEN) y responde 401 sin él, también en dev.
+    if (path === '/mcp' || path.startsWith('/mcp/')) return next()
+    // /api/agente/telegram/* tiene su propio Bearer (TELEGRAM_AGENTE_TOKEN), mismo criterio que /mcp.
+    if (path.startsWith('/api/agente/telegram/')) return next()
 
     if (await checkSession(c)) return next()
 

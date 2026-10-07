@@ -171,6 +171,15 @@ CREATE TABLE IF NOT EXISTS agente_mensajes (
 CREATE INDEX IF NOT EXISTS idx_agente_mensajes_conversacion ON agente_mensajes(conversacion_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_agente_conversaciones_updated ON agente_conversaciones(updated_at DESC);
 
+-- Avisos de Telegram: message_id del aviso → gasto, para atar la respuesta.
+CREATE TABLE IF NOT EXISTS telegram_avisos (
+  chat_id     TEXT NOT NULL,
+  message_id  BIGINT NOT NULL,
+  gasto_id    TEXT NOT NULL REFERENCES gastos(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (chat_id, message_id)
+);
+
 -- ─── DUPLICADOS ──────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS duplicado_exclusion (

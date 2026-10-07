@@ -19,7 +19,7 @@ bun run dev            # API :3001 + Vite :6001
 
 ### Enrolamiento inicial de la primera passkey (dev o prod)
 
-1. Definir `PASSKEY_BOOTSTRAP_SECRET` en `.env` (dev) o en las variables de Coolify (prod)
+1. Definir `PASSKEY_BOOTSTRAP_SECRET` en `.env` (dev) o en las variables del servicio en Railway (prod)
    antes de arrancar. En prod, definir también `PASSKEY_RP_ID`/`PASSKEY_ORIGIN` con el
    dominio real HTTPS — en dev usan el default `localhost`/`http://localhost:6001`.
 2. Abrir la app en el navegador. Si no hay ninguna passkey registrada
@@ -59,9 +59,9 @@ GAP: logs centralizados en Railway no documentados.
 
 `Ctrl+C` en terminal → `bun run dev`.
 
-### Producción (Coolify)
+### Producción (Railway)
 
-Redeploy o restart del servicio desde el dashboard de Coolify.
+Redeploy o restart del servicio desde el dashboard de Railway.
 
 ## Migraciones
 
@@ -134,7 +134,7 @@ residuos). Requiere `PASSKEY_BOOTSTRAP_SECRET` en el entorno.
 Estrategia preferida: mantener **al menos dos passkeys** registradas desde el principio (ej.
 1Password + iCloud Keychain), gestionadas desde `/passkeys`. Si ambas se pierden:
 
-1. Requiere acceso directo al servidor/Coolify (variables de entorno).
+1. Requiere acceso al servicio en Railway (variables de entorno).
 2. Setear `PASSKEY_BOOTSTRAP_OVERRIDE_UNTIL` a un timestamp ISO en el futuro cercano (ej.
    1 hora: `date -u -v+1H +%FT%TZ` en macOS, o calcular a mano).
 3. Redeployar/reiniciar el servicio para que tome la nueva variable.
@@ -192,5 +192,4 @@ GAP: responsable operacional no documentado en repo.
 - GAP: rotación de `ACCESS_TOKEN` documentada más allá de "rotar si se filtró" (ver
   `docs/engineering/security-checklist.md`) — de todas formas, en camino a retirarse (DEC-009).
 - GAP: dominio real de producción para completar `PASSKEY_RP_ID`/`PASSKEY_ORIGIN`.
-- GAP: confirmar si Coolify necesita configuración adicional (health check, Dockerfile) —
-  ver `docs/operations/deployment.md`.
+- GAP: health check configurado en Railway — ver `docs/operations/deployment.md`.

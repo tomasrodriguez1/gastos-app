@@ -9,7 +9,10 @@ import { toMonto } from './db/numeric.js'
 import { detectarDuplicadosCiclo } from './duplicados.js'
 import { authRouter } from './routes/auth.js'
 import { ingestaRouter } from './ingesta.js'
+import { createMcpRouter } from './mcp/index.js'
 import { agenteRouter } from './agente.js'
+import { telegramRouter } from './telegram.js'
+import { migrateTelegramAvisos } from './db/migrate-telegram-avisos.js'
 import { tarjetaRouter } from './tarjeta.js'
 import { createAuthMiddleware } from './auth.js'
 import { migrateComercios } from './db/migrate-comercios.js'
@@ -51,6 +54,7 @@ await migrateIngresos()
 await migrateFondoAhorroMovimientos()
 await migrateFondoAhorroTipo()
 await migrateFGP()
+await migrateTelegramAvisos()
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()
 }
@@ -66,6 +70,19 @@ app.route('/api/auth', authRouter)
 // token (INGESTA_TOKEN), no passkey ni ACCESS_TOKEN. Ver server/ingesta.js.
 
 app.route('/api/ingesta', ingestaRouter)
+
+// ─── SERVIDOR MCP REMOTO ─────────────────────────────────────────────────────
+// Mismo criterio que /api/ingesta: token propio (MCP_TOKEN, Bearer) y exento
+// del gate global, que en dev deja pasar sin token. Ver server/mcp/index.js.
+
+app.route('/mcp', createMcpRouter())
+
+// ─── AGENTE POR TELEGRAM (n8n como tubo) ─────────────────────────────────────
+// Mismo criterio: token propio (TELEGRAM_AGENTE_TOKEN, Bearer) y exento del
+// gate global. Se monta antes que /api/agente para que no herede la sesión de
+// browser. Ver server/telegram.js.
+
+app.route('/api/agente/telegram', telegramRouter)
 
 // ─── GATE GLOBAL: sesión passkey O ACCESS_TOKEN legacy (en paralelo) ────────
 // ACCESS_TOKEN se mantiene activo hasta confirmar login passkey en producción

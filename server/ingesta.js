@@ -9,6 +9,7 @@ import { cargarCatalogos } from './catalogos.js'
 import { buscarComercio } from './comercios.js'
 import { crearGastoPendiente } from './gastos/crear.js'
 import { normalizarComercio } from '../src/utils/comercio.js'
+import { avisarGastoFlacoSiConfigurado } from './telegram/aviso.js'
 
 const BANCOS_POR_DOMINIO = [{ dominio: 'bancoedwards.cl', banco: 'Edwards' }]
 
@@ -24,7 +25,7 @@ function fechaDesdeInternalDate(internalDate) {
   return new Date(ms).toISOString().slice(0, 10)
 }
 
-async function procesarMensaje(msg, catalogos, ia) {
+async function procesarMensaje(msg, catalogos, ia, avisar) {
   const { id, snippet, From, Subject, internalDate } = msg || {}
   if (!id) return { ok: false, error: 'Falta id' }
 
@@ -63,8 +64,9 @@ async function procesarMensaje(msg, catalogos, ia) {
   let tipos = []
   let contexto = ''
   let presupuestoManual = null
+  let memoria = false
   if (estado === 'pendiente') {
-    ;({ tipos, contexto, presupuestoManual } = await clasificarGastoIngesta({
+    ;({ tipos, contexto, presupuestoManual, memoria } = await clasificarGastoIngesta({
       motivo, banco, monto, usd, fecha, catalogos, ia,
     }))
   }
@@ -84,6 +86,7 @@ async function procesarMensaje(msg, catalogos, ia) {
     payload_raw: msg,
   })
 
+  dispararAviso(avisar, { gastoId, origen: 'mail', memoria })
   return { id, ok: true, gastoId, estado }
 }
 
@@ -97,6 +100,7 @@ async function clasificarGastoIngesta({ motivo, banco, monto, usd = 0, fecha, ca
       tipos: memoria.tipos,
       contexto: memoria.contexto,
       presupuestoManual: memoria.presupuesto_manual,
+      memoria: true,
     }
   }
 
@@ -114,7 +118,19 @@ async function clasificarGastoIngesta({ motivo, banco, monto, usd = 0, fecha, ca
     tipos: clasificacion?.tipos || [],
     contexto: clasificacion?.contexto || '',
     presupuestoManual: null,
+    memoria: false,
   }
+}
+
+// Aviso de Telegram si el gasto entró flaco. Sin await a propósito: la
+// redacción con el modelo tarda segundos y el aviso es best-effort, no debe
+// sumar latencia ni hacer fallar la ingesta. Solo se llama tras insertar —
+// el early-return de duplicado por fuente_id va antes, así un reintento no avisa.
+function dispararAviso(avisar, datos) {
+  if (!avisar) return
+  Promise.resolve()
+    .then(() => avisar(datos))
+    .catch(error => console.warn('[ingesta] aviso de Telegram falló:', error.message))
 }
 
 const BANCO_TELEFONO = 'BICE'
@@ -160,7 +176,7 @@ function fuenteIdTelefono({ fecha, comercio, monto }) {
   return `telefono:${BANCO_TELEFONO}:${fecha}:${clave}:${monto}`
 }
 
-async function procesarTelefono(body, catalogos, ia) {
+async function procesarTelefono(body, catalogos, ia, avisar) {
   const compra = leerCompraTelefono(body)
   if (!compra) return { ok: false, error: 'Faltan comercio o monto', status: 400 }
 
@@ -179,7 +195,7 @@ async function procesarTelefono(body, catalogos, ia) {
     }
   }
 
-  const { tipos, contexto, presupuestoManual } = await clasificarGastoIngesta({
+  const { tipos, contexto, presupuestoManual, memoria } = await clasificarGastoIngesta({
     motivo: compra.comercio,
     banco,
     monto: compra.monto,
@@ -203,6 +219,7 @@ async function procesarTelefono(body, catalogos, ia) {
     payload_raw: body,
   })
 
+  dispararAviso(avisar, { gastoId, origen: 'telefono', memoria })
   return { ok: true, gastoId, estado: 'pendiente', duplicado: false, fuente_id: fuenteId }
 }
 
@@ -214,13 +231,14 @@ const iaDefault = {
 
 // `ia` es inyectable para poder testear la orquestación del endpoint sin llamar
 // a OpenAI ni a Groq de verdad — ver server/ingesta.test.js. En producción
-// siempre usa el módulo real.
+// siempre usa el módulo real. `avisar` igual: el aviso de Telegram de un gasto
+// flaco (server/telegram/aviso.js).
 function tokenIngesta(c) {
   const authHeader = c.req.header('Authorization') || ''
   return authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
 }
 
-export function createIngestaRouter({ ia = iaDefault } = {}) {
+export function createIngestaRouter({ ia = iaDefault, avisar = avisarGastoFlacoSiConfigurado } = {}) {
   const router = new Hono()
 
   router.post('/telefono', async (c) => {
@@ -235,7 +253,7 @@ export function createIngestaRouter({ ia = iaDefault } = {}) {
 
     try {
       const catalogos = await cargarCatalogos()
-      const { status = 200, ...respuesta } = await procesarTelefono(body, catalogos, ia)
+      const { status = 200, ...respuesta } = await procesarTelefono(body, catalogos, ia, avisar)
       return c.json(respuesta, status)
     } catch (error) {
       return c.json({ ok: false, error: error.message }, 500)
@@ -261,7 +279,7 @@ export function createIngestaRouter({ ia = iaDefault } = {}) {
     const resultados = []
     for (const msg of mensajes) {
       try {
-        resultados.push(await procesarMensaje(msg, catalogos, ia))
+        resultados.push(await procesarMensaje(msg, catalogos, ia, avisar))
       } catch (error) {
         resultados.push({ id: msg?.id ?? null, ok: false, error: error.message })
       }

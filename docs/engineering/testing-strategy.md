@@ -35,7 +35,7 @@
 - Editor de presupuesto + copiar ciclo anterior.
 - Duplicados: excluir par, eliminar, editar asignación.
 - Modo privacidad (ocultar montos).
-- Deploy Coolify con passkey.
+- Deploy en Railway con passkey.
 
 ## Cómo ejecutar
 

@@ -187,6 +187,8 @@ const buscarComercioTool = tool({
   },
 })
 
+// `origen` va en un tercer argumento y no en el input del modelo, para que el
+// LLM del chat no pueda elegirlo. El servidor MCP (server/mcp/) pasa 'mcp'.
 export async function ejecutarCrearGasto(catalogos, {
   fecha,
   motivo,
@@ -196,7 +198,7 @@ export async function ejecutarCrearGasto(catalogos, {
   tipos = [],
   contexto = '',
   ignorar_duplicado = false,
-}) {
+}, { origen = 'chat' } = {}) {
   let tiposValidados = (tipos || []).filter(t => catalogos.tipos.includes(t))
   let contextoValidado = catalogos.contextos.includes(contexto) ? contexto : ''
   let presupuestoManual = null
@@ -236,7 +238,7 @@ export async function ejecutarCrearGasto(catalogos, {
     tipos: tiposValidados,
     contexto: contextoValidado,
     presupuesto_manual: presupuestoManual,
-    origen: 'chat',
+    origen,
   })
 
   const montoTexto = usd ? `US$${usd}` : `$${monto || 0}`
@@ -597,6 +599,37 @@ const registrarIngresoTool = tool({
   },
 })
 
+// Configuración del agente compartida entre el chat web (/chat, streaming de
+// sesión) y Telegram (server/telegram.js): mismo modelo, prompt, tools y tope
+// de pasos. `extraSistema` agrega instrucciones del canal o del turno al final
+// del prompt, sin tocar las reglas comunes.
+export function construirAgente({ catalogos, reservas, extraSistema = '' }) {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const cicloActual = obtenerCicloActual()
+  const system = promptSistema(catalogos, hoy, reservas, cicloActual)
+  return {
+    model: openai(OPENAI_MODEL),
+    system: extraSistema ? `${system}\n\n${extraSistema}` : system,
+    tools: {
+      buscar_comercio: buscarComercioTool,
+      crear_gasto: crearGastoToolFactory(catalogos),
+      buscar_gastos_pendientes: buscarPendientesTool,
+      resumir_bandeja: resumirBandejaTool,
+      editar_gasto: editarGastoToolFactory(catalogos),
+      registrar_saldos_reserva: registrarSaldosReservaTool(),
+      listar_reservas: listarReservasTool,
+      crear_reserva: crearReservaToolFactory(catalogos),
+      editar_reserva: editarReservaTool,
+      listar_saldos_reserva: listarSaldosReservaTool,
+      listar_ingresos: listarIngresosTool,
+      registrar_ingreso: registrarIngresoTool,
+      resumen_ciclo: resumenCicloTool,
+      buscar_gastos: buscarGastosTool,
+    },
+    stopWhen: stepCountIs(16),
+  }
+}
+
 export const agenteRouter = new Hono()
 
 agenteRouter.post(
@@ -631,30 +664,10 @@ agenteRouter.post(
   }
 
   const [catalogos, reservas] = await Promise.all([cargarCatalogos(), cargarReservasActivas()])
-  const hoy = new Date().toISOString().slice(0, 10)
-  const cicloActual = obtenerCicloActual()
 
   const result = streamText({
-    model: openai(OPENAI_MODEL),
-    system: promptSistema(catalogos, hoy, reservas, cicloActual),
+    ...construirAgente({ catalogos, reservas }),
     messages: await convertToModelMessages(messages),
-    tools: {
-      buscar_comercio: buscarComercioTool,
-      crear_gasto: crearGastoToolFactory(catalogos),
-      buscar_gastos_pendientes: buscarPendientesTool,
-      resumir_bandeja: resumirBandejaTool,
-      editar_gasto: editarGastoToolFactory(catalogos),
-      registrar_saldos_reserva: registrarSaldosReservaTool(),
-      listar_reservas: listarReservasTool,
-      crear_reserva: crearReservaToolFactory(catalogos),
-      editar_reserva: editarReservaTool,
-      listar_saldos_reserva: listarSaldosReservaTool,
-      listar_ingresos: listarIngresosTool,
-      registrar_ingreso: registrarIngresoTool,
-      resumen_ciclo: resumenCicloTool,
-      buscar_gastos: buscarGastosTool,
-    },
-    stopWhen: stepCountIs(16),
   })
 
   return result.toUIMessageStreamResponse({

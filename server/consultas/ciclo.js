@@ -25,7 +25,7 @@ import {
 
 const CICLO_RE = /^\d{4}-\d{2}$/
 
-function fechaISO(fecha) {
+export function fechaISO(fecha) {
   if (!fecha) return ''
   if (typeof fecha === 'string') return fecha.slice(0, 10)
   if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {
@@ -39,7 +39,7 @@ export function cicloConsulta(ciclo) {
   return obtenerCicloActual()
 }
 
-async function cargarReglas() {
+export async function cargarReglas() {
   return sql`SELECT * FROM regla_mapeo WHERE activa = TRUE ORDER BY prioridad, id`
 }
 
@@ -56,7 +56,7 @@ function esPendienteRevision(g) {
   return g.estado === 'pendiente' || g.estado === 'error_parseo'
 }
 
-function entraEnPresupuesto(g) {
+export function entraEnPresupuesto(g) {
   return !esGastoUsdPuro(g) && g.estado !== 'descartado' && g.en_presupuesto !== false
 }
 

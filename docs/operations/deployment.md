@@ -5,11 +5,11 @@
 | Entorno | Descripción |
 |---------|-------------|
 | Local | Vite + API Bun, PostgreSQL local o remoto |
-| Producción | Coolify (objetivo). `railway.json` es config histórica de Railway — GAP: confirmar si se retira o se mantiene como alternativa. |
+| Producción | Railway, un solo servicio configurado por `railway.json`. |
 
 ## Plataforma
 
-**Coolify** — Nixpacks/buildpack, sin Dockerfile (mismo patrón build/start que Railway hoy):
+**Railway** — `railway.json` en la raíz, sin Dockerfile (builder por defecto de Railway):
 
 | Fase | Comando |
 |------|---------|
@@ -18,7 +18,7 @@
 | Dev | `bun run dev` |
 
 **Dominio y HTTPS:** WebAuthn/passkeys exigen HTTPS en producción (excepto `localhost`). El
-dominio configurado en Coolify debe coincidir **exactamente** con `PASSKEY_RP_ID` (sin
+dominio configurado en Railway debe coincidir **exactamente** con `PASSKEY_RP_ID` (sin
 protocolo) y `PASSKEY_ORIGIN` (con `https://`) — sin wildcards, sin subdominios distintos.
 
 ## Servicios
@@ -30,7 +30,9 @@ Un solo servicio ejecuta:
 
 ## Base de datos
 
-- PostgreSQL vía `DATABASE_URL` (requerida).
+- PostgreSQL de Railway vía `DATABASE_URL` (requerida).
+- Zona horaria del servicio: Chile (`America/Santiago`) — el ciclo actual depende de ella, ver
+  `docs/operations/env-vars.md`.
 - Schema: `initSchema()` corre si `RUN_SCHEMA_INIT=true` o en no-producción. Las tablas de
   passkeys (`passkey_credentials`, `webauthn_challenges`, `auth_sessions`) se crean con el
   resto del schema — no hace falta un paso de migración separado, es el mismo mecanismo
@@ -62,11 +64,11 @@ Ver `docs/operations/env-vars.md`.
 
 ## Proceso de deploy
 
-1. Push a la branch conectada a Coolify (GAP: confirmar branch de deploy).
+1. Push a la branch conectada al servicio de Railway (GAP: confirmar branch de deploy).
 2. Configurar `PASSKEY_RP_ID`/`PASSKEY_ORIGIN` con el dominio real HTTPS antes del primer
    deploy — WebAuthn no funciona con placeholders ni con `localhost` en producción.
 3. Para el release de ciclos financieros, ejecutar `bun run migrate:ciclos` contra la DB objetivo.
-4. Coolify ejecuta build (`bun install && bun run build`) y start (`bun run start`).
+4. Railway ejecuta build (`bun install && bun run build`) y start (`bun run start`).
 5. **Validar la primera passkey antes de retirar `ACCESS_TOKEN`** (ver checklist abajo).
 6. Verificar health: app carga, login con passkey funciona, API responde.
 
@@ -95,7 +97,7 @@ Ver `docs/operations/env-vars.md`.
 
 ## Rollback
 
-1. Revertir commit en Coolify o redeploy versión anterior.
+1. Revertir el commit, o hacer redeploy de un deployment anterior desde el dashboard de Railway.
 2. Rollback de código es seguro respecto al schema: las tablas de passkeys son aditivas, no
    hay `DROP`/`ALTER` destructivo — una versión anterior del código simplemente no las usa.
 3. Si se necesita revertir el swap de middleware específicamente: `ACCESS_TOKEN` sigue
@@ -108,9 +110,7 @@ Ver `docs/operations/env-vars.md`.
 
 - GAP: URL de producción exacta (bloquea completar `PASSKEY_RP_ID`/`PASSKEY_ORIGIN`).
 - GAP: branch de deploy (main vs otra).
-- GAP: CI/CD pipeline aparte de Coolify.
+- GAP: CI/CD pipeline aparte del deploy automático de Railway.
 - GAP: health check endpoint dedicado (`GET /api/auth/status` sirve como proxy razonable
   mientras tanto — no requiere auth y confirma que la API y la DB responden).
 - GAP: estrategia de migraciones PG en prod post-deploy.
-- GAP: confirmar si Coolify necesita un Dockerfile propio o si el buildpack detecta Bun
-  automáticamente — no se creó ninguno en este cambio, asumiendo detección automática.

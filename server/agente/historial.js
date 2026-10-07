@@ -61,3 +61,15 @@ export async function obtenerConversacion(id) {
 
   return { ...conversacion, mensajes }
 }
+
+// Últimos `limite` mensajes en orden cronológico. Para canales donde la
+// conversación nunca se cierra (Telegram): acota el contexto que va al modelo.
+export async function ultimosMensajes(conversacionId, limite = 40) {
+  const filas = await sql`
+    SELECT id, role, parts FROM agente_mensajes
+    WHERE conversacion_id = ${conversacionId}
+    ORDER BY created_at DESC
+    LIMIT ${limite}
+  `
+  return filas.reverse()
+}

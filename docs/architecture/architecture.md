@@ -45,8 +45,10 @@ Ninguno. Sync n8n disparado manualmente desde UI.
 | Servicio | Dirección | Propósito |
 |----------|-----------|-----------|
 | n8n | Cliente → webhook externo | Importar gastos bancarios |
+| Cliente MCP (agente externo) | Agente → `POST /mcp` (Bearer `MCP_TOKEN`) | Consultas de solo lectura y creación de gastos pendientes |
+| Telegram vía n8n | n8n → `POST /api/agente/telegram/{chat,avisos,aviso}` (Bearer `TELEGRAM_AGENTE_TOKEN`); app → webhook n8n (`N8N_TELEGRAM_AVISO_URL`) | Mismo agente de `/agente` por chat; aviso por cada gasto de tarjeta flaco |
 | Railway | Deploy | Hosting API + frontend estático |
-| PostgreSQL (Railway/Neon) | Servidor → DB | Persistencia |
+| PostgreSQL (Railway) | Servidor → DB | Persistencia |
 
 Ver `docs/architecture/integrations.md`.
 
@@ -63,7 +65,7 @@ Enrolamiento inicial protegido por `PASSKEY_BOOTSTRAP_SECRET`. `ACCESS_TOKEN` (c
 | Entorno | Frontend | API | DB | Auth |
 |---------|----------|-----|-----|------|
 | Local | Vite :6001 | Bun :3001 | PostgreSQL local/remoto | Passkey real u opcional (gate legacy sigue abierto en dev) |
-| Producción (Coolify) | `dist/` estático | mismo proceso | PostgreSQL managed | Passkey requerida; `ACCESS_TOKEN` legacy aceptado en paralelo |
+| Producción (Railway, hora de Chile) | `dist/` estático | mismo proceso | PostgreSQL en Railway | Passkey requerida; `ACCESS_TOKEN` legacy aceptado en paralelo |
 
 ## Flujo general
 

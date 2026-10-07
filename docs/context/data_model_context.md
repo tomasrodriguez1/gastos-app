@@ -33,7 +33,7 @@ Tabla única para gastos sincronizados y manuales.
 | `en_presupuesto` | BOOLEAN | Si el gasto impacta las agregaciones presupuestarias |
 | `financiado_por` | TEXT | Nombre del fondo de ahorro que financió el gasto; NULL si sale del ciclo |
 | `estado` | TEXT | `confirmado` (default, todo lo pre-existente) \| `pendiente` \| `error_parseo` \| `descartado` — ver "Bandeja de ingesta" abajo |
-| `origen` | TEXT | `manual` (default) \| `mail` \| `chat` (F3, agente conversacional) \| `telefono` (atajo iOS, `POST /api/ingesta/telefono`) — de dónde entró el gasto |
+| `origen` | TEXT | `manual` (default) \| `mail` \| `chat` (F3, agente conversacional) \| `telefono` (atajo iOS, `POST /api/ingesta/telefono`) \| `mcp` (cliente MCP remoto, `crear_gasto` en `POST /mcp`) — de dónde entró el gasto |
 | `fuente_id` | TEXT | Id externo (p.ej. id de mensaje de Gmail) para idempotencia de ingesta; único (parcial WHERE NOT NULL) |
 | `payload_raw` | JSONB | Mensaje/evento crudo tal como llegó a `/api/ingesta`, preservado siempre aunque el parseo falle |
 | `created_at`, `updated_at` | TIMESTAMPTZ | Auditoría |
@@ -205,6 +205,21 @@ su resultado, reabrir una conversación reconstruye tanto el diálogo como las a
 (crear/editar gasto) sin un modelo de datos aparte para eso. Sin paginación en
 `listarConversaciones()` (`LIMIT 200`) — GAP si crece mucho. Adjuntos de imagen viajan
 embebidos como `data:` URL dentro de `parts` — GAP de tamaño, ver `docs/context/context.md`.
+
+### `telegram_avisos`
+
+| Campo | Detalle |
+|-------|---------|
+| `chat_id` | TEXT — `chat.id` de Telegram |
+| `message_id` | BIGINT — `message_id` del aviso que devolvió Telegram |
+| `gasto_id` | TEXT FK → `gastos(id)` ON DELETE CASCADE |
+| `created_at` | TIMESTAMPTZ |
+
+PK `(chat_id, message_id)`. La registra la app al enviar el aviso de un gasto flaco, con el
+mensaje que devuelve el webhook de n8n (respaldo: `POST /api/agente/telegram/avisos`, solo si el
+gasto sigue `pendiente`/`error_parseo`). Cuando la
+persona contesta ese mensaje, `/api/agente/telegram/chat` resuelve el gasto sin buscar en la
+bandeja. Las conversaciones de Telegram usan las tablas del agente con id `telegram:<chat.id>`.
 
 ### `duplicado_exclusion`
 
@@ -419,6 +434,7 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | — | `comercio_mapeo` (PG-only, `server/db/migrate-comercios.js`) — memoria de comercios (F2) |
 | — | `plata_en_cuenta`, `en_presupuesto` en `gastos` (PG-only, `server/db/migrate-tarjeta-reconciliacion.js`) — métricas de tarjeta F5 |
 | — | `agente_conversaciones`, `agente_mensajes` (PG-only, `server/db/migrate-agente-historial.js`) — historial del agente conversacional (F3) |
+| — | `telegram_avisos` (PG-only, `server/db/migrate-telegram-avisos.js`) — aviso de Telegram → gasto, para atar la respuesta |
 | — | `gastos.financiado_por`, `presupuesto_fondo.estado` (PG-only, `server/db/migrate-fondo-uso.js`) — uso de fondos de ahorro |
 | — | `reserva`, `reserva_saldo` (PG-only, `server/db/migrate-reservas.js`) — tracking de saldos reales vs esperados en reservas externas (F6) |
 | — | `fondo_tarjeta_movimiento` (PG-only, `server/db/migrate-fondo-tarjeta.js`) — fondo común manual para pagar tarjetas |
@@ -437,6 +453,8 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
   determinista ni Groq deben poder saltarse la revisión humana.
 - Ningún gasto creado por el agente conversacional (`/api/agente/chat`, F3) debe nacer en
   `estado='confirmado'` — el agente solo crea, nunca confirma (ver `server/agente.js`).
+- Lo mismo para `crear_gasto` del servidor MCP (`origen='mcp'`): usa `ejecutarCrearGasto` y deja
+  el gasto `pendiente`. El MCP no tiene ninguna tool que confirme, edite o borre gastos.
 - `crear_gasto` no inserta si `buscarSimilares` encuentra candidatos y `ignorar_duplicado` es
   false — el duplicado se avisa, no se confirma ni se descarta desde el chat.
 - Ni Groq ni el agente conversacional pueden escribir `tipos`/`contexto` fuera del catálogo

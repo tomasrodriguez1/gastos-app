@@ -36,9 +36,9 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 |------|------------|
 | Frontend | React 19, React Router 7, Vite 8, Tailwind CSS v4, Recharts |
 | Backend | Hono 4 sobre Bun |
-| Base de datos | PostgreSQL (`postgres` npm package) |
+| Base de datos | PostgreSQL en Railway (`postgres` npm package) |
 | Integración | n8n webhook (`VITE_N8N_WEBHOOK_URL`) |
-| Deploy | Coolify (objetivo; `railway.json` es histórico — ver `docs/operations/deployment.md`) |
+| Deploy | Railway (`railway.json` — ver `docs/operations/deployment.md`), app y PostgreSQL. El servicio corre en hora de Chile (`America/Santiago`): el ciclo actual y el "hoy" del servidor usan la hora local del proceso |
 | Auth | Passkeys/WebAuthn (`@simplewebauthn/*`), `ACCESS_TOKEN` legacy en paralelo |
 
 **Desarrollo local:** `bun run dev` → API `:3001` + Vite `:6001` (proxy `/api`).
@@ -171,6 +171,40 @@ al botón "+ Nueva conversación"). Al reabrir una conversación pasada, `PasoAg
 los mismos tool-parts persistidos (`state: 'output-available'`, `input`/`output`) como timeline
 de acciones — no hay un log de auditoría aparte, las "acciones hechas" son los tool-calls ya
 guardados dentro de cada conversación.
+
+## API — Agente por Telegram
+
+El mismo agente de `/agente` atiende un chat personal de Telegram; n8n solo transporta (recibe,
+filtra el username, transcribe voz y reenvía). Tres endpoints con `Authorization: Bearer
+<TELEGRAM_AGENTE_TOKEN>`, exentos del gate global y con 401 siempre sin token:
+
+- `POST /api/agente/telegram/chat` `{ conversacionId, texto, replyToMessageId? }` → `{ texto }`.
+  El historial vive en el servidor (`telegram:<chat.id>`). Usa el mismo modelo, prompt, tools y
+  tope de pasos que `/api/agente/chat`, sin streaming. Si contesta un aviso registrado, el turno
+  completa ese gasto con `editar_gasto` y lo deja `pendiente`.
+- `POST /api/agente/telegram/avisos` `{ gastoId, chatId, messageId, texto? }`: respaldo para
+  registrar desde afuera el `message_id` de un aviso (`telegram_avisos`). 404/409 si el gasto no
+  existe o ya no está pendiente.
+- `POST /api/agente/telegram/aviso` `{ gastoId }`: evalúa, redacta y reenvía el aviso de un gasto a
+  mano.
+
+Aviso proactivo: cuando `/api/ingesta` o `/api/ingesta/telefono` insertan un gasto flaco
+(`error_parseo`, sin hit de memoria o sin contexto), la app hace un POST por gasto a
+`N8N_TELEGRAM_AVISO_URL` con el texto redactado por el modelo. El webhook manda el mensaje por el
+bot y responde con lo que devolvió Telegram; con eso la app registra sola el aviso. Es best-effort: sin la variable no
+sale nada y la ingesta no se afecta. Contrato completo en `docs/architecture/integrations.md`;
+decisión en DEC-018.
+
+## API — Servidor MCP remoto
+
+`POST /mcp` — servidor MCP (Streamable HTTP, `@modelcontextprotocol/sdk`) para agentes externos,
+en el mismo proceso. Auth propia: `Authorization: Bearer <MCP_TOKEN>`, exento del gate global y
+con 401 siempre sin token, también en dev. Tiene 6 tools: `crear_gasto` (la única escritura, deja
+el gasto `pendiente` con `origen='mcp'` vía `ejecutarCrearGasto`, nunca lo confirma),
+`buscar_gastos`, `resumir_gastos`, `comparar_periodos`, `resumen_presupuesto` (reusa
+`resumenCiclo`) y `listar_catalogos`. Implementación en `server/mcp/` y
+`server/consultas/gastos.js`; contrato y ejemplos en `docs/architecture/integrations.md`;
+decisión en DEC-017.
 
 ## Memoria de comercios (F2)
 

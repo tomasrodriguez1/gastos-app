@@ -19,6 +19,9 @@ Nunca commitear valores reales. Usar `.env.example` como referencia.
 | `RUN_SCHEMA_INIT` | DB schema | All | No | `true` | Ejecutar `schema.pg.sql` al arrancar | `server/index.js` |
 | `VITE_N8N_WEBHOOK_URL` | n8n (client) | All | Yes** | `https://n8n.example.com/webhook/gastos` | Webhook para sync de gastos | `src/hooks/useSyncN8n.js` |
 | `INGESTA_TOKEN` | Ingesta externa | All | Yes*** | `your-random-ingesta-token-here` | Token Bearer que valida `POST /api/ingesta` (n8n → app). Sin token configurado, el endpoint rechaza todo | `server/auth.js`, `server/ingesta.js` |
+| `TELEGRAM_AGENTE_TOKEN` | Agente por Telegram | All | No | `your-random-telegram-token-here` | Token Bearer que valida `POST /api/agente/telegram/*` (n8n → app) y que la app manda como secreto en el POST de avisos a n8n. Propio: no reutiliza `INGESTA_TOKEN`, `MCP_TOKEN` ni `ACCESS_TOKEN`. Sin token configurado, esos endpoints rechazan todo | `server/telegram.js`, `server/telegram/aviso.js` |
+| `N8N_TELEGRAM_AVISO_URL` | Agente por Telegram | All | No | `https://n8n.example.com/webhook/gastos-aviso` | Webhook de n8n que recibe el aviso de un gasto de tarjeta flaco y lo manda por Telegram. Sin ella no salen avisos y la ingesta sigue igual | `server/telegram/aviso.js` |
+| `MCP_TOKEN` | Servidor MCP | All | No**** | `your-random-mcp-token-here` | Token Bearer que valida `POST /mcp` (cliente MCP remoto → app). Propio: no reutiliza `INGESTA_TOKEN` ni `ACCESS_TOKEN`. Sin token configurado, `/mcp` rechaza todo | `server/mcp/index.js` |
 | `GROQ_API_KEY` | Ingesta externa (IA) | All | No | `gsk_...` | Fallback de extracción de campos en `/api/ingesta` y clasificación de respaldo si el agente no clasifica. Sin ella, la extracción queda en el parser y la clasificación, en el agente o sin tipos | `server/ingesta/groq.js` |
 | `GROQ_MODEL` | Ingesta externa (IA) | All | No | `llama-3.1-8b-instant` | Modelo Groq a usar; confirmar el nombre vigente al desplegar (Groq puede deprecar modelos) | `server/ingesta/groq.js` |
 | `OPENAI_API_KEY` | Agente + clasificación de mail | All | No | `sk-...` | Habilita `POST /api/agente/chat` y la clasificación de comercios nuevos en `/api/ingesta`. Sin ella, el chat responde 503 y la ingesta clasifica con Groq o deja el gasto sin tipos | `server/agente.js`, `server/ingesta/agente.js` |
@@ -30,6 +33,7 @@ configurada mientras dure la convivencia — ver DEC-009 y el procedimiento de r
 \*\* Requerida para usar sync n8n; app funciona sin ella pero sync falla con mensaje de error.
 \*\*\* Requerida para que `POST /api/ingesta` acepte requests; sin ella el endpoint devuelve
 401 siempre (no hay bypass en dev, a diferencia del gate de `ACCESS_TOKEN`).
+\*\*\*\* Solo si se usa el servidor MCP. Sin ella `/mcp` devuelve 401 siempre, también en dev.
 
 ## Notas
 
@@ -41,7 +45,12 @@ configurada mientras dure la convivencia — ver DEC-009 y el procedimiento de r
   debe incluir `https://` y coincidir exactamente con el origin real — WebAuthn rechaza
   cualquier mismatch, no admite wildcards.
 - `COOKIE_SECURE` es `true` por defecto (cualquier valor distinto de `false`); en HTTPS no hace falta definirla.
-- SSL a PostgreSQL se fuerza en prod si `DATABASE_URL` no incluye `sslmode=`.
+- SSL a PostgreSQL se fuerza en prod si `DATABASE_URL` no incluye `sslmode=`. La DB de producción
+  es un PostgreSQL de Railway, en el mismo proyecto que la app.
+- Zona horaria: el servicio de Railway corre en hora de Chile (`America/Santiago`).
+  `obtenerCicloActual()` y el "hoy" del MCP usan la hora local del proceso Bun, así que dependen
+  de eso: si el servicio pasara a UTC, entre las 21:00 y las 24:00 de Chile el servidor ya
+  estaría en el día siguiente. No se fija en el repo (`railway.json` no la define).
 - No existe `SESSION_SECRET`: el token de sesión es random de 256 bits, hasheado con SHA-256
   antes de guardarse — no hay material reversible que un pepper adicional proteja (ver DEC-009).
 
@@ -82,10 +91,17 @@ configurada mientras dure la convivencia — ver DEC-009 y el procedimiento de r
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 
+### Servidor MCP remoto (`POST /mcp`)
+- `MCP_TOKEN`
+
+### Agente por Telegram (`/api/agente/telegram/*`)
+- `TELEGRAM_AGENTE_TOKEN`
+- `N8N_TELEGRAM_AVISO_URL`
+- Usa además `OPENAI_API_KEY`/`OPENAI_MODEL` (turnos de chat y redacción de avisos)
+
 ## GAPs
 
-- GAP: variables Coolify específicas del proyecto no documentadas en repo.
-- GAP: confirmar proveedor PG en prod.
+- GAP: variables configuradas en el servicio de Railway no documentadas en repo (solo se listan las que lee el código).
 - GAP: dominio real de producción — `PASSKEY_RP_ID`/`PASSKEY_ORIGIN` quedan como placeholder
   hasta definirlo (ver `deployment.md`).
 - GAP: nombre exacto de modelo Groq vigente — confirmar al desplegar, Groq puede deprecar

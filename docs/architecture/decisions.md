@@ -289,11 +289,59 @@ un traspaso real borra su aporte en el fondo TC (CASCADE), así ambos libros que
 La cobertura desde fondo de ahorro solo está disponible para fondos manuales (los vinculados
 derivan su saldo de gastos, no admiten un ajuste negativo).
 
+## DEC-017 - Servidor MCP remoto en el mismo proceso, con token propio y una sola escritura
+
+Date: 2026-10-06
+Context: se quiere consultar y registrar gastos desde agentes externos (clientes MCP). La passkey
+no sirve para un bot remoto, y el chat de `/agente` es una sesión de browser.
+Decision:
+- `POST /mcp` en el mismo proceso Hono, con MCP Streamable HTTP stateless y respuesta JSON, usando
+  el SDK oficial `@modelcontextprotocol/sdk` (`WebStandardStreamableHTTPServerTransport`). Antes de
+  agregarlo se verificó que corre en Bun y que usa el `zod@4` del repo sin traer una copia propia.
+- Auth con `MCP_TOKEN` propio (Bearer, timing-safe), montado antes del gate y exento de él, como
+  `/api/ingesta`. Sin token: 401 siempre, también en dev.
+- Seis tools. La única escritura es `crear_gasto`, que reutiliza `ejecutarCrearGasto` (ahora acepta
+  `{ origen }` como tercer argumento, con default `'chat'`) y deja el gasto `pendiente` con
+  `origen='mcp'`. Las lecturas reutilizan `resumenCiclo`, `cargarCatalogos` y un read service
+  nuevo (`server/consultas/gastos.js`) que resuelve la categoría con `resolverCategoria` y suma con
+  `montoDelCiclo`.
+- Las validaciones y los errores son propios (`{ ok, error, code }`). Se usa el `Server` de bajo
+  nivel del SDK para que la validación del SDK no reemplace ese formato.
+Alternatives considered: un proceso o servicio aparte (descartada: duplicaría el acceso a la DB y
+la lógica de ciclo, mapeo y duplicados); reutilizar `INGESTA_TOKEN` (descartada: no se podría
+revocar uno sin afectar al otro); exponer las tools del chat tal cual (descartada: esas tools
+editan la bandeja y están pensadas para un humano en el loop).
+Consequences: confirmar un gasto sigue siendo un acto humano en `/bandeja` o `/log`. Un cliente
+con el token puede crear gastos pendientes, pero no confirmarlos, editarlos ni borrarlos. Se
+agrega una dependencia (`@modelcontextprotocol/sdk`). No hay rate limiting en `/mcp`.
+
+## DEC-018 - Agente por Telegram con n8n como tubo y avisos de gastos flacos
+
+Date: 2026-10-06
+Context: se quiere usar el agente de `/agente` desde Telegram y que avise al instante cuando un
+gasto de tarjeta entra sin clasificar bien, para completarlo contestando el mensaje.
+Decision:
+- El cerebro sigue en el servidor. `construirAgente` (`server/agente.js`) comparte modelo, prompt,
+  tools y tope de 16 pasos entre `/api/agente/chat` y `/api/agente/telegram/chat`. n8n solo
+  transporta: filtra el username, transcribe la voz y reenvía texto. No hay modelo de chat en n8n.
+- Endpoint propio `/api/agente/telegram/chat` (JSON, historial en el servidor), en vez de reutilizar
+  el stream de sesión de browser.
+- `TELEGRAM_AGENTE_TOKEN` propio (Bearer, timing-safe), montado antes del gate y exento, como `/mcp`.
+- El aviso sale de la ingesta de tarjeta (mail y teléfono), solo al insertar y solo si el gasto es
+  flaco. El texto lo redacta el modelo del agente en un paso aparte, con una plantilla de
+  respaldo. Es fire-and-forget y best-effort.
+- La respuesta queda atada al gasto con `telegram_avisos` (`message_id` → `gasto_id`), porque
+  Telegram no guarda metadata. El webhook de n8n responde con el mensaje enviado y la app lo
+  registra sola, así el flujo de avisos en n8n queda en dos nodos (Webhook → Telegram). El turno inyecta los datos del gasto en el prompt y edita con
+  `editar_gasto`, sin confirmar.
+Alternatives considered: AI Agent dentro de n8n (descartada: duplicaría prompt y reglas fuera del
+repo); que n8n consulte avisos pendientes cada X minutos (descartada: llegan con retraso); texto del
+aviso con plantilla fija (se eligió el modelo, con la plantilla como respaldo).
+Consequences: una llamada a OpenAI por gasto flaco. Un aviso perdido no se reintenta solo
+(`POST /api/agente/telegram/aviso` lo reenvía). El token se comparte en las dos direcciones.
+Confirmar sigue siendo un acto humano en `/bandeja`.
+
 ## GAP: decisions to document
 
-- Elección específica de proveedor PostgreSQL (Railway vs Neon).
 - Política de rotación de `ACCESS_TOKEN` (hasta su retiro definitivo, ver DEC-009).
 - Decisión sobre retirar scripts SQLite legacy.
-- Confirmar plataforma de deploy definitiva: docs históricamente dicen Railway
-  (`railway.json`), pero el despliegue real objetivo es Coolify (Nixpacks/buildpack, sin
-  Dockerfile) — ver `docs/operations/deployment.md`.

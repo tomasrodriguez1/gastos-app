@@ -2,6 +2,8 @@ import { describe, test, expect, afterAll, afterEach, mock } from 'bun:test'
 import { Hono } from 'hono'
 import sql from './db/client.js'
 import { createIngestaRouter } from './ingesta.js'
+import { aprenderComercio } from './comercios.js'
+import { normalizarComercio } from '../src/utils/comercio.js'
 
 // IA inyectada en vez de mockear el módulo — mock.module de Bun reemplaza el módulo para
 // todo el proceso de test (contaminaría server/ingesta/groq.test.js si corren juntos, p.ej.
@@ -10,11 +12,16 @@ import { createIngestaRouter } from './ingesta.js'
 const extraerCamposMock = mock(async () => null)
 const clasificarConAgenteMock = mock(async () => null)
 const clasificarGastoMock = mock(async () => null)
+// Aviso de Telegram inyectado: estos tests solo validan cuándo la ingesta lo
+// dispara; si es flaco o no lo decide server/telegram/aviso.js (aviso.test.js).
+const avisarMock = mock(async () => ({ enviado: true }))
 
 afterEach(() => {
   extraerCamposMock.mockReset()
   clasificarConAgenteMock.mockReset()
   clasificarGastoMock.mockReset()
+  avisarMock.mockReset()
+  avisarMock.mockImplementation(async () => ({ enviado: true }))
   extraerCamposMock.mockImplementation(async () => null)
   clasificarConAgenteMock.mockImplementation(async () => null)
   clasificarGastoMock.mockImplementation(async () => null)
@@ -27,16 +34,24 @@ app.route('/', createIngestaRouter({
     clasificarConAgente: clasificarConAgenteMock,
     clasificarGasto: clasificarGastoMock,
   },
+  avisar: avisarMock,
 }))
 
 const TOKEN = process.env.INGESTA_TOKEN
 const fuenteIdsCreados = []
+const comerciosAprendidos = []
 
 afterAll(async () => {
   if (fuenteIdsCreados.length) {
     await sql`DELETE FROM gastos WHERE fuente_id = ANY(${fuenteIdsCreados})`
   }
+  if (comerciosAprendidos.length) {
+    await sql`DELETE FROM comercio_mapeo WHERE comercio_normalizado = ANY(${comerciosAprendidos})`
+  }
 })
+
+// El aviso se dispara sin await dentro de la ingesta: dejar correr la cola.
+const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 
 function post(body, token = TOKEN) {
   return app.request('/', {
@@ -261,5 +276,80 @@ describe('POST /api/ingesta/telefono', () => {
     expect(res.status).toBe(400)
     expect(clasificarConAgenteMock).not.toHaveBeenCalled()
     expect(clasificarGastoMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('aviso de Telegram tras la ingesta', () => {
+  test.skipIf(!TOKEN)('BICE sin memoria -> un aviso con memoria=false y origen telefono', async () => {
+    clasificarConAgenteMock.mockResolvedValueOnce({ tipos: ['Transporte'], contexto: 'Personal' })
+    const comercio = `ZZAVISO${crypto.randomUUID().slice(0, 8)}`
+
+    const res = await postTelefono({ data: { comercio, monto: 2100 } })
+    const body = await res.json()
+    fuenteIdsCreados.push(body.fuente_id)
+    await tick()
+
+    expect(avisarMock).toHaveBeenCalledTimes(1)
+    expect(avisarMock.mock.calls[0][0]).toEqual({ gastoId: body.gastoId, origen: 'telefono', memoria: false })
+  })
+
+  test.skipIf(!TOKEN)('BICE con memoria -> avisa con memoria=true (el aviso decide si es flaco)', async () => {
+    const comercio = `ZZMEMORIA${crypto.randomUUID().slice(0, 8)}`
+    await aprenderComercio({ motivo: comercio, tipos: ['Transporte'], contexto: 'Personal', banco: 'BICE' })
+    comerciosAprendidos.push(normalizarComercio(comercio))
+
+    const res = await postTelefono({ data: { comercio, monto: 2200 } })
+    const body = await res.json()
+    fuenteIdsCreados.push(body.fuente_id)
+    await tick()
+
+    expect(clasificarConAgenteMock).not.toHaveBeenCalled()
+    expect(avisarMock).toHaveBeenCalledTimes(1)
+    expect(avisarMock.mock.calls[0][0].memoria).toBe(true)
+  })
+
+  test.skipIf(!TOKEN)('reintento del mismo fuente_id no vuelve a avisar', async () => {
+    const comercio = `ZZAVISODUP${crypto.randomUUID().slice(0, 8)}`
+    const payload = { data: { comercio, monto: 2300 } }
+
+    const primera = await (await postTelefono(payload)).json()
+    fuenteIdsCreados.push(primera.fuente_id)
+    const segunda = await (await postTelefono(payload)).json()
+    await tick()
+
+    expect(segunda.duplicado).toBe(true)
+    expect(avisarMock).toHaveBeenCalledTimes(1)
+  })
+
+  test.skipIf(!TOKEN)('mail en error_parseo -> avisa con memoria=false y origen mail', async () => {
+    const fuenteId = `test-aviso-errorparseo-${crypto.randomUUID()}`
+    fuenteIdsCreados.push(fuenteId)
+
+    const res = await post([{
+      id: fuenteId,
+      snippet: 'nada reconocible',
+      From: 'Banco Edwards <enviodigital@bancoedwards.cl>',
+      Subject: 'Aviso genérico',
+      internalDate: '1783356062000',
+    }])
+    const { resultados } = await res.json()
+    await tick()
+
+    expect(resultados[0].estado).toBe('error_parseo')
+    expect(avisarMock).toHaveBeenCalledTimes(1)
+    expect(avisarMock.mock.calls[0][0]).toEqual({ gastoId: resultados[0].gastoId, origen: 'mail', memoria: false })
+  })
+
+  test.skipIf(!TOKEN)('si el aviso falla, la ingesta igual responde 200', async () => {
+    avisarMock.mockImplementation(async () => { throw new Error('n8n caído') })
+    const comercio = `ZZAVISOFALLA${crypto.randomUUID().slice(0, 8)}`
+
+    const res = await postTelefono({ data: { comercio, monto: 2400 } })
+    const body = await res.json()
+    fuenteIdsCreados.push(body.fuente_id)
+    await tick()
+
+    expect(res.status).toBe(200)
+    expect(body.estado).toBe('pendiente')
   })
 })
