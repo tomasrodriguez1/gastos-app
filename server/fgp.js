@@ -13,6 +13,7 @@ import sql from './db/client.js'
 import { toMonto } from './db/numeric.js'
 import { deserializarGasto } from './gastos/serializacion.js'
 import { montoDelCiclo } from '../src/utils/calculos.js'
+import { obtenerCicloActual } from '../src/utils/ciclos.js'
 import { BANCOS_TARJETA } from './tarjeta.js'
 
 const TIPOS_MANUALES = ['cobertura', 'deficit', 'ajuste']
@@ -78,7 +79,7 @@ export async function registrarMovimientoFGP({ tipo, ciclo, fecha = hoyISO(), mo
   return { movimiento: serializarMovimientoFGP(row) }
 }
 
-export async function registrarTraspasos({ gastoIds, modo = 'mover', fecha = hoyISO() } = {}, db = sql) {
+export async function registrarTraspasos({ gastoIds, modo = 'mover', fecha = hoyISO(), cicloActual = obtenerCicloActual() } = {}, db = sql) {
   if (!MODOS_TRASPASO.includes(modo)) return { error: `modo debe ser uno de: ${MODOS_TRASPASO.join(', ')}`, status: 400 }
   if (!fechaValida(fecha)) return { error: 'Fecha inválida (YYYY-MM-DD)', status: 400 }
   const ids = [...new Set((Array.isArray(gastoIds) ? gastoIds : []).filter(id => typeof id === 'string' && id))]
@@ -98,7 +99,12 @@ export async function registrarTraspasos({ gastoIds, modo = 'mover', fecha = hoy
       const gasto = deserializarGasto(row)
       const monto = montoDelCiclo(gasto)
       if (yaMovidos.has(gasto.id)) omitidos.push({ id: gasto.id, motivo: 'ya movido' })
-      else if (modo === 'mover' && !BANCOS_TARJETA.includes(gasto.banco)) omitidos.push({ id: gasto.id, motivo: 'no es de tarjeta' })
+      // La UI ya ofrece solo estos gastos, pero el endpoint debe evitar que un request directo
+      // vuelva a agregar históricos o cargos que la tarjeta ya pagó.
+      else if (gasto.ciclo_financiero !== cicloActual) omitidos.push({ id: gasto.id, motivo: 'no es del ciclo actual' })
+      else if (gasto.pagado === true) omitidos.push({ id: gasto.id, motivo: 'ya está pagado' })
+      else if (gasto.estado !== 'confirmado') omitidos.push({ id: gasto.id, motivo: 'no está confirmado' })
+      else if (!BANCOS_TARJETA.includes(gasto.banco)) omitidos.push({ id: gasto.id, motivo: 'no es de tarjeta' })
       else if (!(monto > 0)) omitidos.push({ id: gasto.id, motivo: 'monto 0' })
       else porRegistrar.push({ gasto, monto: Math.round(monto) })
     }

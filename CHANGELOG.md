@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix: el FGP solo propone mover al fondo TC los gastos confirmados e impagos del ciclo financiero actual; excluye ciclos ya cerrados y cargos ya pagados también en la API.
 - Navegación reorganizada por tarea: grupos para el día, planificación y análisis en desktop; barra mobile con acceso rápido para registrar gastos, bandeja priorizada y menú de secciones secundarias.
 - Vista `/agente`: layout en dos columnas (chat a la izquierda, bandeja a la derecha en desktop; en móvil el chat queda arriba).
 - Agente conversacional: triage de bandeja (`resumir_bandeja`, filtros/offset), consultas de solo lectura del ciclo (`resumen_ciclo`, `buscar_gastos`) y aviso server-side de duplicados al crear un gasto (`buscarSimilares` + `ignorar_duplicado`). El agente sigue sin confirmar gastos.

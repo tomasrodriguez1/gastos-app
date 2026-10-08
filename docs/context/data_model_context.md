@@ -126,9 +126,10 @@ saldo = Σ previsto FGP (ciclos con líneas FGP ≤ ciclo actual)
 - Las líneas se leen **por ciclo**: un gasto cuenta si su subcategoría es FGP en el presupuesto de
   *su* ciclo. El historial arranca en el primer ciclo con alguna línea FGP.
 - Gastos con `financiado_por` no comen el FGP (`montoDelCiclo` = 0).
-- **Pendiente de mover a TC**: gasto FGP `confirmado`, banco Edwards/BICE, guardado en servidor (no
-  `gastosLocales`) y sin fila `traspaso_tc`. Monto = `montoDelCiclo` (sin el `split`, que lo
-  devuelve un tercero).
+- **Pendiente de mover a TC**: solo gasto FGP del **ciclo actual**, `confirmado` e **impago**,
+  banco Edwards/BICE, guardado en servidor (no `gastosLocales`) y sin fila `traspaso_tc`. Los
+  gastos de ciclos cerrados y los ya pagados no aparecen ni pueden registrarse por la API. Monto =
+  `montoDelCiclo` (sin el `split`, que lo devuelve un tercero).
 
 ```sql
 fgp_movimiento(id, tipo 'traspaso_tc'|'cobertura'|'deficit'|'ajuste', ciclo YYYY-MM, fecha,

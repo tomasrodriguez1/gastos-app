@@ -60,23 +60,35 @@ function dbFalsa({ gastos = [], fgp = [] } = {}) {
 }
 
 describe('registrarTraspasos', () => {
-  test('mover: un aporte CLP por el lote y una fila por gasto; omite los ya movidos y los de débito', async () => {
+  test('mover: un aporte CLP por el lote y una fila por gasto; omite históricos, pagados, los ya movidos y los de débito', async () => {
     const { db, state } = dbFalsa({
-      gastos: [gastoRow('a', 10000), gastoRow('b', 5000, { split: '1000' }), gastoRow('c', 3000), gastoRow('d', 2000, { banco: 'Santander' })],
+      gastos: [
+        gastoRow('a', 10000),
+        gastoRow('b', 5000, { split: '1000' }),
+        gastoRow('c', 3000),
+        gastoRow('d', 2000, { banco: 'Santander' }),
+        gastoRow('e', 4000, { ciclo_financiero: '2026-09' }),
+        gastoRow('f', 6000, { pagado: true }),
+      ],
       fgp: [{ id: 99, tipo: 'traspaso_tc', gasto_id: 'c' }],
     })
-    const r = await registrarTraspasos({ gastoIds: ['a', 'b', 'c', 'd', 'zz'], modo: 'mover', fecha: '2026-10-06' }, db)
+    const r = await registrarTraspasos({
+      gastoIds: ['a', 'b', 'c', 'd', 'e', 'f', 'zz'],
+      modo: 'mover',
+      fecha: '2026-10-06',
+      cicloActual: '2026-10',
+    }, db)
     expect(r.registrados).toBe(2)
     expect(r.total).toBe(14000) // el split no se mueve: es plata que devuelve un tercero
     expect(state.tarjeta).toHaveLength(1)
     expect(state.tarjeta[0].monto).toBe(14000)
-    expect(r.omitidos.map(o => o.motivo).sort()).toEqual(['no encontrado', 'no es de tarjeta', 'ya movido'])
+    expect(r.omitidos.map(o => o.motivo).sort()).toEqual(['no encontrado', 'no es de tarjeta', 'no es del ciclo actual', 'ya está pagado', 'ya movido'])
     expect(state.fgp.filter(m => m.tarjeta_movimiento_id === 1)).toHaveLength(2)
   })
 
   test('marcar: no toca el fondo de tarjeta', async () => {
     const { db, state } = dbFalsa({ gastos: [gastoRow('a', 10000)] })
-    const r = await registrarTraspasos({ gastoIds: ['a'], modo: 'marcar', fecha: '2026-10-06' }, db)
+    const r = await registrarTraspasos({ gastoIds: ['a'], modo: 'marcar', fecha: '2026-10-06', cicloActual: '2026-10' }, db)
     expect(r.registrados).toBe(1)
     expect(state.tarjeta).toHaveLength(0)
     expect(state.fgp[0].tarjeta_movimiento_id).toBeNull()
@@ -111,7 +123,7 @@ describe('registrarMovimientoFGP', () => {
 describe('eliminarMovimientoFGP', () => {
   test('deshacer un traspaso borra el aporte de tarjeta y devuelve todo el lote a pendiente', async () => {
     const { db, state } = dbFalsa({ gastos: [gastoRow('a', 10000), gastoRow('b', 5000)] })
-    await registrarTraspasos({ gastoIds: ['a', 'b'], modo: 'mover', fecha: '2026-10-06' }, db)
+    await registrarTraspasos({ gastoIds: ['a', 'b'], modo: 'mover', fecha: '2026-10-06', cicloActual: '2026-10' }, db)
     const r = await eliminarMovimientoFGP(state.fgp[0].id, db)
     expect(r.ok).toBe(true)
     expect(state.tarjeta).toHaveLength(0)

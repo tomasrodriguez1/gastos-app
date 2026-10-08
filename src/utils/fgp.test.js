@@ -41,7 +41,7 @@ describe('calcularFondoFGP', () => {
     expect(r.ciclos[1].excesos).toEqual([expect.objectContaining({ sub: 'Regalos', exceso: 6000 })])
   })
 
-  test('pendientes a TC: solo tarjeta, confirmados, del servidor y no movidos', () => {
+  test('pendientes a TC: solo tarjeta confirmada, impaga, del ciclo actual, del servidor y no movida', () => {
     const gastos = [
       gasto('a', '2026-10', 'Carrete', 10000),
       gasto('b', '2026-10', 'Carrete', 20000, { banco: 'Santander' }),
@@ -49,13 +49,15 @@ describe('calcularFondoFGP', () => {
       gasto('d', '2026-10', 'Carrete', 40000, { manual: true }),
       gasto('e', '2026-10', 'Carrete', 5000, { banco: 'Edwards' }),
       gasto('f', '2026-10', 'Carrete', 7000, { financiado_por: 'Vacaciones' }),
+      gasto('g', '2026-09', 'Carrete', 8000),
+      gasto('h', '2026-10', 'Carrete', 9000, { pagado: true }),
     ]
     const movimientos = [{ tipo: 'traspaso_tc', gasto_id: 'e', ciclo: '2026-10', monto: 5000 }]
     const r = calcularFondoFGP({ gastos, presupuestos, movimientos, cicloActual: '2026-10' })
     expect(r.pendientesTC.map(p => p.gasto.id)).toEqual(['a'])
     expect(r.totalPendienteTC).toBe(10000)
     // los traspasos no cambian el saldo; el gasto financiado por un fondo no come el FGP
-    expect(r.gastado).toBe(105000)
+    expect(r.gastado).toBe(122000)
   })
 
   test('coberturas, déficits y ajustes suman al saldo; el déficit queda como compromiso del sueldo siguiente', () => {

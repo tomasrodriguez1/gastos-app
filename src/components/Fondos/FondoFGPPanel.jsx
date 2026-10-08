@@ -116,7 +116,7 @@ function PendientesTC({ resumen, cicloActual, onTraspasar }) {
   })
 
   if (resumen.pendientesTC.length === 0) {
-    return <div className="text-xs text-slate-500">✓ Todo lo gastado con tarjeta desde el FGP ya está en el fondo TC.{aviso && <span className="text-emerald-400"> {aviso}</span>}</div>
+    return <div className="text-xs text-slate-500">✓ No quedan gastos impagos de este ciclo por mover desde el FGP al fondo TC.{aviso && <span className="text-emerald-400"> {aviso}</span>}</div>
   }
 
   return (
@@ -124,7 +124,7 @@ function PendientesTC({ resumen, cicloActual, onTraspasar }) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="text-sm text-amber-300">
           ⚠️ Mover <span className="font-mono-numbers font-semibold">{formatCLP(resumen.totalPendienteTC)}</span> de FGP → Fondo TC
-          <span className="text-slate-500"> · {resumen.pendientesTC.length} gasto{resumen.pendientesTC.length === 1 ? '' : 's'}</span>
+          <span className="text-slate-500"> · {resumen.pendientesTC.length} gasto{resumen.pendientesTC.length === 1 ? '' : 's'} impago{resumen.pendientesTC.length === 1 ? '' : 's'} de este ciclo</span>
         </div>
         <div className="ml-auto flex gap-2">
           <button className={btnSky} disabled={!!enviando} onClick={() => ejecutar(resumen.pendientesTC, 'mover', 'todo-mover')}>

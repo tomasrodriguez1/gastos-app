@@ -63,8 +63,17 @@ export function calcularFondoFGP({ gastos = [], presupuestos = {}, movimientos =
     if (!monto) continue
     gastadoPorCiclo[g.ciclo_financiero][k] = (gastadoPorCiclo[g.ciclo_financiero][k] || 0) + monto
 
-    // Solo gastos confirmados y guardados en el servidor (los locales no tienen fila en `gastos`).
-    if (BANCOS_TARJETA.includes(g.banco) && g.estado === 'confirmado' && !g.manual && !movidos.has(g.id)) {
+    // Solo se traspasa a TC un cargo vigente: confirmado, impago y del ciclo actual.
+    // El saldo FGP sí conserva el historial de ciclos anteriores; esta cola no.
+    // Los locales no tienen fila en `gastos`, por lo que no pueden tener un traspaso registrado.
+    if (
+      g.ciclo_financiero === cicloActual &&
+      BANCOS_TARJETA.includes(g.banco) &&
+      g.estado === 'confirmado' &&
+      g.pagado !== true &&
+      !g.manual &&
+      !movidos.has(g.id)
+    ) {
       pendientesTC.push({ gasto: g, ciclo: g.ciclo_financiero, grupo: r.grupo, sub: r.subcategoria, monto: Math.round(monto) })
     }
   }
