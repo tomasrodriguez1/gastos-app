@@ -59,15 +59,15 @@ function sumarMetricas(lista, moneda) {
   return total
 }
 
-export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefetchGastos }) {
+export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefetchGastos, catalogos, obtenerPresupuesto, ciclos = [] }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
   const [bancos, setBancos] = useState(BANCOS)
   const [moneda, setMoneda] = useState('CLP')
   const [filtroFacturado, setFiltroFacturado] = useState('todos')
   const [tipoCambio, setTipoCambio] = useState('')
 
-  const ciclos = reconciliacion.ciclos
-  const hayCiclo = bancos.some(banco => ciclos[banco])
+  const ciclosCierre = reconciliacion.ciclos
+  const hayCiclo = bancos.some(banco => ciclosCierre[banco])
   const filtro = hayCiclo ? filtroFacturado : 'todos'
   const etiquetaSeleccion = bancos.length === BANCOS.length ? 'Todas las tarjetas' : bancos.join(' + ')
 
@@ -81,9 +81,17 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
   const tasa = Number(tipoCambio)
   const tasaValida = tipoCambio.trim() !== '' && Number.isFinite(tasa) && tasa > 0 ? tasa : null
   const deuda = useMemo(
-    () => deudaEnPesos(gastos, { bancos, tipoCambio: tasaValida, ciclos }),
-    [gastos, bancos, tasaValida, ciclos],
+    () => deudaEnPesos(gastos, { bancos, tipoCambio: tasaValida, ciclos: ciclosCierre }),
+    [gastos, bancos, tasaValida, ciclosCierre],
   )
+
+  const nombresFondos = useMemo(() => {
+    const set = new Set()
+    for (const ciclo of ciclos) {
+      Object.keys(obtenerPresupuesto?.(ciclo)?.fondos || {}).forEach(nombre => set.add(nombre))
+    }
+    return [...set]
+  }, [ciclos, obtenerPresupuesto])
 
   const campoCategoria = FILTROS_FACTURADO.find(item => item.value === filtro).campo
   const categorias = metricas.categorias
@@ -92,14 +100,14 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
 
   const pendientes = useMemo(() => gastos
     .filter(gasto => bancos.includes(gasto.banco) && !gasto.pagado && gasto.estado !== 'descartado' && esMoneda(gasto, moneda))
-    .map(gasto => ({ ...gasto, facturado: facturadoGasto(gasto, ciclos[gasto.banco]) }))
+    .map(gasto => ({ ...gasto, facturado: facturadoGasto(gasto, ciclosCierre[gasto.banco]) }))
     .filter(gasto => {
       if (gasto.facturado == null) return true
       if (filtro === 'facturado') return gasto.facturado === true
       if (filtro === 'no_facturado') return gasto.facturado === false
       return true
     })
-    .sort((a, b) => b.fecha.localeCompare(a.fecha)), [gastos, bancos, moneda, ciclos, filtro])
+    .sort((a, b) => b.fecha.localeCompare(a.fecha)), [gastos, bancos, moneda, ciclosCierre, filtro])
 
   function toggleBanco(banco) {
     setBancos(prev => {
@@ -126,7 +134,7 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
       <div className="space-y-3">
         <div>
           <h1 className="font-heading text-xl text-white">Tarjetas de crédito</h1>
-          <p className="mt-1 text-xs text-slate-500">Deuda pendiente, lo ya facturado y cuánto tenés aportado para pagarla. Seleccioná los movimientos y registrá el pago cuando efectivamente salga.</p>
+          <p className="mt-1 text-xs text-slate-500">Deuda pendiente, lo ya facturado y cuánto tenés aportado para pagarla. Tocá un movimiento para editarlo. Seleccioná filas y registrá el pago cuando efectivamente salga.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border border-slate-700 bg-slate-800 p-0.5" role="group" aria-label="Tarjetas">
@@ -146,7 +154,7 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
             </div>
           )}
           <div className="flex flex-wrap gap-2 sm:ml-auto">
-            {BANCOS.map(banco => <CicloChip key={banco} banco={banco} diaCierre={ciclos[banco]} onGuardar={reconciliacion.guardarCiclo} />)}
+            {BANCOS.map(banco => <CicloChip key={banco} banco={banco} diaCierre={ciclosCierre[banco]} onGuardar={reconciliacion.guardarCiclo} />)}
           </div>
         </div>
       </div>
@@ -175,6 +183,8 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
           mostrarBanco={bancos.length > 1}
           onActualizarGasto={actualizarGasto}
           onPagar={registrarPago}
+          catalogos={catalogos}
+          nombresFondos={nombresFondos}
         />
 
         <aside className="space-y-5">

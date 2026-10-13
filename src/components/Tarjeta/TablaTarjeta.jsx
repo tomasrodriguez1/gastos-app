@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { getGastoId } from '../../utils/gastosIds'
 import { formatCLP, formatFecha } from '../../utils/formatters'
+import { EditarAsignacion } from '../Gastos/EditarAsignacion'
 import { formatMontoTarjeta as formatMonto } from './formato'
 
 function montoGasto(gasto, moneda) {
@@ -24,10 +25,11 @@ function Toggle({ activo, onClick, activoLabel, inactivoLabel, title }) {
   )
 }
 
-export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, onPagar }) {
+export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, onPagar, catalogos, nombresFondos = [] }) {
   const [seleccionados, setSeleccionados] = useState(new Set())
   const [totalOperacion, setTotalOperacion] = useState('')
   const [editandoId, setEditandoId] = useState(null)
+  const [editando, setEditando] = useState(null)
   const [valorSplit, setValorSplit] = useState('')
   const [procesando, setProcesando] = useState(false)
   const [error, setError] = useState('')
@@ -86,6 +88,16 @@ export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, 
     setEditandoId(null)
   }
 
+  function abrirEdicion(gasto, event) {
+    if (event.target.closest('[data-accion]')) return
+    setEditando(gasto)
+  }
+
+  function guardarEdicion(changes) {
+    onActualizarGasto(getGastoId(editando), changes)
+    setEditando(null)
+  }
+
   if (gastos.length === 0) {
     return <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-12 text-center text-slate-500">No hay gastos por pagar para esta selección.</div>
   }
@@ -133,20 +145,29 @@ export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, 
             {gastos.map((gasto, indice) => {
               const id = getGastoId(gasto, indice)
               return (
-                <tr key={id} className={seleccionados.has(id) ? 'bg-sky-500/[0.04]' : 'hover:bg-white/[0.02]'}>
-                  <td className="px-3 py-2.5 text-center"><input type="checkbox" checked={seleccionados.has(id)} onChange={() => toggleSeleccion(id)} /></td>
+                <tr
+                  key={id}
+                  onClick={event => abrirEdicion(gasto, event)}
+                  className={`cursor-pointer ${seleccionados.has(id) ? 'bg-sky-500/[0.04]' : 'hover:bg-white/[0.02]'}`}
+                >
+                  <td data-accion className="px-3 py-2.5 text-center"><input type="checkbox" checked={seleccionados.has(id)} onChange={() => toggleSeleccion(id)} /></td>
                   <td className="px-3 py-2.5 font-mono-numbers text-xs text-slate-500">{formatFecha(gasto.fecha)}</td>
                   {mostrarBanco && <td className="px-3 py-2.5 text-xs text-slate-400">{gasto.banco}</td>}
-                  <td className="max-w-xs px-3 py-2.5 text-slate-300"><div className="truncate" title={gasto.motivo}>{gasto.motivo}</div></td>
+                  <td className="max-w-xs px-3 py-2.5 text-slate-300">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="min-w-0 truncate" title={gasto.motivo}>{gasto.motivo}</div>
+                      <span className="shrink-0 text-xs text-slate-600" aria-hidden title="Editar gasto">✎</span>
+                    </div>
+                  </td>
                   <td className="px-3 py-2.5 text-right font-mono-numbers font-medium text-slate-200">{formatMonto(montoGasto(gasto, moneda), moneda)}</td>
-                  <td className="px-3 py-2.5 text-right">
+                  <td data-accion className="px-3 py-2.5 text-right">
                     {moneda === 'USD' ? <span className="text-slate-700">—</span> : editandoId === id ? (
                       <input type="number" autoFocus value={valorSplit} onChange={event => setValorSplit(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') confirmarSplit(id); if (event.key === 'Escape') setEditandoId(null) }} onBlur={() => confirmarSplit(id)} className="w-24 rounded-lg border border-slate-600 bg-slate-900 px-2 py-1 text-right font-mono-numbers text-slate-200" />
                     ) : (
                       <button onClick={() => empezarSplit(gasto, id)} className="font-mono-numbers text-sky-400 hover:text-sky-300">{formatCLP(gasto.split || 0)}</button>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 text-center"><Toggle activo={gasto.en_presupuesto !== false} onClick={() => onActualizarGasto(id, { en_presupuesto: gasto.en_presupuesto === false })} activoLabel="Incluido" inactivoLabel="Fuera" title="Impacta el presupuesto" /></td>
+                  <td data-accion className="px-3 py-2.5 text-center"><Toggle activo={gasto.en_presupuesto !== false} onClick={() => onActualizarGasto(id, { en_presupuesto: gasto.en_presupuesto === false })} activoLabel="Incluido" inactivoLabel="Fuera" title="Impacta el presupuesto" /></td>
                   <td className="px-3 py-2.5 text-center">
                     {gasto.facturado === true && <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[11px] text-violet-400">Facturado</span>}
                     {gasto.facturado === false && <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-400">No facturado</span>}
@@ -158,6 +179,16 @@ export function TablaTarjeta({ gastos, moneda, mostrarBanco, onActualizarGasto, 
           </tbody>
         </table>
       </div>
+
+      {editando && (
+        <EditarAsignacion
+          gasto={editando}
+          onGuardar={guardarEdicion}
+          onCerrar={() => setEditando(null)}
+          catalogos={catalogos}
+          nombresFondos={nombresFondos}
+        />
+      )}
     </div>
   )
 }
