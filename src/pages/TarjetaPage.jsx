@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { TilesTarjeta } from '../components/Tarjeta/TilesTarjeta'
+import { deudaEnPesos } from '../components/Tarjeta/deudaEnPesos'
 import { TablaTarjeta } from '../components/Tarjeta/TablaTarjeta'
 import { CicloChip } from '../components/Tarjeta/CicloChip'
 import { HistorialFondo } from '../components/Tarjeta/HistorialFondo'
@@ -63,6 +64,7 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
   const [bancos, setBancos] = useState(BANCOS)
   const [moneda, setMoneda] = useState('CLP')
   const [filtroFacturado, setFiltroFacturado] = useState('todos')
+  const [tipoCambio, setTipoCambio] = useState('')
 
   const ciclos = reconciliacion.ciclos
   const hayCiclo = bancos.some(banco => ciclos[banco])
@@ -76,6 +78,12 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
   const metricas = useMemo(() => sumarMetricas(porBanco.map(item => item.metricas), moneda), [porBanco, moneda])
   const global = reconciliacion.resumen?.totales?.[moneda] || VACIO
   const saldoFondo = reconciliacion.fondo?.saldos?.[moneda] || 0
+  const tasa = Number(tipoCambio)
+  const tasaValida = tipoCambio.trim() !== '' && Number.isFinite(tasa) && tasa > 0 ? tasa : null
+  const deuda = useMemo(
+    () => deudaEnPesos(gastos, { bancos, tipoCambio: tasaValida }),
+    [gastos, bancos, tasaValida],
+  )
 
   const campoCategoria = FILTROS_FACTURADO.find(item => item.value === filtro).campo
   const categorias = metricas.categorias
@@ -154,6 +162,9 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
         saldoFondo={saldoFondo}
         onAportar={reconciliacion.aportarFondo}
         onAjustarSaldo={reconciliacion.ajustarSaldoFondo}
+        deuda={deuda}
+        tipoCambio={tipoCambio}
+        onTipoCambio={setTipoCambio}
       />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
