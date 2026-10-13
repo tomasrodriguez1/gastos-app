@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { deudaEnPesos } from './deudaEnPesos'
+import { deudaEnPesos, fondoEnPesos } from './deudaEnPesos'
 
 const bancos = ['Edwards', 'BICE']
 
@@ -81,5 +81,43 @@ describe('deudaEnPesos', () => {
     expect(deuda.total).toBe(4000)
     expect(deuda.movimientosClp).toBe(1)
     expect(deuda.sinConvertir).toBe(0)
+  })
+
+  test('separa lo ya facturado según el día de cierre', () => {
+    const deuda = deudaEnPesos([
+      { banco: 'Edwards', monto: 1000, fecha: '2026-09-20' },
+      { banco: 'Edwards', monto: 4000, fecha: '2026-10-10' },
+      { banco: 'BICE', monto: 0, usd: 10, monto_clp_manual: 9000, fecha: '2026-09-01' },
+    ], { bancos, ciclos: { Edwards: 22, BICE: 22 }, hoyISO: '2026-10-13' })
+
+    expect(deuda.facturado).toBe(10000)
+    expect(deuda.total).toBe(14000)
+  })
+
+  test('sin día de cierre nada cuenta como facturado', () => {
+    const deuda = deudaEnPesos([
+      { banco: 'Edwards', monto: 1000, fecha: '2026-09-20' },
+    ], { bancos, hoyISO: '2026-10-13' })
+
+    expect(deuda.facturado).toBe(0)
+    expect(deuda.total).toBe(1000)
+  })
+})
+
+describe('fondoEnPesos', () => {
+  test('suma el fondo CLP y convierte el USD con la tasa del KPI', () => {
+    expect(fondoEnPesos({ CLP: 190289, USD: 12.5 }, 980)).toEqual({
+      total: 202539,
+      clp: 190289,
+      usd: 12.5,
+      usdClp: 12250,
+      usdSinConvertir: false,
+    })
+  })
+
+  test('sin tasa el fondo en USD queda fuera', () => {
+    const fondo = fondoEnPesos({ CLP: 1000, USD: 10 }, null)
+    expect(fondo.total).toBe(1000)
+    expect(fondo.usdSinConvertir).toBe(true)
   })
 })

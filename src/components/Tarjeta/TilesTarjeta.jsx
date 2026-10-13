@@ -187,14 +187,14 @@ function DesgloseBancos({ filas, total, moneda }) {
   )
 }
 
-export function TilesTarjeta({ moneda, etiquetaSeleccion, metricas, global, porBanco, saldoFondo, onAportar, onAjustarSaldo, deuda, tipoCambio, onTipoCambio }) {
+export function TilesTarjeta({ moneda, etiquetaSeleccion, metricas, global, porBanco, saldoFondo, onAportar, onAjustarSaldo, deuda, tipoCambio, onTipoCambio, fondoSaldos }) {
   const movimientos = metricas.movimientos
   const faltaAportar = (global.por_pagar || 0) - saldoFondo
   const conCiclo = metricas.facturados + metricas.no_facturados > 0
 
   return (
     <div className="space-y-3">
-      {deuda && <DeudaEnPesosCard deuda={deuda} tipoCambio={tipoCambio} onTipoCambio={onTipoCambio} />}
+      {deuda && <DeudaEnPesosCard deuda={deuda} tipoCambio={tipoCambio} onTipoCambio={onTipoCambio} fondoSaldos={fondoSaldos} />}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card label="Gasto total" value={metricas.por_pagar} moneda={moneda}>
           <div>{etiquetaSeleccion} · {movimientos} movimientos por pagar</div>

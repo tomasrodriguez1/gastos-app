@@ -81,8 +81,8 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
   const tasa = Number(tipoCambio)
   const tasaValida = tipoCambio.trim() !== '' && Number.isFinite(tasa) && tasa > 0 ? tasa : null
   const deuda = useMemo(
-    () => deudaEnPesos(gastos, { bancos, tipoCambio: tasaValida }),
-    [gastos, bancos, tasaValida],
+    () => deudaEnPesos(gastos, { bancos, tipoCambio: tasaValida, ciclos }),
+    [gastos, bancos, tasaValida, ciclos],
   )
 
   const campoCategoria = FILTROS_FACTURADO.find(item => item.value === filtro).campo
@@ -165,6 +165,7 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
         deuda={deuda}
         tipoCambio={tipoCambio}
         onTipoCambio={setTipoCambio}
+        fondoSaldos={reconciliacion.fondo?.saldos}
       />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
