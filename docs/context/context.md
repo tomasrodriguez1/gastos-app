@@ -25,7 +25,8 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 | `/log` | Log de últimos gastos ingresados (todos los meses), ordenado por `created_at`, resalta lo nuevo desde la última visita, edición inline. También es la bandeja de revisión de gastos `pendiente`/`error_parseo` llegados por `/api/ingesta` (filtro por estado, confirmar individual o en bloque) |
 | `/bandeja` | Bandeja dedicada de gastos `pendiente`/`error_parseo` (filtros por banco/tipo/contexto/búsqueda, confirmar individual o en bloque) — acceso vía `BotonBandeja` |
 | `/agente` | Agente conversacional (F3): captura en lenguaje natural, triage de bandeja (listar/resumir/editar, nunca confirma), consultas de solo lectura del ciclo, aviso de duplicados al crear. Streaming de pasos con `useChat`. Layout en dos columnas en desktop: chat a la izquierda y bandeja (`BandejaLista`) embebida y colapsable a la derecha. También accesible desde cualquier página vía `AgenteFlotante` |
-| `/presupuesto` | Editor de presupuesto por ciclo financiero (ingresos previstos, categorías, fondos) + registro de ingresos reales (tabla `ingreso`, separada de la previsión): alta manual con fecha/fuente/monto/nota, lista del ciclo con borrado y total (los ingresos de un pago de clases no se borran acá: se deshace el pago en `/clases`), también registrable por el agente |
+| `/presupuesto` | Editor de presupuesto por ciclo financiero (ingresos previstos —con todas las fuentes activas del catálogo, aunque el ciclo no tenga monto—, categorías, fondos) y un resumen de ingresos reales del ciclo (real, previsto, por aprobar) con enlace a `/ingresos` |
+| `/ingresos` | Ingresos reales (DEC-020). **Por aprobar**: lo que registraron el agente, el MCP o un pago de clases por MCP, con Aprobar / Editar / Descartar (no cuenta hasta aprobar; un pago de clases se aprueba completo). **Previsto vs real del ciclo** por fuente (real, esperado, estado: llegó / por aprobar / pendiente / atrasado; Clases con lo por cobrar y por confirmar; Uso de fondos aparte). **Registrar ingreso** manual (queda confirmado, avisa de posibles duplicados). Lista del ciclo con editar/borrar (los de pagos de clases no se tocan acá: se deshace el pago en `/clases`). **Fuentes de ingreso** (catálogo: tipo, día esperado, activar/desactivar). El menú muestra un contador de pendientes |
 | `/tarjeta` | Vista consolidada de tarjetas Edwards/BICE (multi-selección) en CLP o USD: gasto total pendiente, ya facturado / no facturado, fondo común aportado manualmente (`fondo_tarjeta_movimiento`: aportes, ajustes y pagos automáticos) y falta aportar, con barra de cobertura y desglose por tarjeta. Arriba, un KPI de deuda en pesos suma el CLP pendiente y los USD convertidos (`monto_clp_manual`, o un tipo de cambio escrito en el KPI que no se guarda); a la derecha del monto muestra la cobertura en pesos (facturado, no facturado y fondo, con el fondo USD convertido a esa tasa). Es una vista para planificar, no la deuda que se paga. Registro de pago directo, una tarjeta y moneda a la vez. Día de cierre configurable por tarjeta (`tarjeta_ciclo`, chip en la barra de filtros) para distinguir movimientos ya facturados de los que aún no. Al presionar un movimiento se abre el mismo formulario de edición que en `/gastos` |
 | `/fondos` | **FGP** (Fondo Gastos Previstos, DEC-016): saldo acumulado con arrastre entre ciclos, gastos FGP con tarjeta pendientes de mover al fondo TC (mover / marcar como ya movido, por gasto, por ciclo o todo, con historial desde el primer ciclo con líneas FGP), cobertura de saldo negativo (fondo de ahorro manual, próximo sueldo = déficit, u otro origen), compromisos con el próximo sueldo, historial de excesos por ciclo y movimientos deshacibles. Un aviso global (`AvisoFGP`) en todas las páginas salvo `/fondos` recuerda lo pendiente de mover y el saldo en rojo; la card FGP de `/cashflow` muestra saldo acumulado y pendiente. Además agrupa los tres sistemas de "fondo" (ver F6 abajo) en una sola vista, los tres con el mismo formato aporte(+)/pago(−)/ajuste(±) — ver DEC-015: fondos de ahorro del presupuesto (`presupuesto_fondo`, mismo componente `FondosAhorro` y mismo dato que el Dashboard — aportar/usar/archivar desde cualquiera de las dos páginas actualiza lo mismo; "Ver movimientos" combina aportes [gastos de la categoría si está vinculado, o el libro `fondo_ahorro_movimiento` si es manual — ahí sí es la fuente del saldo] con pagos [siempre gastos con `financiado_por`, nunca duplicados]), reservas de ahorro externas (crear/editar/archivar, registrar saldo leído con desglose Pago/Aporte/Ajuste, historial — antes solo gestionable por el agente) y el fondo de tarjeta con su historial completo de movimientos (mismo componente que `/tarjeta`, ya era el modelo de referencia) y link para gestionarlo ahí. El Dashboard conserva su propio bloque de fondos de ahorro (no se quitó, solo se duplicó la vista) |
 | `/clases` | Clases particulares (módulo aparte, DEC-019; reemplaza la base de Notion). Tiene: tabla por mes calendario como la de Notion (alumno, fecha, hora, modalidad, dictada, cobro, precio, horas), con filtros por estado/cobro y un pie con cantidad, suma de precios y suma de lo dictado; alta y "Mover" (fecha, hora, duración, modalidad o precio) de clases programadas y sin cobrar; marcar dictada; cancelar si no está pagada; eliminar si no está pagada; deuda por alumno (dictado y no cobrado, desde la clase impaga más vieja); familias (cuenta de cobro: hermanos + apoderado con WhatsApp; la deuda se agrupa por familia); "Cobrar" arma un mensaje para WhatsApp (saludo al apoderado, cada clase con su fecha por alumno, subtotales y total del mes; sin datos de transferencia) con botones Copiar y Abrir WhatsApp, y desde el mismo panel se registra el pago de varias clases (de un alumno o de los hermanos de una familia) en un pago, que crea un ingreso real "Clases particulares"; deshacer un pago; alumnos (alta, precio por hora, desactivar; no se borran); y un KPI con los ingresos de clases de un ciclo, por fecha de pago. No toca la tarjeta Ingresos del Dashboard |
@@ -155,10 +156,13 @@ snapshot del prompt). Detalle del cálculo de "esperado" (retiros implícitos po
 vinculada + crecimiento estimado) en `docs/context/data_model_context.md`.
 
 **Ingresos reales:** distinto de "ingresos previstos" del presupuesto (previsión planificada,
-`presupuesto_ingreso`, no se toca desde el agente). Tools `listar_ingresos` (lectura, por ciclo)
-y `registrar_ingreso` (fuente/monto/fecha/nota, `origen='chat'`), con el mismo patrón de resumen +
-confirmación explícita en el turno siguiente que `crear_gasto`/`crear_reserva`. Sin detección de
-duplicados — ver GAP abajo.
+`presupuesto_ingreso`, no se toca desde el agente). Tools `listar_ingresos` (lectura, por ciclo,
+con `estado` y las fuentes válidas del catálogo) y `registrar_ingreso` (fuente del catálogo, monto
+entero, fecha, nota, `fondo` si es "Uso de fondos", `ignorar_duplicado`). Mantiene el resumen +
+confirmación explícita en el chat, y además lo que registra queda **pendiente** de aprobación
+humana en `/ingresos` (`origen='chat'`, `estado='pendiente'`; DEC-020): el agente debe decir que no
+cuenta todavía. Si hay un ingreso parecido devuelve los candidatos sin crear nada. No registra
+ingresos de Clases particulares (eso es un pago de clases) y no tiene tools de clases.
 
 **Historial de conversaciones (persistencia):** cada mensaje (`UIMessage` con su `parts[]`,
 incluidos los tool-calls) se guarda en `agente_conversaciones`/`agente_mensajes`
@@ -203,7 +207,9 @@ decisión en DEC-018.
 
 `POST /mcp` — servidor MCP (Streamable HTTP, `@modelcontextprotocol/sdk`) para agentes externos,
 en el mismo proceso. Auth propia: `Authorization: Bearer <MCP_TOKEN>`, exento del gate global y
-con 401 siempre sin token, también en dev. Tiene 15 tools.
+con 401 siempre sin token, también en dev. Tiene 17 tools. **Ninguna escritura queda confirmada**:
+los gastos quedan pendientes en la bandeja y los ingresos y pagos de clases quedan por aprobar en
+`/ingresos` (human in the loop).
 
 **Gastos (6):**
 - `crear_gasto`: la única escritura. Deja el gasto `pendiente` con `origen='mcp'` vía
@@ -214,12 +220,21 @@ con 401 siempre sin token, también en dev. Tiene 15 tools.
 **Clases particulares (9, DEC-019):**
 - Lectura: `listar_alumnos`, `buscar_clases`, `resumen_clases`.
 - Escritura: `crear_alumno`, `agendar_clase`, `mover_clase`, `marcar_dictada`, `cancelar_clase` y
-  `registrar_pago`, que crea el ingreso.
-- No pueden borrar alumnos, clases ni pagos, deshacer un pago, editar ingresos ni tocar gastos o
-  presupuesto.
+  `registrar_pago`, que deja el pago y su ingreso **por confirmar** (las clases siguen sin cobrar
+  hasta que un humano lo apruebe).
+- No pueden borrar alumnos, clases ni pagos, confirmar ni deshacer un pago, editar ingresos ni
+  tocar gastos o presupuesto.
 
-Implementación en `server/mcp/` (`tools.js`, `toolsClases.js`), `server/consultas/gastos.js` y
-`server/clases/clases.js`. Contrato y ejemplos en `docs/architecture/integrations.md`. Decisiones
+**Ingresos (2, DEC-020):**
+- `registrar_ingreso`: escritura. Deja el ingreso `pendiente` (`origen='mcp'`) con fuente del
+  catálogo, monto entero y fecha no futura; `code: duplicado` si hay uno parecido; rechaza la fuente
+  automática (Clases particulares).
+- `resumen_ingresos` (lectura): previsto vs real por fuente del ciclo, totales y pendientes.
+- No hay tool para aprobar, editar ni borrar ingresos.
+
+Implementación en `server/mcp/` (`tools.js`, `toolsClases.js`, `toolsIngresos.js`),
+`server/consultas/gastos.js`, `server/clases/clases.js`, `server/ingresos.js` e
+`server/ingresosCiclo.js`. Contrato y ejemplos en `docs/architecture/integrations.md`. Decisiones
 en DEC-017 y DEC-019. El agente interno de `/agente` no tiene las tools de clases.
 
 ## API — Clases particulares
@@ -236,10 +251,11 @@ en DEC-017 y DEC-019. El agente interno de `/agente` no tiene las tools de clase
 | `PATCH /:id` | Mover o editar una clase programada y sin cobrar |
 | `POST /:id/dictada`, `POST /:id/cancelar` | Cambios de estado |
 | `DELETE /:id` | Elimina una clase sin cobrar; una pagada → 409. Las importadas no vuelven al reimportar |
-| `GET /resumen?desde&hasta&ciclo` | Horas, dictado, cobrado, deuda por alumno, deuda por familia y `ingresos_ciclo` (Σ `ingreso` de fuente "Clases particulares" del ciclo) |
+| `GET /resumen?desde&hasta&ciclo` | Horas, dictado, cobrado (solo pagos confirmados), deuda por alumno y por familia (con `por_confirmar`) y `ingresos_ciclo` (Σ `ingreso` confirmados de fuente "Clases particulares" del ciclo) |
 | `GET /analisis` | `{ clases }`: todas las clases dictadas, compactas, para `/clases/analisis` |
 | `GET/POST /pagos` | `POST` recibe `{ clase_ids, fecha, monto? }` |
-| `DELETE /pagos/:id` | Deshace el pago: las clases vuelven a pendiente y se borra el ingreso |
+| `POST /pagos/:id/confirmar` | Aprueba un pago por confirmar: pago e ingreso confirmados y clases pagadas |
+| `DELETE /pagos/:id` | Deshace el pago (o descarta uno por confirmar): las clases vuelven a pendiente y se borra el ingreso |
 
 Errores: `{ error, code }` con `code` ∈ `validacion` (400), `no_encontrado` (404) y `conflicto`
 (409). El modelo y las reglas están en `docs/context/data_model_context.md`. El import desde Notion
@@ -254,6 +270,25 @@ comercio normalizado (`src/utils/comercio.js`). Se consulta **antes** del LLM ta
 `/api/ingesta` como en `/api/agente/chat`. En el mail la cascada es memoria (gratis) →
 clasificador del agente → Groq → sin clasificar. Gestión mínima en `GET/DELETE /api/comercios`,
 sin UI dedicada todavía.
+
+## API — Ingresos
+
+`/api/ingresos/*`, detrás del gate global (`server/routes/ingresos.js`). Dominio en
+`server/ingresos.js` (catálogo, CRUD, duplicados) y `server/ingresosCiclo.js` (aprobar y resumen).
+
+| Endpoint | Qué hace |
+|----------|----------|
+| `GET /?ciclo&estado` | Ingresos (pendientes y confirmados) |
+| `POST /` | Alta manual: fuerza `origen='manual'` y `estado='confirmado'` (ignora ambos del body) |
+| `PATCH /:id`, `DELETE /:id` | Editar / borrar; los de `origen='clases'` → 409 |
+| `GET /pendientes` | Por aprobar, con el detalle del pago si vienen de clases |
+| `POST /:id/confirmar` | Aprueba (uno de clases: confirma su pago completo) |
+| `POST /:id/descartar` | Descarta un pendiente (uno de clases: deshace su pago) |
+| `GET /resumen?ciclo` | Previsto vs real por fuente + totales (`previsto`, `real`, `esperado`, `por_aprobar`, `fondos`) |
+| `GET /similares?fuente&monto&fecha` | Posibles duplicados |
+| `GET/POST /fuentes`, `PATCH /fuentes/:id` | Catálogo de fuentes |
+
+Errores: `{ error, code }` con `code` ∈ `validacion` (400), `no_encontrado` (404), `conflicto` (409).
 
 ## API — Autenticación
 
@@ -293,17 +328,21 @@ etc.) no cambió — sigue detrás del mismo gate global, ahora combinado (sesi�
   puede crecer la fila/DB con el tiempo si se suben muchas fotos.
 - GAP: no hay forma de borrar o renombrar una conversación del agente desde la UI — solo
   listar (`GET /api/agente/conversaciones`) y reabrir.
-- GAP: ingresos reales (tabla `ingreso`) no tienen detección de duplicados — ni la UI de
-  `/presupuesto` ni el agente avisan si el mismo ingreso se registra dos veces el mismo día.
+- GAP: ingresos (DEC-020). "Uso de fondos" no descuenta el saldo de la reserva o del fondo de
+  ahorro, y registrarlo además de un gasto con `financiado_por` cuenta doble (la UI lo advierte,
+  no lo bloquea). El agente de `/agente` no tiene las tools de clases, así que "Isabel me
+  transfirió" no propone el pago de la familia. "Otros" del previsto es una mezcla que el usuario
+  separará. Sin captura de ingresos por mail (decisión del usuario, por ahora).
 - GAP: `fondo_ahorro_movimiento` (libro de aportes/ajustes de fondos de ahorro manuales, ahora
   la fuente real del saldo — ver DEC-015) no tiene fila inicial para fondos creados/editados
   antes de esa migración; el saldo desde ese punto en adelante es correcto pero el historial de
   un fondo viejo puede arrancar sin explicación.
 - GAP: clases particulares. Las clases importadas de Notion como `Pagado` no tienen fila en `pago`
-  ni ingreso, así que no suman a "cobrado" ni a ingresos. El KPI de ingresos de `/clases` suma por
-  fuente "Clases particulares": un ingreso manual con esa fuente también entra. El formato real
-  del export de Notion no está verificado (no hay archivo en el repo). `buscar_clases.actualizada_desde`
-  depende de `updated_at`, que solo se actualiza por la app.
-- GAP: la card "Ingresos" del Dashboard y el "Saldo" siguen calculándose sobre el previsto
-  (`presupuesto_ingreso`), no sobre el ingreso real — el real solo se muestra como dato adicional.
-  Cambiar esa semántica (que el saldo use el ingreso real) es una decisión aparte, no tomada acá.
+  ni ingreso, así que no suman a "cobrado" ni a ingresos. El formato real del export de Notion se
+  validó con el CSV del usuario (checkbox `Property`, `Horas` como `1:30` / `1 (2)`).
+  `buscar_clases.actualizada_desde` depende de `updated_at`, que solo se actualiza por la app.
+- El Dashboard (DEC-020): la card "Ingresos" muestra el ingreso **real confirmado** (con el previsto
+  y lo por aprobar en el detalle), y hay dos saldos: **Saldo real** (real + uso de fondos −
+  gastado) y **Saldo esperado** (esperado + uso de fondos − gastado). Al comienzo del ciclo, antes de
+  que llegue el sueldo, el saldo real es negativo. `/cashflow`, `resumenCiclo` y la tool
+  `resumen_presupuesto` siguen usando el ingreso previsto.

@@ -78,7 +78,7 @@ export function Alumnos({ alumnos, familias = [], onCrear, onEditar }) {
       {alumnos.length === 0 ? (
         <p className="text-sm text-slate-500 text-center py-2">Sin alumnos todavía.</p>
       ) : (
-        <div className="space-y-1.5">
+        <div className="max-h-80 space-y-1.5 overflow-y-auto scrollbar-thin pr-1">
           {alumnos.map(a => (
             <div key={a.id} className={`flex items-center justify-between gap-2 text-sm ${a.activo ? '' : 'opacity-50'}`}>
               <div className="min-w-0">

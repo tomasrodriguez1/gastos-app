@@ -315,7 +315,9 @@ Consequences: confirmar un gasto sigue siendo un acto humano en `/bandeja` o `/l
 con el token puede crear gastos pendientes, pero no confirmarlos, editarlos ni borrarlos. Se
 agrega una dependencia (`@modelcontextprotocol/sdk`). No hay rate limiting en `/mcp`.
 Update 2026-10-16: DEC-019 agrega 9 tools de clases particulares, con escrituras propias (alumnos,
-clases y pagos que crean un ingreso). Para gastos, `crear_gasto` sigue siendo la única escritura.
+clases y pagos). Para gastos, `crear_gasto` sigue siendo la única escritura. DEC-020 agrega
+`registrar_ingreso` y `resumen_ingresos`, y deja el pago de clases por confirmar: ninguna escritura
+del MCP queda confirmada, un humano aprueba.
 
 ## DEC-018 - Agente por Telegram con n8n como tubo y avisos de gastos flacos
 
@@ -376,10 +378,49 @@ cubrir clases de hermanos de una misma familia (antes: solo un alumno), porque e
 todo junto con una transferencia. Sigue siendo un solo ingreso por pago. El mensaje de cobro para
 WhatsApp se arma en el cliente (`src/utils/mensajeCobro.js`) y no se guarda; no hay envío
 automático.
+Update (DEC-020): el pago registrado por MCP queda por confirmar (pago e ingreso `pendiente`) y las
+clases siguen sin cobrar hasta que un humano lo apruebe; la tarjeta Ingresos del Dashboard ahora
+muestra el ingreso real (ver DEC-020).
 Consequences: la tarjeta Ingresos del Dashboard sigue usando la previsión (`presupuesto_ingreso`);
 los ingresos de clases solo aparecen como ingreso real. El MCP ahora tiene escrituras fuera de la
 bandeja de gastos; un cliente con `MCP_TOKEN` puede crear clases y registrar pagos, pero no
 borrarlos. Se agrega el code de error `conflicto`.
+
+## DEC-020 - Ingresos con catálogo de fuentes, aprobación humana y saldo real en el Dashboard
+
+Date: 2026-10-16
+Context: los ingresos estaban dispersos: el previsto del presupuesto con fuentes en texto libre
+(lo único que usaba el Dashboard), una tabla de ingresos reales casi sin uso que el agente
+escribía directo, y los pagos de clases, que por MCP creaban el ingreso sin que nadie lo revisara.
+Se quiere que lo que registra una IA pase siempre por una persona, como los gastos del MCP.
+Decision:
+- **Cuatro vías de entrada**: manual (UI), agente, MCP y pagos de clases. Por mail todavía no.
+- **Human in the loop**: lo que registran el agente y el MCP nace `estado='pendiente'` y no cuenta
+  como ingreso real hasta que se aprueba en `/ingresos`. Lo manual nace confirmado. El
+  `registrar_pago` del MCP también: el pago y su ingreso nacen `pendiente`, las clases siguen sin
+  cobrar y un humano confirma (pago, ingreso y clases pagadas, en una transacción). Desde la UI de
+  `/clases` el pago se sigue registrando directo. No hay tool MCP que apruebe, edite o borre.
+- **Catálogo `fuente_ingreso`** (Sueldo Zalantos, Clases particulares, Proyectos propios, Mesada,
+  Otros, Uso de fondos), con tipo (fijo / variable / fondos) y día esperado para detectar atrasos.
+  El texto `fuente` de `ingreso` y `presupuesto_ingreso` usa el nombre canónico (sin FK, para no
+  romper el historial); la migración renombra el previsto sin tocar montos. Clases particulares es
+  automática: solo la alimentan los pagos de clases.
+- **Uso de fondos** es una fuente aparte: suma al saldo pero no es ingreso nuevo. v1 no descuenta el
+  saldo del fondo.
+- **Dashboard**: la card Ingresos muestra el real confirmado (previsto y por aprobar en el detalle)
+  y el Saldo se separa en **Saldo real** (real + fondos − gastado) y **Saldo esperado** (esperado +
+  fondos − gastado, donde esperado = lo previsto que falta llegar, lo que deben las clases y lo por
+  aprobar). Cierra el GAP de que el saldo usaba el previsto. `/cashflow`, `resumenCiclo` y
+  `resumen_presupuesto` no cambian.
+- Duplicados: aviso por fuente, monto ±10 % y fecha ±5 días (MCP: `code: duplicado`).
+Alternatives considered: que el MCP escriba ingresos confirmados con aviso de duplicados
+(descartada: se quiere revisión humana siempre); una FK de `ingreso.fuente` al catálogo (descartada:
+complica renombrar y el historial); mantener el saldo sobre el previsto (descartada: no refleja la
+plata que realmente entró).
+Consequences: antes de que llegue el sueldo del ciclo el Saldo real es negativo (por eso se muestra
+junto al esperado). Hay que aprobar lo que registran las IAs; el menú muestra un contador. El agente
+de `/agente` no tiene las tools de clases, así que no propone el pago de clases a partir de "me
+transfirieron". Una fuente nueva tiene que existir en el catálogo antes de usarse.
 
 ## GAP: decisions to document
 

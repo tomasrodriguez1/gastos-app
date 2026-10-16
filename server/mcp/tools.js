@@ -1,5 +1,5 @@
 // Tools del servidor MCP: 6 de gastos (acá) + 9 de clases particulares
-// (toolsClases.js). Capa fina: validan el input (antes de tocar la DB) y
+// (toolsClases.js) + 2 de ingresos (toolsIngresos.js). Capa fina: validan el input (antes de tocar la DB) y
 // delegan en funciones que ya usa la app — ejecutarCrearGasto (mismo camino que
 // el chat de /agente), resumenCiclo, cargarCatalogos, el read service de
 // server/consultas/gastos.js y server/clases/clases.js. Sin SQL acá.
@@ -7,8 +7,11 @@
 // Gastos: la única escritura es crear_gasto, que deja el gasto en estado
 // 'pendiente' en la bandeja (/bandeja, /log). No hay tools para confirmar,
 // editar ni borrar gastos, ni para escribir presupuesto, fondos o catálogos.
-// Clases: crean alumnos/clases y cambian estados; registrar_pago crea el
-// ingreso de clases. No borran nada ni reabren un pago (ver toolsClases.js).
+// Clases: crean alumnos/clases y cambian estados. No borran nada ni reabren un pago (ver
+// toolsClases.js).
+// Ingresos: registrar_ingreso y registrar_pago (clases) dejan el ingreso y el pago PENDIENTES de
+// aprobación humana en /ingresos, igual que crear_gasto en la bandeja: ninguna escritura del MCP
+// queda confirmada (DEC-020).
 //
 // Todas responden { ok: true, data, meta } o { ok: false, error, code } con
 // code ∈ validacion | no_autorizado | duplicado | no_encontrado | conflicto | interno.
@@ -16,6 +19,7 @@
 import { z } from 'zod'
 import { ErrorTool } from './errores.js'
 import { TOOLS_CLASES, depsClases } from './toolsClases.js'
+import { TOOLS_INGRESOS, depsIngresos } from './toolsIngresos.js'
 import { cargarCatalogos } from '../catalogos.js'
 import { ejecutarCrearGasto } from '../agente.js'
 import { obtenerGastoPorId } from '../gastos/actualizar.js'
@@ -483,6 +487,7 @@ export const TOOLS = [
   resumenPresupuesto,
   listarCatalogos,
   ...TOOLS_CLASES,
+  ...TOOLS_INGRESOS,
 ]
 
 export const depsPorDefecto = {
@@ -493,6 +498,7 @@ export const depsPorDefecto = {
   resumirGastos,
   resumenCiclo,
   ...depsClases,
+  ...depsIngresos,
   ahora: () => new Date(),
 }
 

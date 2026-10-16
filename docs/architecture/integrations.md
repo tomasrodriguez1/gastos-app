@@ -55,8 +55,8 @@ Principales grupos:
 - Fondo de tarjetas (`GET /api/tarjeta/fondo`, `POST /api/tarjeta/fondo/aportes`, `PUT /api/tarjeta/fondo/saldo`, `DELETE /api/tarjeta/fondo/movimientos/:id`) — fondo común manual por moneda; `pagar` descuenta automáticamente
 - Reserva de tarjeta legacy (`GET/PUT /api/reserva-tarjeta`) — LEGACY, ya no usado por la UI; se conserva por el dato histórico
 - Reservas de ahorro F6 (`GET/POST /api/reservas`, `PATCH /api/reservas/:id`, `GET/POST /api/reservas/:id/saldos`) — bolsillos externos (Mercado Pago); UI en `/fondos` además del agente. `POST /:id/saldos` (`{ monto, fecha }`) es el camino manual — registra con `origen='manual'`, usando la misma `registrarSaldo()` que ya usaba el agente con `origen='foto_agente'`. La respuesta (y cada fila de `GET /:id/saldos`) incluye `retiros`/`crecimiento`: el desglose de cuánto de la diferencia fueron gastos de la categoría vinculada vs rendimiento estimado
-- Ingresos reales (`GET /api/ingresos?ciclo=YYYY-MM`, `POST /api/ingresos`, `PATCH/DELETE /api/ingresos/:id`) — registro manual (UI en `/presupuesto`) o por el agente (`origen='chat'`); separado de `presupuesto_ingreso` (previsión, se reescribe cada PUT)
-- Clases particulares (`/api/clases/*`: alumnos, clases, `DELETE /:id` para eliminar una clase sin cobrar, `analisis` (clases dictadas para el dashboard `/clases/analisis`), `resumen`, `pagos`, `DELETE /pagos/:id` para deshacer). Es la UI de `/clases`, detrás del gate global. Detalle en `docs/context/context.md` ("API — Clases particulares") y modelo en `data_model_context.md`. `POST /pagos` crea un `ingreso` con `origen='clases'` en la misma transacción. `PATCH/DELETE /api/ingresos/:id` sobre ese ingreso responden 409
+- Ingresos reales (`/api/ingresos/*`, DEC-020): `GET /?ciclo&estado`, `POST /` (manual, siempre confirmado), `PATCH/DELETE /:id`, `GET /pendientes`, `POST /:id/confirmar`, `POST /:id/descartar`, `GET /resumen?ciclo` (previsto vs real por fuente y totales; lo usa el Dashboard), `GET /similares`, `GET/POST /fuentes`, `PATCH /fuentes/:id` (catálogo). UI en `/ingresos`. Lo que registran el agente (`origen='chat'`) y el MCP (`origen='mcp'`) queda `pendiente` hasta que se aprueba; separado de `presupuesto_ingreso` (previsión, se reescribe cada PUT). Detalle en `docs/context/context.md` ("API — Ingresos")
+- Clases particulares (`/api/clases/*`: alumnos, clases, `DELETE /:id` para eliminar una clase sin cobrar, `analisis` (clases dictadas para el dashboard `/clases/analisis`), `resumen`, `pagos`, `DELETE /pagos/:id` para deshacer). Es la UI de `/clases`, detrás del gate global. Detalle en `docs/context/context.md` ("API — Clases particulares") y modelo en `data_model_context.md`. `POST /pagos` crea el pago y un `ingreso` con `origen='clases'` en la misma transacción (confirmados; por MCP quedan por confirmar y se aprueban con `POST /pagos/:id/confirmar` o desde `/ingresos`). `PATCH/DELETE /api/ingresos/:id` sobre ese ingreso responden 409
 - Aportes a fondos de ahorro sin vincular (`GET/POST /api/fondos-ahorro/:nombre/movimientos`) — log informativo de cada "+ Aportar" manual en el Dashboard/`/fondos`; no reemplaza `presupuesto_fondo.acumulado`, que sigue siendo el saldo autoritativo
 - FGP — Fondo Gastos Previstos (`GET/POST /api/fgp/movimientos`, `DELETE /api/fgp/movimientos/:id`, `POST /api/fgp/traspasos`) — libro de lo no derivable del FGP (DEC-016). `POST /movimientos` (`{ tipo: 'cobertura'|'deficit'|'ajuste', ciclo, monto, fecha?, origen?, fondo_nombre?, nota? }`; `fondo_nombre` solo en cobertura y además inserta un `ajuste` negativo en `fondo_ahorro_movimiento`). `POST /traspasos` (`{ gasto_ids, modo: 'mover'|'marcar' }`): `mover` crea un único aporte CLP en `fondo_tarjeta_movimiento` por el total (`montoDelCiclo` de cada gasto, solo bancos Edwards/BICE) y una fila `traspaso_tc` por gasto; `marcar` solo deja la fila. Omite (y lo informa en `omitidos`) ids inexistentes o ya movidos. `DELETE` de un traspaso real borra su aporte de tarjeta (el lote completo vuelve a pendiente); el de una cobertura desde fondo borra su salida del fondo
 - Catálogos CRUD
@@ -266,6 +266,11 @@ grupos de tools:
 - **Gastos:** solo lectura, salvo `crear_gasto`, que deja el gasto **pendiente** en la bandeja
   (DEC-017).
 - **Clases particulares:** crean y cambian estados, pero no borran ni deshacen nada (DEC-019).
+- **Ingresos:** `registrar_ingreso` y `resumen_ingresos` (DEC-020).
+
+**Regla común: ninguna escritura del MCP queda confirmada.** Los gastos quedan `pendiente` en la
+bandeja, y los ingresos y los pagos de clases quedan `pendiente` / por confirmar en `/ingresos`.
+Un humano aprueba o descarta. No hay tools para aprobar, editar ni borrar.
 
 | Aspecto | Detalle |
 |---------|---------|
@@ -274,8 +279,9 @@ grupos de tools:
 | Transporte | MCP Streamable HTTP (`@modelcontextprotocol/sdk`, `WebStandardStreamableHTTPServerTransport`), respuesta JSON |
 | Auth | `Authorization: Bearer <MCP_TOKEN>`, con comparación timing-safe. Es un token propio, distinto de `INGESTA_TOKEN` y `ACCESS_TOKEN`. Sin `MCP_TOKEN` o sin el Bearer correcto responde `401` siempre, también en dev. Se monta antes del gate global y queda exento de él, igual que `/api/ingesta` |
 | Tools de gastos (6) | `crear_gasto` (la única escritura de gastos), `buscar_gastos`, `resumir_gastos`, `comparar_periodos`, `resumen_presupuesto`, `listar_catalogos` |
-| Tools de clases (9) | Lectura: `listar_alumnos`, `buscar_clases`, `resumen_clases`. Escritura: `crear_alumno`, `agendar_clase`, `mover_clase`, `marcar_dictada`, `cancelar_clase`, `registrar_pago` (crea el `ingreso` "Clases particulares") |
-| No hay | Tools para confirmar, editar, descartar o borrar gastos. Tampoco para escribir presupuesto, fondos, FGP, reservas, tarjeta, catálogos o reglas, ni SQL libre. Para clases no hay tools que borren alumnos, clases o pagos, deshagan un pago, reabran una clase pagada o editen un ingreso a mano: el único ingreso que se escribe es el de `registrar_pago`. No llama a Groq ni a OpenAI |
+| Tools de clases (9) | Lectura: `listar_alumnos`, `buscar_clases`, `resumen_clases`. Escritura: `crear_alumno`, `agendar_clase`, `mover_clase`, `marcar_dictada`, `cancelar_clase`, `registrar_pago` (deja el pago y el `ingreso` "Clases particulares" **por confirmar**; las clases siguen sin cobrar hasta que se aprueba) |
+| Tools de ingresos (2) | `registrar_ingreso` (escritura: queda `pendiente`, `origen='mcp'`) y `resumen_ingresos` (lectura) |
+| No hay | Tools para confirmar, editar, descartar o borrar gastos. Tampoco para escribir presupuesto, fondos, FGP, reservas, tarjeta, catálogos o reglas, ni SQL libre. Para clases no hay tools que borren alumnos, clases o pagos, deshagan un pago, reabran una clase pagada, confirmen un pago o editen un ingreso a mano. Para ingresos tampoco hay tools que aprueben, editen o borren: `registrar_ingreso` y `registrar_pago` solo dejan registros pendientes. No llama a Groq ni a OpenAI |
 | Implementación | `server/mcp/index.js` (transporte y auth), `server/mcp/tools.js` (schemas, descripciones y handlers de gastos), `server/mcp/toolsClases.js` (tools de clases), `server/mcp/errores.js` (`ErrorTool`), `server/consultas/gastos.js` (búsqueda y agregación por fechas), `server/clases/clases.js` (dominio de clases) |
 
 **`crear_gasto` y la bandeja:** usa el mismo insert que el chat de `/agente`
@@ -325,18 +331,38 @@ devuelven las clases con: `id`, `alumno_id`, `alumno`, `fecha`, `hora_inicio`, `
 | `mover_clase` | `clase_id` y al menos uno de `fecha`, `hora`, `horas`, `modalidad`, `precio_hora` | Solo si sigue `programada` + `pendiente`. Recalcula `monto` |
 | `marcar_dictada` | `clase_id` | `programada` → `dictada`. No cobra |
 | `cancelar_clase` | `clase_id` | → `cancelada` (no se borra), solo si `cobro='pendiente'` |
-| `registrar_pago` | `clase_ids` (1–50), `fecha` (no futura), `monto?` (verificación) | En una transacción: las clases (mismo alumno o hermanos de una misma familia, todas `dictada` + `pendiente`) pasan a `pagado` y se crea el `ingreso` con fuente "Clases particulares", la fecha del pago y `origen='clases'`, en el ciclo de esa fecha. Si `monto` no coincide con la suma → `validacion` y no escribe nada |
+| `registrar_pago` | `clase_ids` (1–50), `fecha` (no futura), `monto?` (verificación) | En una transacción crea el `pago` (`estado='pendiente'`) y el `ingreso` con fuente "Clases particulares", la fecha del pago y `origen='clases'`, también `pendiente`, en el ciclo de esa fecha. Las clases (mismo alumno o hermanos de una misma familia, todas `dictada` + `pendiente`) **siguen sin cobrar** hasta que un humano lo confirma en `/ingresos`. Si `monto` no coincide con la suma → `validacion`; si alguna clase ya tiene un pago por confirmar → `conflicto`. En ambos casos no escribe nada |
 
 **`registrar_pago`** `{ "clase_ids": [12, 15], "fecha": "2026-10-16", "monto": 50000 }`
 
 ```json
 { "ok": true, "data": {
   "pago": { "id": 4, "alumno_id": 1, "alumno": "Cristóbal Mena", "fecha": "2026-10-16", "monto": 50000,
-            "ingreso_id": 31, "ciclo_financiero": "2026-10",
+            "estado": "pendiente", "ingreso_id": 31, "ciclo_financiero": "2026-10",
             "clases": [{ "id": 12, "fecha": "2026-10-01", "monto": 25000 }, { "id": 15, "fecha": "2026-10-08", "monto": 25000 }] },
   "ingreso": { "id": 31, "fecha": "2026-10-16", "ciclo_financiero": "2026-10", "fuente": "Clases particulares",
-               "monto": 50000, "nota": "Cristóbal Mena: 2026-10-01, 2026-10-08", "origen": "clases" }
-}, "meta": {} }
+               "monto": 50000, "nota": "Cristóbal Mena: 2026-10-01, 2026-10-08", "origen": "clases", "estado": "pendiente" },
+  "mensaje": "El pago quedó por confirmar en /ingresos. Las clases siguen como no cobradas hasta que se apruebe."
+}, "meta": { "por_confirmar": true } }
+```
+
+### Tools de ingresos
+
+Catálogo de fuentes y reglas en `docs/context/data_model_context.md` (sección `ingreso`).
+
+| Tool | Input | Efecto |
+|------|-------|--------|
+| `registrar_ingreso` | `fuente` (del catálogo, sin distinguir mayúsculas), `monto` (entero CLP > 0), `fecha` (no futura), `nota?`, `fondo?` (solo con "Uso de fondos"), `ignorar_duplicado?` | Crea el ingreso `pendiente` con `origen='mcp'`: no cuenta como ingreso real hasta que se aprueba en `/ingresos`. Fuente fuera del catálogo → `validacion` con `data.fuentes_validas`. "Clases particulares" → `validacion` (se registra con `registrar_pago`). Posible duplicado (misma fuente, monto ±10 %, fecha ±5 días) → `code: "duplicado"` con `data.candidatos`, sin insertar |
+| `resumen_ingresos` | `ciclo?` (YYYY-MM, default el actual) | Por fuente: `previsto`, `real` (confirmado), `por_aprobar`, `esperado` y `estado` (`llego` / `por_aprobar` / `pendiente` / `atrasado`); en Clases además `por_cobrar` y `por_confirmar`. `totales` (`previsto`, `real`, `esperado`, `por_aprobar`, `fondos`) y la lista de `pendientes` |
+
+**`registrar_ingreso`** `{ "fuente": "Proyectos propios", "monto": 300000, "fecha": "2026-10-14", "nota": "Landing cliente" }`
+
+```json
+{ "ok": true, "data": {
+  "id": 1, "fecha": "2026-10-14", "ciclo_financiero": "2026-10", "fuente": "Proyectos propios",
+  "monto": 300000, "nota": "Landing cliente", "origen": "mcp", "estado": "pendiente", "fondo": null,
+  "mensaje": "Quedó pendiente de aprobación en /ingresos. Todavía no cuenta como ingreso real."
+}, "meta": { "origen": "mcp" } }
 ```
 
 **`cancelar_clase`** sobre una clase pagada:

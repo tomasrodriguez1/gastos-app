@@ -2,7 +2,7 @@ import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:tes
 import postgres from 'postgres'
 import {
   calcularMonto, crearAlumno, editarAlumno, agendarClase, moverClase, marcarDictada, cancelarClase,
-  registrarPago, deshacerPago, eliminarClase, resumenClases, crearFamilia, editarFamilia, eliminarFamilia, listarFamilias, listarAlumnos, buscarClases, ingresosClasesCiclo, listarPagos,
+  registrarPago, confirmarPago, deshacerPago, eliminarClase, resumenClases, crearFamilia, editarFamilia, eliminarFamilia, listarFamilias, listarAlumnos, buscarClases, ingresosClasesCiclo, listarPagos,
   FUENTE_INGRESO_CLASES,
 } from './clases.js'
 import { editarIngreso, eliminarIngreso } from '../ingresos.js'
@@ -202,17 +202,100 @@ describe.skipIf(!usarDb)('clases contra Postgres', () => {
   test('si falla a mitad de la transacción no queda ni ingreso ni pago', async () => {
     await alumno()
     const c = await claseDictada('Cristóbal Mena', '2026-10-01')
-    // Dato inconsistente a propósito: la clase figura pendiente pero ya está en pago_clase, así
-    // que el INSERT de pago_clase falla después de insertar ingreso y pago.
-    const [ing] = await db`INSERT INTO ingreso (fecha, ciclo_financiero, fuente, monto, origen) VALUES ('2026-10-01', '2026-10', 'x', 1, 'clases') RETURNING id`
-    const [p] = await db`INSERT INTO pago (alumno_id, fecha, monto, ingreso_id) VALUES (${c.alumno_id}, '2026-10-01', 1, ${ing.id}) RETURNING id`
-    await db`INSERT INTO pago_clase (pago_id, clase_id) VALUES (${p.id}, ${c.id})`
-
-    expect(await falla(registrarPago({ claseIds: [c.id], fecha: HOY, hoy: HOY }, db))).toBe(true)
-    expect(await contar('ingreso')).toBe(1)
-    expect(await contar('pago')).toBe(1)
+    // Falla forzada con un trigger: el INSERT de pago_clase revienta después de haber insertado
+    // el ingreso y el pago dentro de la misma transacción.
+    await db`CREATE OR REPLACE FUNCTION test_falla_pago_clase() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'falla forzada'; END $$ LANGUAGE plpgsql`
+    await db`CREATE TRIGGER test_falla BEFORE INSERT ON pago_clase FOR EACH ROW EXECUTE FUNCTION test_falla_pago_clase()`
+    try {
+      for (const porConfirmar of [false, true]) {
+        expect(await falla(registrarPago({ claseIds: [c.id], fecha: HOY, porConfirmar, hoy: HOY }, db))).toBe(true)
+      }
+    } finally {
+      await db`DROP TRIGGER IF EXISTS test_falla ON pago_clase`
+    }
+    expect(await contar('ingreso')).toBe(0)
+    expect(await contar('pago')).toBe(0)
+    expect(await contar('pago_clase')).toBe(0)
     const [fila] = await db`SELECT cobro FROM clase WHERE id = ${c.id}`
     expect(fila.cobro).toBe('pendiente')
+  })
+
+  describe('pago por confirmar (MCP)', () => {
+    async function preparar() {
+      await alumno('Cristóbal Mena', 20000)
+      const c1 = await claseDictada('Cristóbal Mena', '2026-10-01')
+      const c2 = await claseDictada('Cristóbal Mena', '2026-10-08')
+      return [c1, c2]
+    }
+
+    test('crea pago e ingreso pendientes; las clases siguen sin cobrar y en la deuda', async () => {
+      const [c1, c2] = await preparar()
+      const r = await registrarPago({ claseIds: [c1.id, c2.id], fecha: HOY, monto: 40000, porConfirmar: true, hoy: HOY }, db)
+      expect(r.pago).toMatchObject({ estado: 'pendiente', monto: 40000 })
+      expect(r.ingreso).toMatchObject({ estado: 'pendiente', origen: 'clases', fuente: FUENTE_INGRESO_CLASES })
+      expect((await db`SELECT DISTINCT cobro FROM clase`).map(x => x.cobro)).toEqual(['pendiente'])
+      expect(await contar('pago_clase')).toBe(2)
+
+      const res = await resumenClases({}, db)
+      expect(res).toMatchObject({ cobrado: 0, pagos: 0, deuda_total: 40000, por_confirmar_total: 40000 })
+      expect(res.deuda_por_familia[0]).toMatchObject({ deuda: 40000, por_confirmar: 40000 })
+      // Ni cobrado ni ingresos del ciclo lo cuentan todavía.
+      expect(await ingresosClasesCiclo('2026-10', db)).toMatchObject({ total: 0, cantidad: 0 })
+
+      const clases = (await buscarClases({}, db)).filas
+      expect(clases.every(c => c.pago_estado === 'pendiente' && c.cobro === 'pendiente')).toBe(true)
+      expect((await buscarClases({ sin_pago: true }, db)).filas).toHaveLength(0)
+      expect((await listarPagos({}, db)).pagos[0]).toMatchObject({ estado: 'pendiente' })
+    })
+
+    test('no se puede volver a pagar, cancelar ni eliminar una clase con pago por confirmar', async () => {
+      const [c1, c2] = await preparar()
+      await registrarPago({ claseIds: [c1.id], fecha: HOY, porConfirmar: true, hoy: HOY }, db)
+      for (const porConfirmar of [false, true]) {
+        const r = await registrarPago({ claseIds: [c1.id, c2.id], fecha: HOY, porConfirmar, hoy: HOY }, db)
+        expect(r.code).toBe('conflicto')
+        expect(r.error).toContain('por confirmar')
+      }
+      expect((await cancelarClase(c1.id, db)).code).toBe('conflicto')
+      expect((await eliminarClase(c1.id, db)).code).toBe('conflicto')
+      expect(await contar('ingreso')).toBe(1)
+      // La otra clase sigue libre.
+      expect((await buscarClases({ sin_pago: true }, db)).filas.map(c => c.id)).toEqual([c2.id])
+      expect((await cancelarClase(c2.id, db)).clase.estado).toBe('cancelada')
+    })
+
+    test('confirmarPago: pago, ingreso y clases cambian juntos; dos veces → conflicto', async () => {
+      const [c1, c2] = await preparar()
+      const { pago, ingreso } = await registrarPago({ claseIds: [c1.id, c2.id], fecha: HOY, porConfirmar: true, hoy: HOY }, db)
+      expect(await confirmarPago(pago.id, db)).toMatchObject({ ok: true, pago_id: pago.id, ingreso_id: ingreso.id })
+      expect((await db`SELECT estado FROM pago`)[0].estado).toBe('confirmado')
+      expect((await db`SELECT estado FROM ingreso`)[0].estado).toBe('confirmado')
+      expect((await db`SELECT DISTINCT cobro FROM clase`).map(x => x.cobro)).toEqual(['pagado'])
+      expect(await resumenClases({}, db)).toMatchObject({ cobrado: 40000, pagos: 1, deuda_total: 0, por_confirmar_total: 0 })
+      expect(await ingresosClasesCiclo('2026-10', db)).toMatchObject({ total: 40000, cantidad: 1 })
+      expect((await confirmarPago(pago.id, db)).code).toBe('conflicto')
+      expect((await confirmarPago(999, db)).code).toBe('no_encontrado')
+      expect((await confirmarPago('x', db)).code).toBe('validacion')
+    })
+
+    test('descartar (deshacerPago) un pago por confirmar lo borra todo y libera las clases', async () => {
+      const [c1] = await preparar()
+      const { pago } = await registrarPago({ claseIds: [c1.id], fecha: HOY, porConfirmar: true, hoy: HOY }, db)
+      expect((await deshacerPago(pago.id, db)).ok).toBe(true)
+      expect(await contar('ingreso')).toBe(0)
+      expect(await contar('pago')).toBe(0)
+      expect((await buscarClases({ sin_pago: true }, db)).filas).toHaveLength(2)
+      // Y se puede volver a registrar.
+      expect((await registrarPago({ claseIds: [c1.id], fecha: HOY, hoy: HOY }, db)).pago.estado).toBe('confirmado')
+    })
+
+    test('confirmarPago rechaza si una clase cambió en el medio', async () => {
+      const [c1] = await preparar()
+      const { pago } = await registrarPago({ claseIds: [c1.id], fecha: HOY, porConfirmar: true, hoy: HOY }, db)
+      await db`UPDATE clase SET estado = 'cancelada' WHERE id = ${c1.id}`
+      expect((await confirmarPago(pago.id, db)).code).toBe('conflicto')
+      expect((await db`SELECT estado FROM pago`)[0].estado).toBe('pendiente')
+    })
   })
 
   test('dos pagos simultáneos de la misma clase: uno gana, el otro se rechaza', async () => {
@@ -292,8 +375,8 @@ describe.skipIf(!usarDb)('clases contra Postgres', () => {
 
     const r = await resumenClases({ desde: '2026-10-01', hasta: '2026-10-31' }, db)
     expect(r.deuda_por_alumno).toEqual([
-      { alumno_id: 1, alumno: 'Cristóbal Mena', familia_id: null, familia: null, deuda: 37500, desde: '2026-10-01', clases: 2 },
-      { alumno_id: 2, alumno: 'Rafaela Moraga', familia_id: null, familia: null, deuda: 20000, desde: '2026-10-03', clases: 1 },
+      { alumno_id: 1, alumno: 'Cristóbal Mena', familia_id: null, familia: null, deuda: 37500, por_confirmar: 0, desde: '2026-10-01', clases: 2 },
+      { alumno_id: 2, alumno: 'Rafaela Moraga', familia_id: null, familia: null, deuda: 20000, por_confirmar: 0, desde: '2026-10-03', clases: 1 },
     ])
     // Sin familias, cada alumno es su propia cuenta de cobro.
     expect(r.deuda_por_familia.map(c => [c.nombre, c.alumno_id, c.deuda])).toEqual([['Cristóbal Mena', 1, 37500], ['Rafaela Moraga', 2, 20000]])

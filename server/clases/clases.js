@@ -9,10 +9,10 @@
 // { error, status, code } con code ∈ validacion | no_encontrado | conflicto.
 
 import sql from '../db/client.js'
-import { crearIngreso } from '../ingresos.js'
+import { crearIngreso, FUENTE_CLASES } from '../ingresos.js'
 import { obtenerCicloFinanciero } from '../../src/utils/ciclos.js'
 
-export const FUENTE_INGRESO_CLASES = 'Clases particulares'
+export const FUENTE_INGRESO_CLASES = FUENTE_CLASES
 export const MODALIDADES = ['presencial', 'online']
 export const ESTADOS = ['programada', 'dictada', 'cancelada']
 export const COBROS = ['pendiente', 'pagado']
@@ -117,6 +117,7 @@ export function serializarClase(row) {
     dictada: row.estado === 'dictada',
     cobro: row.cobro,
     pago_id: row.pago_id ?? null,
+    pago_estado: row.pago_estado ?? null,
     nota: row.nota || null,
     notion_status: row.notion_status || null,
     updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at ?? null,
@@ -134,6 +135,7 @@ function serializarPago(row) {
     cobrado_a: row.alumno ?? (row.familia ? `Familia ${row.familia}` : null),
     fecha: row.fecha,
     monto: entero(row.monto),
+    estado: row.estado || 'confirmado',
     ingreso_id: row.ingreso_id ?? null,
     ciclo_financiero: row.ciclo_financiero ?? null,
     clases: (row.clases || []).filter(c => c && c.id != null),
@@ -141,11 +143,12 @@ function serializarPago(row) {
 }
 
 const SELECT_CLASE = (db) => db`
-  SELECT c.*, a.nombre AS alumno, a.familia_id, f.nombre AS familia, pc.pago_id
+  SELECT c.*, a.nombre AS alumno, a.familia_id, f.nombre AS familia, pc.pago_id, pg.estado AS pago_estado
   FROM clase c
   JOIN alumno a ON a.id = c.alumno_id
   LEFT JOIN familia f ON f.id = a.familia_id
   LEFT JOIN pago_clase pc ON pc.clase_id = c.id
+  LEFT JOIN pago pg ON pg.id = pc.pago_id
 `
 
 async function leerClase(id, db) {
@@ -338,7 +341,7 @@ export async function eliminarFamilia(id, db = sql) {
 
 export async function buscarClases(filtros = {}, db = sql) {
   const {
-    alumno_id, familia_id, alumno, desde, hasta, estado, cobro, actualizada_desde,
+    alumno_id, familia_id, alumno, desde, hasta, estado, cobro, actualizada_desde, sin_pago,
     limite = 100, offset = 0,
   } = filtros
   if (desde && !fechaValida(desde)) return validacion(`desde: fecha inválida (${desde})`)
@@ -359,12 +362,15 @@ export async function buscarClases(filtros = {}, db = sql) {
 
   const vacio = db``
   const rows = await db`
-    SELECT c.*, a.nombre AS alumno, a.familia_id, f.nombre AS familia, pc.pago_id, COUNT(*) OVER () AS total
+    SELECT c.*, a.nombre AS alumno, a.familia_id, f.nombre AS familia, pc.pago_id, pg.estado AS pago_estado,
+      COUNT(*) OVER () AS total
     FROM clase c
     JOIN alumno a ON a.id = c.alumno_id
     LEFT JOIN familia f ON f.id = a.familia_id
     LEFT JOIN pago_clase pc ON pc.clase_id = c.id
+    LEFT JOIN pago pg ON pg.id = pc.pago_id
     WHERE true
+      ${sin_pago ? db`AND pc.pago_id IS NULL` : vacio}
       ${alumno_id != null ? db`AND c.alumno_id = ${Number(alumno_id)}` : vacio}
       ${familia_id != null ? db`AND a.familia_id = ${Number(familia_id)}` : vacio}
       ${typeof alumno === 'string' && alumno.trim() ? db`AND a.nombre ILIKE ${'%' + alumno.trim() + '%'}` : vacio}
@@ -494,12 +500,14 @@ export async function cancelarClase(id, db = sql) {
   const [row] = await db`
     UPDATE clase SET estado = 'cancelada', updated_at = NOW()
     WHERE id = ${Number(id)} AND cobro = 'pendiente' AND estado <> 'cancelada'
+      AND NOT EXISTS (SELECT 1 FROM pago_clase pc WHERE pc.clase_id = clase.id)
     RETURNING id
   `
   const actual = await leerClase(id, db)
   if (!actual) return noEncontrado(`No existe la clase ${id}`)
   if (!row) {
     if (actual.cobro === 'pagado') return conflicto(`La clase ${actual.id} ya está pagada: no se puede cancelar`)
+    if (actual.pago_id) return conflicto(`La clase ${actual.id} tiene un pago por confirmar: descartalo antes de cancelarla`)
     return conflicto(`La clase ${actual.id} ya estaba cancelada`)
   }
   return { clase: serializarClase(actual) }
@@ -516,6 +524,8 @@ export async function eliminarClase(id, db = sql) {
     if (actual.cobro === 'pagado') {
       return conflicto(`La clase ${actual.id} está pagada: deshacé el pago antes de eliminarla`)
     }
+    const [conPago] = await tx`SELECT pago_id FROM pago_clase WHERE clase_id = ${actual.id}`
+    if (conPago) return conflicto(`La clase ${actual.id} tiene un pago por confirmar: descartalo antes de eliminarla`)
     await tx`DELETE FROM clase WHERE id = ${actual.id}`
     if (actual.notion_id) {
       await tx`INSERT INTO clase_import_descartada (notion_id) VALUES (${actual.notion_id}) ON CONFLICT DO NOTHING`
@@ -536,9 +546,14 @@ function notaPago(clases, familia) {
 }
 
 // Un pago cubre N clases dictadas y pendientes de un mismo alumno o de hermanos de una misma
-// familia (cuenta de cobro); monto = Σ clase.monto (sin parciales). En una transacción: ingreso → pago → pago_clase → clases pagadas. Si algo falla
-// no queda nada escrito. `monto` es opcional: si viene y no coincide con la suma, se rechaza.
-export async function registrarPago({ claseIds, fecha, monto, hoy = hoyLocal() } = {}, db = sql) {
+// familia (cuenta de cobro); monto = Σ clase.monto (sin parciales). En una transacción: ingreso →
+// pago → pago_clase → clases pagadas. Si algo falla no queda nada escrito. `monto` es opcional: si
+// viene y no coincide con la suma, se rechaza.
+//
+// porConfirmar (pagos que registra una IA por MCP, DEC-020): el pago y su ingreso nacen
+// 'pendiente' y las clases siguen sin cobrar (siguen en la deuda) hasta que un humano lo confirma
+// con confirmarPago. Mientras tanto no se pueden volver a pagar, mover, cancelar ni eliminar.
+export async function registrarPago({ claseIds, fecha, monto, porConfirmar = false, hoy = hoyLocal() } = {}, db = sql) {
   const lista = Array.isArray(claseIds) ? claseIds : []
   if (lista.length === 0) return validacion('Faltan las clases a pagar')
   if (!lista.every(idValido)) return validacion('Ids de clase inválidos')
@@ -571,6 +586,13 @@ export async function registrarPago({ claseIds, fecha, monto, hoy = hoyLocal() }
       return conflicto(`Solo se pagan clases dictadas y sin cobrar. No se pueden pagar: ${detalle}`)
     }
 
+    const conPago = await tx`SELECT clase_id, pago_id FROM pago_clase WHERE clase_id = ANY(${ids})`
+    if (conPago.length) {
+      return conflicto(
+        `Estas clases ya tienen un pago por confirmar: ${conPago.map(c => `${c.clase_id} (pago ${c.pago_id})`).join(', ')}. Confirmalo o descartalo antes.`,
+      )
+    }
+
     const total = rows.reduce((s, r) => s + entero(r.monto), 0)
     if (monto != null && Number(monto) !== total) {
       return validacion(`El monto (${monto}) no coincide con la suma de las clases (${total}); no hay pagos parciales`)
@@ -586,18 +608,19 @@ export async function registrarPago({ claseIds, fecha, monto, hoy = hoyLocal() }
       monto: total,
       nota: notaPago(rows, familia),
       origen: 'clases',
+      estado: porConfirmar ? 'pendiente' : 'confirmado',
     }, tx)
     // crearIngreso ya validó todo lo que podía fallar; si igual devuelve error, se aborta la
     // transacción para no dejar el pago a medias.
     if (ingreso.error) throw new Error(`No se pudo crear el ingreso: ${ingreso.error}`)
 
     const [pago] = await tx`
-      INSERT INTO pago (alumno_id, familia_id, fecha, monto, ingreso_id)
-      VALUES (${alumnoId}, ${familiaId}, ${fecha}, ${total}, ${ingreso.ingreso.id})
+      INSERT INTO pago (alumno_id, familia_id, fecha, monto, ingreso_id, estado)
+      VALUES (${alumnoId}, ${familiaId}, ${fecha}, ${total}, ${ingreso.ingreso.id}, ${porConfirmar ? 'pendiente' : 'confirmado'})
       RETURNING *
     `
     await tx`INSERT INTO pago_clase ${tx(rows.map(r => ({ pago_id: pago.id, clase_id: r.id })))}`
-    await tx`UPDATE clase SET cobro = 'pagado', updated_at = NOW() WHERE id = ANY(${ids})`
+    if (!porConfirmar) await tx`UPDATE clase SET cobro = 'pagado', updated_at = NOW() WHERE id = ANY(${ids})`
 
     return {
       pago: serializarPago({
@@ -612,7 +635,30 @@ export async function registrarPago({ claseIds, fecha, monto, hoy = hoyLocal() }
   })
 }
 
+// Aprueba un pago por confirmar: pago e ingreso pasan a confirmado y las clases a pagadas, todo en
+// una transacción. Solo desde la UI (no hay tool MCP que confirme).
+export async function confirmarPago(id, db = sql) {
+  if (!idValido(id)) return validacion('Id inválido')
+  return db.begin(async (tx) => {
+    const [pago] = await tx`SELECT * FROM pago WHERE id = ${Number(id)} FOR UPDATE`
+    if (!pago) return noEncontrado(`No existe el pago ${id}`)
+    if (pago.estado !== 'pendiente') return conflicto(`El pago ${pago.id} ya estaba confirmado`)
+
+    const ids = (await tx`SELECT clase_id FROM pago_clase WHERE pago_id = ${pago.id}`).map(c => c.clase_id)
+    const clases = await tx`SELECT id, estado, cobro FROM clase WHERE id = ANY(${ids}) FOR UPDATE`
+    const invalidas = clases.filter(c => c.estado !== 'dictada' || c.cobro !== 'pendiente')
+    if (invalidas.length) {
+      return conflicto(`Las clases ${invalidas.map(c => c.id).join(', ')} cambiaron desde que se registró el pago: descartalo y vuelve a cobrar`)
+    }
+    await tx`UPDATE pago SET estado = 'confirmado' WHERE id = ${pago.id}`
+    if (pago.ingreso_id) await tx`UPDATE ingreso SET estado = 'confirmado', updated_at = NOW() WHERE id = ${pago.ingreso_id}`
+    await tx`UPDATE clase SET cobro = 'pagado', updated_at = NOW() WHERE id = ANY(${ids})`
+    return { ok: true, pago_id: pago.id, ingreso_id: pago.ingreso_id, clases_pagadas: ids }
+  })
+}
+
 // Solo desde la UI (no hay tool MCP): las clases vuelven a pendiente y se borra el ingreso.
+// También descarta un pago por confirmar.
 export async function deshacerPago(id, db = sql) {
   if (!idValido(id)) return validacion('Id inválido')
   return db.begin(async (tx) => {
@@ -685,13 +731,15 @@ export async function resumenClases({ desde, hasta } = {}, db = sql) {
     `,
     db`
       SELECT COUNT(*)::int AS pagos, COALESCE(SUM(monto), 0)::bigint AS total
-      FROM pago WHERE true ${enRango('fecha')}
+      FROM pago WHERE estado = 'confirmado' ${enRango('fecha')}
     `,
     db`
       SELECT a.id AS alumno_id, a.nombre AS alumno, a.familia_id, f.nombre AS familia,
         f.apoderado_nombre, f.apoderado_telefono,
-        SUM(c.monto)::bigint AS deuda, MIN(c.fecha) AS desde, COUNT(*)::int AS clases
+        SUM(c.monto)::bigint AS deuda, MIN(c.fecha) AS desde, COUNT(*)::int AS clases,
+        COALESCE(SUM(c.monto) FILTER (WHERE pg.estado = 'pendiente'), 0)::bigint AS por_confirmar
       FROM clase c JOIN alumno a ON a.id = c.alumno_id LEFT JOIN familia f ON f.id = a.familia_id
+        LEFT JOIN pago_clase pc ON pc.clase_id = c.id LEFT JOIN pago pg ON pg.id = pc.pago_id
       WHERE c.estado = 'dictada' AND c.cobro = 'pendiente'
       GROUP BY a.id, a.nombre, f.id
       ORDER BY deuda DESC, a.nombre
@@ -704,6 +752,7 @@ export async function resumenClases({ desde, hasta } = {}, db = sql) {
     familia_id: d.familia_id ?? null,
     familia: d.familia ?? null,
     deuda: Number(d.deuda),
+    por_confirmar: Number(d.por_confirmar),
     desde: d.desde,
     clases: d.clases,
   }))
@@ -717,12 +766,13 @@ export async function resumenClases({ desde, hasta } = {}, db = sql) {
       nombre: d.familia_id != null ? `Familia ${d.familia}` : d.alumno,
       apoderado_nombre: d.apoderado_nombre ?? null,
       apoderado_telefono: d.apoderado_telefono ?? null,
-      deuda: 0, desde: d.desde, clases: 0, alumnos: [],
+      deuda: 0, por_confirmar: 0, desde: d.desde, clases: 0, alumnos: [],
     }
     cuenta.deuda += Number(d.deuda)
+    cuenta.por_confirmar += Number(d.por_confirmar)
     cuenta.clases += d.clases
     if (d.desde < cuenta.desde) cuenta.desde = d.desde
-    cuenta.alumnos.push({ alumno_id: d.alumno_id, alumno: d.alumno, deuda: Number(d.deuda), clases: d.clases })
+    cuenta.alumnos.push({ alumno_id: d.alumno_id, alumno: d.alumno, deuda: Number(d.deuda), por_confirmar: Number(d.por_confirmar), clases: d.clases })
     cuentas.set(clave, cuenta)
   }
   for (const cuenta of cuentas.values()) cuenta.alumnos.sort((a, b) => a.alumno.localeCompare(b.alumno))
@@ -737,6 +787,7 @@ export async function resumenClases({ desde, hasta } = {}, db = sql) {
     cobrado: Number(cobrado.total),
     pagos: cobrado.pagos,
     deuda_total: deudaPorAlumno.reduce((s, d) => s + d.deuda, 0),
+    por_confirmar_total: deudaPorAlumno.reduce((s, d) => s + d.por_confirmar, 0),
     deuda_por_alumno: deudaPorAlumno,
     deuda_por_familia: deudaPorFamilia,
   }
@@ -747,7 +798,7 @@ export async function ingresosClasesCiclo(ciclo, db = sql) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ciclo || '')) return validacion('ciclo debe ser YYYY-MM')
   const [row] = await db`
     SELECT COUNT(*)::int AS cantidad, COALESCE(SUM(monto), 0)::float8 AS total
-    FROM ingreso WHERE ciclo_financiero = ${ciclo} AND fuente = ${FUENTE_INGRESO_CLASES}
+    FROM ingreso WHERE ciclo_financiero = ${ciclo} AND fuente = ${FUENTE_INGRESO_CLASES} AND estado = 'confirmado'
   `
   return { ciclo, total: Number(row.total), cantidad: row.cantidad }
 }

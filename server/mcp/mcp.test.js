@@ -68,6 +68,15 @@ const deps = {
   moverClase: mock(async () => ({ clase: CLASE })),
   marcarDictada: mock(async () => ({ clase: { ...CLASE, estado: 'dictada', dictada: true } })),
   cancelarClase: mock(async () => ({ error: 'La clase 10 ya está pagada: no se puede cancelar', code: 'conflicto', status: 409 })),
+  buscarIngresosSimilares: mock(async () => []),
+  crearIngreso: mock(async (d) => ({
+    ingreso: { id: 31, fecha: d.fecha, ciclo_financiero: '2026-10', fuente: 'Proyectos propios', monto: d.monto, nota: d.nota || null, origen: d.origen, estado: 'pendiente', fondo: d.fondo || null },
+  })),
+  resumenIngresosCiclo: mock(async (ciclo) => ({
+    ciclo: ciclo || '2026-10', rango: { desde: '2026-09-29', hasta: '2026-10-28' }, fuentes: [],
+    totales: { previsto: 0, real: 0, esperado: 0, por_aprobar: 0, fondos: 0 },
+  })),
+  listarPendientes: mock(async () => [{ id: 31, fuente: 'Proyectos propios', monto: 300000, estado: 'pendiente', origen: 'mcp' }]),
   registrarPago: mock(async ({ claseIds, fecha }) => ({
     pago: { id: 5, alumno_id: 1, fecha, monto: 50000, ingreso_id: 9, ciclo_financiero: '2026-10', clases: claseIds.map(id => ({ id })) },
     ingreso: { id: 9, fecha, fuente: 'Clases particulares', monto: 50000, origen: 'clases', ciclo_financiero: '2026-10' },
@@ -159,15 +168,15 @@ describe('auth /mcp', () => {
 })
 
 describe('descubrimiento', () => {
-  test('expone exactamente las 15 tools (6 de gastos + 9 de clases), sin escrituras extra', async () => {
+  test('expone exactamente las 17 tools (6 de gastos + 9 de clases + 2 de ingresos), sin escrituras extra', async () => {
     const client = await conectar()
     const { tools } = await client.listTools()
     expect(tools.map(t => t.name).sort()).toEqual([
       'agendar_clase', 'buscar_clases', 'buscar_gastos', 'cancelar_clase', 'comparar_periodos', 'crear_alumno',
-      'crear_gasto', 'listar_alumnos', 'listar_catalogos', 'marcar_dictada', 'mover_clase', 'registrar_pago',
-      'resumen_clases', 'resumen_presupuesto', 'resumir_gastos',
+      'crear_gasto', 'listar_alumnos', 'listar_catalogos', 'marcar_dictada', 'mover_clase', 'registrar_ingreso',
+      'registrar_pago', 'resumen_clases', 'resumen_ingresos', 'resumen_presupuesto', 'resumir_gastos',
     ])
-    const escrituras = ['crear_gasto', 'crear_alumno', 'agendar_clase', 'mover_clase', 'marcar_dictada', 'cancelar_clase', 'registrar_pago']
+    const escrituras = ['crear_gasto', 'crear_alumno', 'agendar_clase', 'mover_clase', 'marcar_dictada', 'cancelar_clase', 'registrar_pago', 'registrar_ingreso']
     for (const t of tools) {
       expect(t.inputSchema.type).toBe('object')
       expect(t.description.length).toBeGreaterThan(80)
@@ -177,11 +186,11 @@ describe('descubrimiento', () => {
     await client.close()
   })
 
-  test('ninguna tool borra, deshace, reabre, edita ingresos/gastos ni escribe presupuesto', async () => {
+  test('ninguna tool borra, deshace, reabre, aprueba ni edita: toda escritura queda pendiente', async () => {
     const client = await conectar()
     const { tools } = await client.listTools()
     for (const t of tools) {
-      expect(t.name).not.toMatch(/borrar|eliminar|deshacer|reabrir|confirmar|descartar|editar|presupuesto_|ingreso/)
+      expect(t.name).not.toMatch(/borrar|eliminar|deshacer|reabrir|confirmar|aprobar|descartar|editar|presupuesto_/)
     }
     await client.close()
   })
@@ -516,8 +525,70 @@ describe('tools de clases', () => {
     const client = await conectar()
     const r = await llamar(client, 'registrar_pago', { clase_ids: [10, 11], fecha: '2026-10-06' })
     expect(r).toMatchObject({ ok: true, data: { pago: { id: 5, monto: 50000 }, ingreso: { origen: 'clases' } } })
-    expect(deps.registrarPago.mock.calls[0][0]).toEqual({ claseIds: [10, 11], fecha: '2026-10-06', monto: undefined, hoy: '2026-10-06' })
+    // El pago por MCP siempre queda por confirmar: lo aprueba un humano en /ingresos.
+    expect(deps.registrarPago.mock.calls[0][0]).toEqual({ claseIds: [10, 11], fecha: '2026-10-06', monto: undefined, porConfirmar: true, hoy: '2026-10-06' })
+    expect(r).toMatchObject({ meta: { por_confirmar: true }, data: { mensaje: expect.stringContaining('por confirmar') } })
     expect(await llamar(client, 'registrar_pago', { clase_ids: [], fecha: '2026-10-06' })).toMatchObject({ code: 'validacion' })
+    await client.close()
+  })
+})
+
+describe('tools de ingresos', () => {
+  test('registrar_ingreso: queda pendiente (origen mcp), nunca confirmado', async () => {
+    const client = await conectar()
+    const r = await llamar(client, 'registrar_ingreso', { fuente: 'proyectos propios', monto: 300000, fecha: '2026-10-05', nota: 'Landing' })
+    expect(r).toMatchObject({ ok: true, data: { estado: 'pendiente', origen: 'mcp', mensaje: expect.stringContaining('pendiente de aprobación') }, meta: { origen: 'mcp' } })
+    expect(deps.crearIngreso.mock.calls[0][0]).toEqual({
+      fecha: '2026-10-05', fuente: 'proyectos propios', monto: 300000, nota: 'Landing', fondo: undefined, origen: 'mcp',
+    })
+    await client.close()
+  })
+
+  test('registrar_ingreso valida monto entero, fecha futura/inexistente y campos extra', async () => {
+    const client = await conectar()
+    const base = { fuente: 'Mesada', monto: 115000, fecha: '2026-10-05' }
+    expect(await llamar(client, 'registrar_ingreso', { ...base, monto: 1000.5 })).toMatchObject({ code: 'validacion' })
+    expect(await llamar(client, 'registrar_ingreso', { ...base, monto: 0 })).toMatchObject({ code: 'validacion' })
+    expect(await llamar(client, 'registrar_ingreso', { ...base, fecha: '2026-10-07' })).toMatchObject({ code: 'validacion', error: expect.stringContaining('futura') })
+    expect(await llamar(client, 'registrar_ingreso', { ...base, fecha: '2026-02-30' })).toMatchObject({ code: 'validacion' })
+    expect(await llamar(client, 'registrar_ingreso', { ...base, estado: 'confirmado' })).toMatchObject({ code: 'validacion' })
+    expect(await llamar(client, 'registrar_ingreso', { ...base, origen: 'manual' })).toMatchObject({ code: 'validacion' })
+    expect(deps.crearIngreso).not.toHaveBeenCalled()
+    await client.close()
+  })
+
+  test('registrar_ingreso: posible duplicado → code duplicado con candidatos, sin insertar', async () => {
+    deps.buscarIngresosSimilares.mockImplementationOnce(async () => [{ id: 7, fuente: 'Mesada', monto: 115000, fecha: '2026-10-03', estado: 'confirmado' }])
+    const client = await conectar()
+    const base = { fuente: 'Mesada', monto: 115000, fecha: '2026-10-05' }
+    const r = await llamar(client, 'registrar_ingreso', base)
+    expect(r).toMatchObject({ ok: false, code: 'duplicado', data: { candidatos: [{ id: 7 }] } })
+    expect(deps.crearIngreso).not.toHaveBeenCalled()
+    // Con la confirmación del usuario se reintenta y se salta la revisión.
+    expect(await llamar(client, 'registrar_ingreso', { ...base, ignorar_duplicado: true })).toMatchObject({ ok: true })
+    expect(deps.buscarIngresosSimilares).toHaveBeenCalledTimes(1)
+    await client.close()
+  })
+
+  test('registrar_ingreso: errores del dominio salen con su code y la lista de fuentes válidas', async () => {
+    deps.crearIngreso.mockImplementationOnce(async () => ({
+      error: 'La fuente "Lotería" no existe en el catálogo.', code: 'validacion', status: 400, validas: ['Mesada', 'Otros'],
+    }))
+    const client = await conectar()
+    const r = await llamar(client, 'registrar_ingreso', { fuente: 'Lotería', monto: 5000, fecha: '2026-10-05' })
+    expect(r).toEqual({ ok: false, error: 'La fuente "Lotería" no existe en el catálogo.', code: 'validacion', data: { fuentes_validas: ['Mesada', 'Otros'] } })
+    await client.close()
+  })
+
+  test('resumen_ingresos: ciclo default, pendientes incluidos; ciclo inválido → validacion', async () => {
+    const client = await conectar()
+    const r = await llamar(client, 'resumen_ingresos')
+    expect(r).toMatchObject({ ok: true, data: { ciclo: '2026-10', pendientes: [{ id: 31 }] }, meta: { ciclo_default: true } })
+    expect(deps.resumenIngresosCiclo.mock.calls[0]).toEqual([undefined, { hoy: '2026-10-06' }])
+    expect(await llamar(client, 'resumen_ingresos', { ciclo: '2026-09' })).toMatchObject({ ok: true, meta: { ciclo_default: false } })
+    expect(await llamar(client, 'resumen_ingresos', { ciclo: '2026-13' })).toMatchObject({ code: 'validacion' })
+    deps.resumenIngresosCiclo.mockImplementationOnce(async () => ({ error: 'ciclo debe ser YYYY-MM', status: 400, code: 'validacion' }))
+    expect(await llamar(client, 'resumen_ingresos', { ciclo: '2026-10' })).toMatchObject({ ok: false, code: 'validacion' })
     await client.close()
   })
 })
@@ -536,6 +607,8 @@ describe.skipIf(!URL_TEST_CLASES || URL_TEST_CLASES === process.env.DATABASE_URL
       await migrateClases(db)
       await db`TRUNCATE pago_clase, pago, clase, alumno, familia, ingreso RESTART IDENTITY CASCADE`
       const conDb = (fn) => (...args) => fn(...args, db)
+      const ingresos = await import('../ingresos.js')
+      const ciclo = await import('../ingresosCiclo.js')
       const depsDb = {
         ...depsPorDefecto,
         listarAlumnos: (o) => clases.listarAlumnos(o, db),
@@ -547,6 +620,10 @@ describe.skipIf(!URL_TEST_CLASES || URL_TEST_CLASES === process.env.DATABASE_URL
         marcarDictada: (id) => clases.marcarDictada(id, db),
         cancelarClase: (id) => clases.cancelarClase(id, db),
         registrarPago: conDb(clases.registrarPago),
+        buscarIngresosSimilares: conDb(ingresos.buscarIngresosSimilares),
+        crearIngreso: conDb(ingresos.crearIngreso),
+        resumenIngresosCiclo: (c, o) => ciclo.resumenIngresosCiclo(c, o, db),
+        listarPendientes: () => ciclo.listarPendientes(db),
         ahora: () => AHORA,
       }
       const client = await conectar(appCon({ d: depsDb }))
@@ -558,14 +635,25 @@ describe.skipIf(!URL_TEST_CLASES || URL_TEST_CLASES === process.env.DATABASE_URL
         expect((await llamar(client, 'marcar_dictada', { clase_id: r.data.id })).ok).toBe(true)
       }
       const resumen = await llamar(client, 'resumen_clases')
-      expect(resumen.data.deuda_por_alumno).toEqual([{ alumno_id: 1, alumno: 'Julieta Chinetti', familia_id: null, familia: null, deuda: 50000, desde: '2026-10-01', clases: 2 }])
+      expect(resumen.data.deuda_por_alumno).toEqual([{ alumno_id: 1, alumno: 'Julieta Chinetti', familia_id: null, familia: null, deuda: 50000, por_confirmar: 0, desde: '2026-10-01', clases: 2 }])
       expect(resumen.data.deuda_por_familia[0]).toMatchObject({ nombre: 'Julieta Chinetti', deuda: 50000 })
 
       const pago = await llamar(client, 'registrar_pago', { clase_ids: ids, fecha: '2026-10-06', monto: 50000 })
       expect(pago).toMatchObject({ ok: true, data: { ingreso: { fuente: 'Clases particulares', ciclo_financiero: '2026-10' } } })
-      const [ing] = await db`SELECT origen, monto::int FROM ingreso`
-      expect(ing).toEqual({ origen: 'clases', monto: 50000 })
+      // Por MCP el pago y su ingreso quedan PENDIENTES: las clases siguen sin cobrar y en la deuda.
+      expect(pago.data.pago).toMatchObject({ estado: 'pendiente' })
+      const [ing] = await db`SELECT origen, estado, monto::int FROM ingreso`
+      expect(ing).toEqual({ origen: 'clases', estado: 'pendiente', monto: 50000 })
+      expect((await db`SELECT DISTINCT cobro FROM clase`).map(x => x.cobro)).toEqual(['pendiente'])
+      const despues = await llamar(client, 'resumen_clases')
+      expect(despues.data).toMatchObject({ cobrado: 0, deuda_total: 50000, por_confirmar_total: 50000 })
       expect(await llamar(client, 'cancelar_clase', { clase_id: ids[0] })).toMatchObject({ code: 'conflicto' })
+      expect(await llamar(client, 'registrar_pago', { clase_ids: ids, fecha: '2026-10-06' })).toMatchObject({ code: 'conflicto' })
+
+      // El humano lo aprueba en /ingresos (acá, por el dominio): recién ahí queda cobrado.
+      expect((await ciclo.aprobarIngreso((await db`SELECT id FROM ingreso`)[0].id, db)).ingreso.estado).toBe('confirmado')
+      expect((await db`SELECT DISTINCT cobro FROM clase`).map(x => x.cobro)).toEqual(['pagado'])
+      expect((await llamar(client, 'resumen_clases')).data).toMatchObject({ cobrado: 50000, deuda_total: 0 })
       await client.close()
     } finally {
       await db.end({ timeout: 5 })

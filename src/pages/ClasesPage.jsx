@@ -181,10 +181,13 @@ export function ClasesPage({ ciclos }) {
 
         <div className="space-y-5">
           <DeudaAlumnos deuda={resumen?.deuda_por_familia} onCobrar={(cuenta) => { setCobrando(cuenta); window.scrollTo({ top: 0, behavior: 'smooth' }) }} />
-          <PagosRecientes pagos={pagos} onDeshacer={datos.deshacerPago} />
-          <Familias familias={familias} onCrear={datos.crearFamilia} onEditar={datos.editarFamilia} onEliminar={datos.eliminarFamilia} />
-          <Alumnos alumnos={alumnos} familias={familias} onCrear={datos.crearAlumno} onEditar={datos.editarAlumno} />
+          <PagosRecientes pagos={pagos} onDeshacer={datos.deshacerPago} onConfirmar={datos.confirmarPago} />
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+        <Familias familias={familias} onCrear={datos.crearFamilia} onEditar={datos.editarFamilia} onEliminar={datos.eliminarFamilia} />
+        <Alumnos alumnos={alumnos} familias={familias} onCrear={datos.crearAlumno} onEditar={datos.editarAlumno} />
       </div>
     </main>
   )

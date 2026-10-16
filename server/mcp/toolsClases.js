@@ -2,9 +2,10 @@
 // estricto, sin SQL (delegan en server/clases/clases.js vía deps), errores con ErrorTool.
 //
 // Pueden crear alumnos y clases y cambiar estados: mover, marcar dictada, cancelar y registrar
-// un pago (que crea el `ingreso` de "Clases particulares"). No pueden borrar alumnos, clases ni
-// pagos, reabrir una clase pagada ni deshacer un pago (eso es solo desde /clases), editar un
-// ingreso a mano, escribir presupuesto ni tocar gastos.
+// un pago. El pago queda POR CONFIRMAR (con su `ingreso` de "Clases particulares" pendiente) y las
+// clases siguen sin cobrar hasta que un humano lo apruebe en /ingresos (DEC-020). No pueden borrar
+// alumnos, clases ni pagos, reabrir una clase pagada, confirmar ni deshacer un pago (eso es solo
+// desde la UI), editar un ingreso a mano, escribir presupuesto ni tocar gastos.
 
 import { z } from 'zod'
 import { ErrorTool } from './errores.js'
@@ -228,12 +229,15 @@ const registrarPagoTool = {
   name: 'registrar_pago',
   description: [
     'Registra que se pagaron una o más clases. Todas tienen que ser del mismo alumno o de hermanos de',
-    'una misma familia (un solo pago por la transferencia del apoderado), estar dictadas y sin cobrar; el monto del pago es la suma de sus montos (no hay pagos parciales',
-    'ni por adelantado). En una sola operación marca las clases como pagadas y crea un ingreso real',
-    '"Clases particulares" con la fecha del pago, que cae en el ciclo financiero de esa fecha.',
+    'una misma familia (un solo pago por la transferencia del apoderado), estar dictadas y sin cobrar;',
+    'el monto del pago es la suma de sus montos (no hay pagos parciales ni por adelantado).',
+    'El pago queda POR CONFIRMAR: crea el pago y un ingreso "Clases particulares" PENDIENTES (en el',
+    'ciclo financiero de la fecha del pago) y las clases siguen como no cobradas hasta que una persona',
+    'lo apruebe en /ingresos. No digas que ya quedó cobrado. Mientras esté por confirmar, esas clases',
+    'no se pueden volver a pagar, mover ni cancelar.',
     '`monto` es opcional: si lo pasás y no coincide con la suma, no se registra nada.',
-    'Un pago no se puede deshacer por acá: confirmá con el usuario las clases y la fecha antes.',
-    'Fecha del pago YYYY-MM-DD, no futura.',
+    'Un pago no se puede confirmar ni deshacer por acá: confirmá con el usuario las clases y la fecha',
+    'antes. Fecha del pago YYYY-MM-DD, no futura.',
   ].join(' '),
   annotations: { title: 'Registrar pago de clases', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   schema: z.strictObject({
@@ -246,9 +250,17 @@ const registrarPagoTool = {
       claseIds: input.clase_ids,
       fecha: input.fecha,
       monto: input.monto,
+      porConfirmar: true,
       hoy: hoyLocal(deps.ahora()),
     }))
-    return { data: { pago: r.pago, ingreso: r.ingreso } }
+    return {
+      data: {
+        pago: r.pago,
+        ingreso: r.ingreso,
+        mensaje: 'El pago quedó por confirmar en /ingresos. Las clases siguen como no cobradas hasta que se apruebe.',
+      },
+      meta: { por_confirmar: true },
+    }
   },
 }
 

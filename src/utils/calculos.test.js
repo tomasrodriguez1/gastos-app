@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  calcularSaldosCiclo,
+  calcularTotalIngresosReales,
   calcularGastosPorGrupo,
   calcularSaldoFondo,
   calcularTotalMes,
@@ -109,5 +111,33 @@ describe('uso de fondos de ahorro', () => {
       usado: 50_000,
       saldo: 0,
     })
+  })
+})
+
+describe('ingresos reales y saldos del Dashboard (DEC-020)', () => {
+  test('los ingresos pendientes no cuentan como reales; sin estado = confirmado (datos viejos)', () => {
+    const lista = [
+      { monto: 100, estado: 'confirmado', ciclo_financiero: '2026-10' },
+      { monto: 50, estado: 'pendiente', ciclo_financiero: '2026-10' },
+      { monto: 7, ciclo_financiero: '2026-10' },
+      { monto: 1000, estado: 'confirmado', ciclo_financiero: '2026-09' },
+    ]
+    expect(calcularTotalIngresosReales(lista, '2026-10')).toBe(107)
+    expect(calcularTotalIngresosReales(lista)).toBe(1107)
+    expect(calcularTotalIngresosReales([])).toBe(0)
+  })
+
+  test('saldo real = real + fondos − gastado; saldo esperado usa lo esperado', () => {
+    const resumen = { totales: { previsto: 2000000, real: 115000, esperado: 2100000, por_aprobar: 300000, fondos: 50000 } }
+    expect(calcularSaldosCiclo(resumen, 600000)).toEqual({
+      ingresoReal: 115000, previsto: 2000000, porAprobar: 300000, fondos: 50000,
+      saldoReal: 115000 + 50000 - 600000,
+      saldoEsperado: 2100000 + 50000 - 600000,
+    })
+  })
+
+  test('sin resumen todavía devuelve null; fondos ausentes cuentan 0', () => {
+    expect(calcularSaldosCiclo(null, 5)).toBeNull()
+    expect(calcularSaldosCiclo({ totales: { previsto: 0, real: 10, esperado: 10, por_aprobar: 0 } }, 4)).toMatchObject({ fondos: 0, saldoReal: 6, saldoEsperado: 6 })
   })
 })

@@ -25,6 +25,9 @@ export function DeudaAlumnos({ deuda = [], onCobrar }) {
                     {d.clases} clase{d.clases === 1 ? '' : 's'} · desde {formatFecha(d.desde)}/{d.desde.slice(0, 4)}
                     {d.apoderado_nombre && ` · ${d.apoderado_nombre}`}
                   </p>
+                  {d.por_confirmar > 0 && (
+                    <p className="text-xs text-sky-300">{fmt(d.por_confirmar)} con pago por confirmar (en Ingresos)</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="font-mono-numbers text-amber-400">{fmt(d.deuda)}</span>

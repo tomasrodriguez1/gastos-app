@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 import { useAuth } from '../../contexts/AuthContext'
+import { useCantidadPendientesIngresos } from '../../hooks/useIngresos'
 
 // ─── Íconos SVG inline ────────────────────────────────────────────────────────
 
@@ -71,6 +72,16 @@ function IconClases() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M22 10 12 5 2 10l10 5 10-5z" />
       <path d="M6 12v5c3 2 9 2 12 0v-5" />
+    </svg>
+  )
+}
+
+function IconIngresos() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v12" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M4 20h16" />
     </svg>
   )
 }
@@ -154,6 +165,7 @@ const NAVEGACION_DESKTOP = [
     grupo: 'Planificar',
     items: [
       { to: '/presupuesto', icon: IconPresupuesto, label: 'Presupuesto' },
+      { to: '/ingresos', icon: IconIngresos, label: 'Ingresos', pendientesIngresos: true },
       { to: '/fondos', icon: IconFondos, label: 'Fondos' },
       { to: '/tarjeta', icon: IconTarjeta, label: 'Tarjetas' },
     ],
@@ -182,6 +194,7 @@ const MOBILE_NAV_PRINCIPAL = [
 
 const MOBILE_NAV_MAS = [
   { to: '/bandeja', icon: IconGastos, label: 'Bandeja', pendientes: true },
+  { to: '/ingresos', icon: IconIngresos, label: 'Ingresos', pendientesIngresos: true },
   { to: '/cashflow', icon: IconCashflow, label: 'Flujo' },
   { to: '/analisis', icon: IconAnalisis, label: 'Análisis' },
   { to: '/fondos', icon: IconFondos, label: 'Fondos' },
@@ -200,6 +213,9 @@ export function Sidebar({ gastos = [], gastosLocales = [] }) {
 
   const pendientes = [...gastos, ...gastosLocales]
     .filter(gasto => gasto.estado === 'pendiente' || gasto.estado === 'error_parseo').length
+  // Ingresos (y pagos de clases) que registró una IA y esperan aprobación humana.
+  const ingresosPendientes = useCantidadPendientesIngresos(location.pathname)
+  const contador = (item) => (item.pendientes ? pendientes : item.pendientesIngresos ? ingresosPendientes : 0)
 
   const navClass = ({ isActive }) =>
     `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
@@ -252,13 +268,13 @@ export function Sidebar({ gastos = [], gastosLocales = [] }) {
               <div key={grupo}>
                 <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">{grupo}</p>
                 <div className="flex flex-col gap-1">
-                  {items.map(({ to, end, icon: Icon, label, pendientes: mostrarPendientes }) => (
-                    <NavLink key={to} to={to} end={end} className={navClass}>
-                      <Icon />
-                      <span className="flex-1">{label}</span>
-                      {mostrarPendientes && pendientes > 0 && (
+                  {items.map((item) => (
+                    <NavLink key={item.to} to={item.to} end={item.end} className={navClass}>
+                      <item.icon />
+                      <span className="flex-1">{item.label}</span>
+                      {contador(item) > 0 && (
                         <span className="min-w-5 rounded-full bg-amber-500 px-1.5 py-0.5 text-center text-[10px] font-bold text-slate-950">
-                          {pendientes}
+                          {contador(item)}
                         </span>
                       )}
                     </NavLink>
@@ -299,23 +315,23 @@ export function Sidebar({ gastos = [], gastosLocales = [] }) {
         {menuMasAbierto && (
           <div className="border-b border-slate-800 px-3 pt-3 pb-2">
             <div className="grid grid-cols-4 gap-1">
-              {MOBILE_NAV_MAS.map(({ to, end, icon: Icon, label, pendientes: mostrarPendientes }) => (
+              {MOBILE_NAV_MAS.map((item) => (
                 <NavLink
-                  key={to}
-                  to={to}
-                  end={end}
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
                   className={mobileNavClass}
                   onClick={cerrarMenus}
                 >
                   <span className="relative">
-                    <Icon />
-                    {mostrarPendientes && pendientes > 0 && (
+                    <item.icon />
+                    {contador(item) > 0 && (
                       <span className="absolute -top-2 -right-3 min-w-[15px] rounded-full bg-amber-500 px-1 text-center text-[9px] font-bold leading-[15px] text-slate-950">
-                        {pendientes}
+                        {contador(item)}
                       </span>
                     )}
                   </span>
-                  <span>{label}</span>
+                  <span>{item.label}</span>
                 </NavLink>
               ))}
               <button
@@ -399,9 +415,9 @@ export function Sidebar({ gastos = [], gastosLocales = [] }) {
           >
             <span className="relative">
               <IconMas />
-              {pendientes > 0 && (
+              {pendientes + ingresosPendientes > 0 && (
                 <span className="absolute -top-2 -right-3 min-w-[15px] rounded-full bg-amber-500 px-1 text-center text-[9px] font-bold leading-[15px] text-slate-950">
-                  {pendientes}
+                  {pendientes + ingresosPendientes}
                 </span>
               )}
             </span>

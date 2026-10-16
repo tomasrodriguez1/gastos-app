@@ -100,7 +100,7 @@ const COLOR_TEXT = {
 }
 
 
-export function EditorPresupuesto({ mes, presupuestoMes, gastos, onGuardar, onNuevaSubcategoria }) {
+export function EditorPresupuesto({ mes, presupuestoMes, gastos, onGuardar, onNuevaSubcategoria, fuentesIngreso = [] }) {
   const [datos, setDatos] = useState(presupuestoMes)
   const [guardado, setGuardado] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -216,10 +216,11 @@ export function EditorPresupuesto({ mes, presupuestoMes, gastos, onGuardar, onNu
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 lg:w-[30%] lg:shrink-0">
           <h3 className="text-sm font-medium text-slate-400 mb-4 uppercase tracking-wider">Ingresos previstos</h3>
           <div className="space-y-2">
-            {Object.entries(datos?.ingresos || {}).map(([fuente, monto]) => (
+            {/* Las fuentes del catálogo aparecen siempre (aunque el ciclo no tenga monto) para poder planificarlas. */}
+            {[...new Set([...fuentesIngreso, ...Object.keys(datos?.ingresos || {})])].map((fuente) => (
               <div key={fuente} className="flex items-center justify-between gap-4">
                 <span className="text-sm text-slate-300 w-40">{fuente}</span>
-                <InputMonto value={monto} onChange={val => setIngreso(fuente, val)} />
+                <InputMonto value={datos?.ingresos?.[fuente] ?? 0} onChange={val => setIngreso(fuente, val)} />
               </div>
             ))}
             <div className="flex items-center justify-between gap-4 pt-2 border-t border-slate-700/50">

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { avisarCambioIngresos } from './useIngresos'
 
 async function leerJson(res) {
   const body = await res.json().catch(() => ({}))
@@ -69,7 +70,8 @@ export function useClases({ desde, hasta, ciclo }) {
     // Clases cobrables de una cuenta (familia completa o alumno sin familia).
     clasesPagables: useCallback((cuenta) => {
       const filtro = cuenta.familia_id != null ? `familia_id=${cuenta.familia_id}` : `alumno_id=${cuenta.alumno_id}`
-      return fetch(`/api/clases?${filtro}&estado=dictada&cobro=pendiente`).then(leerJson).then(r => r.filas)
+      // sin_pago: las clases que ya tienen un pago por confirmar no se vuelven a cobrar.
+      return fetch(`/api/clases?${filtro}&estado=dictada&cobro=pendiente&sin_pago=1`).then(leerJson).then(r => r.filas)
     }, []),
     crearFamilia: conRefresco((datos) => enviar('/api/clases/familias', 'POST', datos)),
     editarFamilia: conRefresco((id, cambios) => enviar(`/api/clases/familias/${id}`, 'PATCH', cambios)),
@@ -81,7 +83,21 @@ export function useClases({ desde, hasta, ciclo }) {
     marcarDictada: conRefresco((id) => enviar(`/api/clases/${id}/dictada`, 'POST')),
     cancelar: conRefresco((id) => enviar(`/api/clases/${id}/cancelar`, 'POST')),
     eliminar: conRefresco((id) => enviar(`/api/clases/${id}`, 'DELETE')),
-    registrarPago: conRefresco((claseIds, fecha) => enviar('/api/clases/pagos', 'POST', { clase_ids: claseIds, fecha })),
-    deshacerPago: conRefresco((id) => enviar(`/api/clases/pagos/${id}`, 'DELETE')),
+    // Los pagos mueven ingresos (crean, confirman o borran uno): se avisa al resto de la app.
+    registrarPago: conRefresco(async (claseIds, fecha) => {
+      const r = await enviar('/api/clases/pagos', 'POST', { clase_ids: claseIds, fecha })
+      avisarCambioIngresos()
+      return r
+    }),
+    confirmarPago: conRefresco(async (id) => {
+      const r = await enviar(`/api/clases/pagos/${id}/confirmar`, 'POST')
+      avisarCambioIngresos()
+      return r
+    }),
+    deshacerPago: conRefresco(async (id) => {
+      const r = await enviar(`/api/clases/pagos/${id}`, 'DELETE')
+      avisarCambioIngresos()
+      return r
+    }),
   }
 }

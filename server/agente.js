@@ -43,7 +43,7 @@ import {
   obtenerReserva,
   validarVinculadoContraCatalogo,
 } from './reservas.js'
-import { crearIngreso, listarIngresos } from './ingresos.js'
+import { buscarIngresosSimilares, crearIngreso, listarFuentes, listarIngresos } from './ingresos.js'
 import { obtenerCicloActual } from '../src/utils/ciclos.js'
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5.6-luna'
@@ -159,11 +159,16 @@ function promptSistema(catalogos, hoy, reservas, cicloActual) {
     'Ingresos reales (sueldo, transferencias recibidas, etc.) — distinto de "ingresos previstos" del',
     'presupuesto, que es solo un número planificado por ciclo y no se toca desde acá. Si el usuario',
     'dice que le llegó o depositó plata ("me pagaron el sueldo", "deposité 50 lucas"), es un ingreso',
-    'real: extraé fuente, monto y fecha (hoy si no dice otra cosa). Si no estás seguro de si ya lo',
-    'registró este ciclo, llamá primero a listar_ingresos. Mostrá un resumen (fuente, monto, fecha) y',
-    'ESPERÁ confirmación explícita en el turno siguiente — igual que con crear_gasto — antes de llamar',
-    'a registrar_ingreso. No hay detección de duplicados automática: si no estás seguro, preguntá si',
-    'ya lo había registrado antes de crear otro.',
+    'real: extraé fuente, monto y fecha (hoy si no dice otra cosa). La fuente tiene que ser una del',
+    'catálogo: Sueldo Zalantos, Proyectos propios, Mesada, Otros o Uso de fondos (cuando saca plata de',
+    'un fondo; ahí pasá el nombre del fondo en "fondo"); listar_ingresos devuelve la lista vigente. El',
+    'ingreso de las clases particulares NO se registra acá: es un pago de clases que se carga en /clases.',
+    'Mostrá un resumen (fuente, monto, fecha) y ESPERÁ confirmación explícita en el turno siguiente —',
+    'igual que con crear_gasto — antes de llamar a registrar_ingreso. Un ingreso registrado por vos',
+    'queda PENDIENTE de aprobación humana en /ingresos y todavía no cuenta: decíselo así, nunca digas',
+    'que ya quedó registrado como real. Si ya hay uno parecido (misma fuente, monto y fecha cercanos)',
+    'la tool no lo crea y devuelve los candidatos: mostráselos y reintentá con ignorar_duplicado=true',
+    'solo si el usuario confirma que es otro ingreso.',
   ].join('\n')
 }
 
@@ -561,40 +566,55 @@ function registrarSaldosReservaTool() {
   })
 }
 
-// Ingresos reales: mismo criterio que reservas F6 — escribe directo (sin
-// 'estado pendiente' en DB), la garantía de revisión humana vive en el
-// prompt (resumen + confirmación explícita en el turno siguiente).
+// Ingresos reales (DEC-020): el chat pide confirmación en el prompt y, además, lo que registra el
+// agente nace estado='pendiente' en DB: no cuenta como ingreso real hasta que un humano lo aprueba
+// en /ingresos (igual que los gastos de crear_gasto en la bandeja).
 const listarIngresosTool = tool({
   description:
-    'Lista los ingresos reales registrados en un ciclo financiero (default: el actual). Útil para ' +
-    'chequear si el usuario ya registró un ingreso antes de crear otro.',
+    'Lista los ingresos reales de un ciclo financiero (default: el actual), con su estado ' +
+    '(pendiente = esperando aprobación humana, confirmado), y las fuentes válidas del catálogo. ' +
+    'Útil para chequear si el usuario ya registró un ingreso antes de crear otro.',
   inputSchema: z.object({
     ciclo: z.string().regex(/^\d{4}-\d{2}$/).optional().describe('YYYY-MM; por defecto el ciclo actual'),
   }),
   execute: async ({ ciclo }) => {
-    const ingresos = await listarIngresos({ ciclo: ciclo || obtenerCicloActual() })
-    return { total: ingresos.length, ingresos }
+    const [ingresos, fuentes] = await Promise.all([
+      listarIngresos({ ciclo: ciclo || obtenerCicloActual() }),
+      listarFuentes({ incluirInactivas: false }),
+    ])
+    return { total: ingresos.length, ingresos, fuentes: fuentes.filter(f => !f.automatica).map(f => f.nombre) }
   },
 })
 
 const registrarIngresoTool = tool({
   description:
-    'Registra un ingreso real (sueldo, transferencia recibida, etc.) con fecha, fuente y monto. ' +
-    'Nunca toca "ingresos previstos" del presupuesto (eso es un número planificado, se edita solo ' +
-    'en /presupuesto). Requiere confirmación explícita del usuario en el turno anterior.',
+    'Registra un ingreso real (sueldo, mesada, proyecto, uso de fondos) con fecha, fuente y monto. ' +
+    'Queda PENDIENTE de aprobación humana en /ingresos: no cuenta como ingreso hasta que se apruebe. ' +
+    'La fuente tiene que ser del catálogo (listar_ingresos las devuelve); las clases particulares no ' +
+    'se registran acá. Nunca toca "ingresos previstos" del presupuesto. Requiere confirmación ' +
+    'explícita del usuario en el turno anterior. Si hay uno parecido devuelve los candidatos sin ' +
+    'crear nada: reintentá con ignorar_duplicado=true solo si el usuario confirma que es otro.',
   inputSchema: z.object({
-    fuente: z.string().describe('De dónde vino la plata, ej. "Sueldo", "Transferencia Juan"'),
-    monto: z.number().positive().describe('Monto del ingreso en pesos chilenos'),
+    fuente: z.string().describe('Fuente del catálogo, ej. "Sueldo Zalantos", "Proyectos propios", "Mesada", "Otros", "Uso de fondos"'),
+    monto: z.number().int().positive().describe('Monto del ingreso en pesos chilenos (entero)'),
     fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Fecha del ingreso (hoy si no se especifica otra)'),
     nota: z.string().optional().describe('Aclaración opcional'),
+    fondo: z.string().optional().describe('Solo con la fuente "Uso de fondos": nombre del fondo o reserva de donde se sacó'),
+    ignorar_duplicado: z.boolean().default(false).describe('true solo si el usuario confirmó que no es un duplicado'),
   }),
-  execute: async ({ fuente, monto, fecha, nota }) => {
-    const resultado = await crearIngreso({ fecha, fuente, monto, nota, origen: 'chat' })
-    if (resultado.error) return { error: resultado.error }
+  execute: async ({ fuente, monto, fecha, nota, fondo, ignorar_duplicado }) => {
+    if (!ignorar_duplicado) {
+      const candidatos = await buscarIngresosSimilares({ fuente, monto, fecha })
+      if (candidatos.length) {
+        return { bloqueado: true, mensaje: 'Hay ingresos parecidos: no se creó nada.', candidatos }
+      }
+    }
+    const resultado = await crearIngreso({ fecha, fuente, monto, nota, fondo, origen: 'chat' })
+    if (resultado.error) return { error: resultado.error, ...(resultado.validas && { fuentes_validas: resultado.validas }) }
     return {
       ok: true,
       ingreso: resultado.ingreso,
-      resumen: `Ingreso registrado: ${fuente} — $${monto} (${fecha})`,
+      resumen: `Ingreso pendiente de aprobación: ${resultado.ingreso.fuente} — $${monto} (${fecha}). Se aprueba en /ingresos.`,
     }
   },
 })

@@ -11,6 +11,7 @@ function diaSemana(fecha) {
 
 function ChipCobro({ clase }) {
   if (clase.estado === 'cancelada') return <span className="text-xs text-slate-500">Cancelada</span>
+  if (clase.pago_estado === 'pendiente') return <span className="text-xs px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20" title="Un pago registrado por el agente o el MCP espera tu aprobación en Ingresos">Pago por confirmar</span>
   if (clase.cobro === 'pagado') return <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Pagado</span>
   return <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">No cobrado</span>
 }

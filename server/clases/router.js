@@ -6,7 +6,7 @@ import sql from '../db/client.js'
 import {
   listarAlumnos, crearAlumno, editarAlumno, listarFamilias, crearFamilia, editarFamilia, eliminarFamilia,
   buscarClases, agendarClase, moverClase, marcarDictada, cancelarClase, eliminarClase,
-  registrarPago, deshacerPago, listarPagos, resumenClases, ingresosClasesCiclo, clasesParaAnalisis,
+  registrarPago, confirmarPago, deshacerPago, listarPagos, resumenClases, ingresosClasesCiclo, clasesParaAnalisis,
 } from './clases.js'
 import { obtenerCicloActual } from '../../src/utils/ciclos.js'
 
@@ -47,6 +47,7 @@ export function createClasesRouter({ db = sql } = {}) {
       desde: q.desde || undefined,
       hasta: q.hasta || undefined,
       estado: q.estado || undefined,
+      sin_pago: q.sin_pago === '1',
       cobro: q.cobro || undefined,
       limite: q.limite ? Number(q.limite) : 1000,
       offset: q.offset ? Number(q.offset) : 0,
@@ -84,6 +85,7 @@ export function createClasesRouter({ db = sql } = {}) {
     return responder(c, await registrarPago({ claseIds: body.clase_ids, fecha: body.fecha, monto: body.monto }, db), null, 201)
   })
 
+  router.post('/pagos/:id/confirmar', async (c) => responder(c, await confirmarPago(c.req.param('id'), db)))
   router.delete('/pagos/:id', async (c) => responder(c, await deshacerPago(c.req.param('id'), db)))
 
   return router

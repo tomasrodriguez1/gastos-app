@@ -4,10 +4,10 @@ import { BotonBandeja } from '../components/shared/BotonBandeja'
 import { FondosAhorro } from '../components/Dashboard/FondosAhorro'
 import { GraficoEvolucionPresupuesto } from '../components/Dashboard/GraficoEvolucionPresupuesto'
 import { usePrivacyMode } from '../contexts/PrivacyModeContext'
-import { calcularTotalIngresos, calcularTotalIngresosReales, calcularTotalMes, calcularTotalPrevisto } from '../utils/calculos'
+import { calcularSaldosCiclo, calcularTotalMes, calcularTotalPrevisto } from '../utils/calculos'
 import { formatCLP, formatFecha, privacyFormat } from '../utils/formatters'
 import { formatCiclo, formatRangoCiclo, obtenerCicloActual } from '../utils/ciclos'
-import { useIngresos } from '../hooks/useIngresos'
+import { useResumenIngresos } from '../hooks/useIngresos'
 
 function MetricCard({ label, value, detail, tone = 'text-slate-200' }) {
   return (
@@ -54,12 +54,13 @@ export function DashboardPage({ gastos, obtenerPresupuesto, guardarPresupuesto, 
   const presupuestoMes = obtenerPresupuesto(ciclo)
   const gastosMes = gastos.filter(g => g.ciclo_financiero === ciclo).sort((a, b) => b.fecha.localeCompare(a.fecha))
 
-  const { ingresos: ingresosReales } = useIngresos(ciclo)
-  const ingresos = calcularTotalIngresos(presupuestoMes)
-  const ingresoReal = calcularTotalIngresosReales(ingresosReales)
+  // Ingresos: lo que efectivamente entró (confirmado), no el previsto (DEC-020). El previsto sigue
+  // en el detalle y en /presupuesto.
+  const { resumen: resumenIngresos } = useResumenIngresos(ciclo)
   const previsto = calcularTotalPrevisto(presupuestoMes)
   const real = calcularTotalMes(gastos, ciclo)
-  const saldo = ingresos - real
+  const saldos = calcularSaldosCiclo(resumenIngresos, real)
+  const dinero = (n) => (n == null ? '…' : privacyFormat(n, isPrivacyModeEnabled))
   const avance = previsto > 0 ? Math.round((real / previsto) * 100) : 0
 
   const ultimosGastos = gastosMes.slice(0, 5)
@@ -93,20 +94,30 @@ export function DashboardPage({ gastos, obtenerPresupuesto, guardarPresupuesto, 
         </Link>
       )}
 
-      <section className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4">
+      <section className="grid grid-cols-2 xl:grid-cols-5 gap-2 sm:gap-4">
         <MetricCard
           label="Ingresos"
-          value={privacyFormat(ingresos, isPrivacyModeEnabled)}
-          detail={`Previsto · Real: ${privacyFormat(ingresoReal, isPrivacyModeEnabled)}`}
+          value={dinero(saldos?.ingresoReal)}
+          detail={saldos
+            ? `Previsto ${dinero(saldos.previsto)}${saldos.porAprobar > 0 ? ` · Por aprobar ${dinero(saldos.porAprobar)}` : ''}`
+            : 'Cargando…'}
           tone="text-emerald-400"
         />
         <MetricCard label="Gasto real" value={privacyFormat(real, isPrivacyModeEnabled)} detail={`${avance}% del presupuesto`} />
         <MetricCard label="Presupuestado" value={privacyFormat(previsto, isPrivacyModeEnabled)} detail="Total planificado" tone="text-sky-300" />
         <MetricCard
-          label="Saldo"
-          value={privacyFormat(saldo, isPrivacyModeEnabled)}
-          detail={saldo >= 0 ? 'Disponible contra ingresos' : 'Sobre ingresos'}
-          tone={saldo >= 0 ? 'text-emerald-400' : 'text-rose-400'}
+          label="Saldo real"
+          value={dinero(saldos?.saldoReal)}
+          detail={saldos
+            ? `Lo que entró${saldos.fondos > 0 ? ` + fondos ${dinero(saldos.fondos)}` : ''} − gastado`
+            : 'Cargando…'}
+          tone={!saldos || saldos.saldoReal >= 0 ? 'text-emerald-400' : 'text-rose-400'}
+        />
+        <MetricCard
+          label="Saldo esperado"
+          value={dinero(saldos?.saldoEsperado)}
+          detail="Si llega lo previsto y te pagan lo que deben"
+          tone={!saldos || saldos.saldoEsperado >= 0 ? 'text-sky-300' : 'text-rose-400'}
         />
       </section>
 

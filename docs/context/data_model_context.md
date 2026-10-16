@@ -347,29 +347,72 @@ fecha)` hace que un segundo `registrar_saldos_reserva` el mismo día haga upsert
 
 ### `ingreso`
 
-Ingresos reales (fecha, fuente, monto), registrados a mano en `/presupuesto` (junto a "Ingresos
-previstos") o por el agente conversacional (`registrar_ingreso`, F3). Separado de
-`presupuesto_ingreso` por el mismo criterio que `reserva` vs `presupuesto_fondo`: uno es un
-registro histórico de hechos, el otro una previsión que se reescribe entera en cada PUT del
-ciclo.
+Ingresos reales (fecha, fuente, monto), registrados a mano en `/ingresos`, por el agente
+conversacional (`registrar_ingreso`, F3), por el MCP (`registrar_ingreso`) o por un pago de
+clases. Separado de `presupuesto_ingreso` por el mismo criterio que `reserva` vs
+`presupuesto_fondo`: uno es un registro histórico de hechos, el otro una previsión que se
+reescribe entera en cada PUT del ciclo. Ver DEC-020.
 
 ```sql
-ingreso(id, fecha, ciclo_financiero, fuente, monto, nota, origen 'manual'|'chat'|'clases', created_at, updated_at)
+ingreso(id, fecha, ciclo_financiero, fuente, monto, nota,
+        origen 'manual'|'chat'|'mcp'|'clases', estado 'pendiente'|'confirmado' DEFAULT 'confirmado',
+        fondo NULL, created_at, updated_at)
+fuente_ingreso(id, nombre UNIQUE lower(nombre), tipo 'fijo'|'variable'|'fondos', automatica,
+               dia_esperado 1-31 NULL, activa, orden, created_at, updated_at)
 ```
+
+**Vías de entrada y estado.** Las vías son manual (UI), agente (`chat`), MCP y pagos de clases; por
+mail todavía no. Lo que registra una IA (`chat`, `mcp`) nace `pendiente` y **no cuenta como ingreso
+real** (ni en el Dashboard, ni en `resumen_ingresos.real`) hasta que un humano lo aprueba en
+`/ingresos` (`POST /api/ingresos/:id/confirmar`); igual que los gastos del MCP en la bandeja.
+`manual` y `clases` (pago registrado desde la UI) nacen `confirmado`. Un pago de clases por MCP
+nace `pendiente` junto con su `pago` (ver más abajo).
+
+**Catálogo `fuente_ingreso`.** `ingreso.fuente` y `presupuesto_ingreso.fuente` siguen siendo texto
+(sin FK, para no romper el historial) con el nombre canónico del catálogo; el dominio valida contra
+él y guarda el nombre canónico (sin distinguir mayúsculas). Seed (`migrate-ingresos.js`, no pisa
+cambios): Sueldo Zalantos (fijo), Clases particulares (variable, **automática**), Proyectos propios
+(variable), Mesada (fijo), Otros (variable; hoy es una mezcla que el usuario separará) y Uso de
+fondos (tipo `fondos`).
+- Una fuente `automatica` (Clases particulares) solo la crea un pago de clases (`origen='clases'`):
+  ni la UI, ni el agente, ni el MCP la registran como ingreso suelto. No se renombra ni se
+  desactiva.
+- `dia_esperado` solo en fuentes fijas: si pasó el día dentro del ciclo (29→28; del 29 en adelante
+  cae en el mes anterior) y no llegó nada, el resumen la marca `atrasado`.
+- Renombrar una fuente propaga el nombre a `ingreso.fuente` y `presupuesto_ingreso.fuente` en la
+  misma transacción. Una fuente no se borra, se desactiva.
+- La migración renombra el previsto histórico sin tocar montos: `Zalantos` → `Sueldo Zalantos` y
+  `Clases Particulares` → `Clases particulares` (se salta un ciclo si ya existe el nombre nuevo).
+- **Uso de fondos** (`fondo` opcional = nombre de la reserva o fondo de ahorro): plata que el
+  usuario saca de sus fondos. Suma al saldo pero **no es ingreso nuevo** (va aparte en los totales:
+  `totales.fondos`). v1 no descuenta el saldo del fondo, y no hay que registrarlo además de un
+  gasto marcado `financiado_por` (contaría doble).
+- Duplicados: `buscarIngresosSimilares` (misma fuente, monto ±10 %, fecha ±5 días, pendientes o
+  confirmados) lo usan el MCP (`code: duplicado`), el agente y la UI antes de guardar.
+
+**Resumen del ciclo** (`resumenIngresosCiclo`, `server/ingresosCiclo.js`; lo usan el Dashboard,
+`/ingresos`, `/presupuesto` y la tool `resumen_ingresos`): por fuente `previsto`
+(`presupuesto_ingreso`), `real` (confirmados), `por_aprobar` (pendientes), `esperado` y `estado`
+(`llego` | `por_aprobar` | `pendiente` | `atrasado`). `esperado` de cada fuente: Clases =
+`real + por_cobrar` (la deuda actual dictada y sin cobrar, solo en el ciclo actual o futuro); Uso de
+fondos = `real`; el resto = `max(previsto, real + por_aprobar)`. Totales de ingresos:
+`previsto`, `real`, `esperado`, `por_aprobar`; `fondos` aparte. Una fuente con datos que no está en
+el catálogo aparece como `fuera_catalogo`.
 
 `origen='clases'` lo escribe solamente `registrarPago` (`server/clases/clases.js`), con fuente
 `Clases particulares`. Ese ingreso no se edita ni se borra por `PATCH/DELETE /api/ingresos/:id`
 (responde 409) y, además, `pago.ingreso_id` lo referencia con `ON DELETE RESTRICT`. Se corrige
-deshaciendo el pago en `/clases`. `POST /api/ingresos` siempre guarda `origen='manual'`: el cliente
-no puede elegir el origen.
+deshaciendo el pago en `/clases` (un pendiente de clases se aprueba o descarta a través de su pago:
+`aprobarIngreso` / `descartarPendiente`). `POST /api/ingresos` siempre guarda `origen='manual'` y
+`estado='confirmado'`: el cliente no puede elegir origen ni estado.
 
 `ciclo_financiero` se calcula con `obtenerCicloFinanciero(fecha)` al crear/editar — mismo criterio
 que `gastos.ciclo_financiero`. Sin `UNIQUE`: a diferencia de `reserva_saldo`, un ingreso puede
 repetirse el mismo día/fuente (dos pagos reales) sin que sea un error. Se puede borrar sin
 restricción, salvo los de `origen='clases'` (ver arriba).
 
-GAP: sin detección de duplicados (ni en la UI ni en el agente) — un ingreso repetido el mismo
-día/fuente no se avisa.
+La detección de duplicados avisa, no bloquea: en la UI se puede registrar igual ("es otro") y por
+MCP/agente se reintenta con `ignorar_duplicado`.
 
 ### Clases particulares (`familia`, `alumno`, `clase`, `pago`, `pago_clase`)
 
@@ -389,6 +432,7 @@ clase(id, alumno_id → alumno, fecha 'YYYY-MM-DD', hora_inicio 'HH:MM', duracio
       notion_id UNIQUE NULL, notion_status NULL, nota, created_at, updated_at,
       CHECK NOT (estado='cancelada' AND cobro='pagado'))
 pago(id, alumno_id → alumno NULL, familia_id → familia NULL, fecha, monto INTEGER > 0,
+     estado 'pendiente'|'confirmado' DEFAULT 'confirmado',
      ingreso_id UNIQUE → ingreso ON DELETE RESTRICT NULL, created_at)
 pago_clase(pago_id → pago ON DELETE CASCADE, clase_id UNIQUE → clase, PK(pago_id, clase_id))
 clase_import_descartada(notion_id PK, eliminada_at)  -- clases importadas que se eliminaron en la app
@@ -428,6 +472,14 @@ clase_import_descartada(notion_id PK, eliminada_at)  -- clases importadas que se
   3. se insertan las filas de `pago_clase`;
   4. las clases pasan a `cobro='pagado'`.
   Si algo falla no queda nada escrito. `pago_clase.clase_id UNIQUE` impide pagar una clase dos veces.
+- **Pago por confirmar (MCP, DEC-020):** `registrar_pago` del MCP pasa `porConfirmar`: el `pago` y
+  su `ingreso` nacen `pendiente`, se insertan los `pago_clase` y las clases **siguen** `dictada` +
+  `pendiente` (siguen en la deuda, que muestra `por_confirmar`). Mientras tanto esas clases no se
+  pueden volver a pagar, cancelar ni eliminar (conflicto). Un humano lo aprueba en `/ingresos` (o
+  con "Confirmar" en `/clases`): `confirmarPago` pasa pago e ingreso a `confirmado` y las clases a
+  `pagado`, todo en una transacción. Descartarlo es `deshacerPago` (borra pago, `pago_clase` e
+  ingreso). `cobrado` del resumen y el KPI de ingresos de `/clases` solo cuentan pagos
+  confirmados. Desde la UI el pago nace confirmado, como antes.
 - **Deshacer pago** (`DELETE /api/clases/pagos/:id`, no existe como tool MCP): las clases vuelven a
   `pendiente` y se borran el pago, sus `pago_clase` y el `ingreso`.
 - **Derivados, no persistidos:**
@@ -513,7 +565,7 @@ reserva_tarjeta.banco ~ gastos.banco (convención, no FK)
 fondo_tarjeta_movimiento.banco ~ gastos.banco (solo tipo 'pago'; convención, no FK)
 reserva 1──* reserva_saldo
 reserva.vinculado → grupo/subcategoria (JSON, no FK) — mismo shape que presupuesto_fondo.vinculado
-ingreso — standalone, salvo los de origen 'clases', referenciados por pago.ingreso_id
+ingreso.fuente ~ fuente_ingreso.nombre (convención, sin FK); ingreso 'clases' referenciado por pago.ingreso_id
 alumno 1──* clase
 alumno 1──* pago
 pago 1──1 ingreso (pago.ingreso_id, RESTRICT; NULL solo en datos importados)
@@ -562,7 +614,9 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | — | `fondo_ahorro_movimiento` (PG-only, `server/db/migrate-fondo-ahorro-movimientos.js`) — libro de aportes/ajustes de fondos de ahorro manuales |
 | — | `fondo_ahorro_movimiento.tipo` (PG-only, `server/db/migrate-fondo-ahorro-tipo.js`) — distingue aporte de ajuste; pasa a ser la fuente del saldo de un fondo manual (antes solo informativo) |
 | — | `reserva_saldo.retiros`/`.crecimiento` (PG-only, `server/db/migrate-reserva-retiros.js`) — desglose persistido de cada lectura de saldo |
-| — | `ingreso.origen` acepta `'clases'` (PG-only, `server/db/migrate-ingresos.js` reemplaza el CHECK `ingreso_origen_check`) |
+| — | `ingreso.origen` acepta `'clases'` y `'mcp'` (PG-only, `server/db/migrate-ingresos.js` reemplaza el CHECK `ingreso_origen_check`) |
+| — | `ingreso.estado` (`pendiente`/`confirmado`), `ingreso.fondo`, tabla `fuente_ingreso` con seed y rename del previsto (`Zalantos`→`Sueldo Zalantos`, `Clases Particulares`→`Clases particulares`) (PG-only, `server/db/migrate-ingresos.js`) — ingresos con catálogo y aprobación humana (DEC-020) |
+| — | `pago.estado` (`pendiente`/`confirmado`) (PG-only, `server/db/migrate-clases.js`) — pagos de clases por confirmar (DEC-020) |
 | — | `familia`, `alumno.familia_id`, `pago.familia_id` (y `pago.alumno_id` pasa a NULL-able) (PG-only, `server/db/migrate-clases.js`) — cobro por familia |
 | — | `alumno`, `clase`, `pago`, `pago_clase`, `clase_import_descartada` (PG-only, `server/db/migrate-clases.js`, después de `migrateIngresos`) — clases particulares (DEC-019) |
 
@@ -591,6 +645,10 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
   mecanismo de revisión equivalente. `crear_reserva` no acepta un `grupo`/`subcategoria` fuera
   del catálogo (`validarVinculadoContraCatalogo`). El agente no crea `presupuesto_fondo` ni
   borra reservas (solo `activa=false`).
+- Ingresos (DEC-020): nada que registre una IA (agente o MCP) cuenta como ingreso real sin
+  aprobación humana: nace `estado='pendiente'`. No hay tool MCP que apruebe, edite ni borre
+  ingresos, ni que confirme o deshaga pagos. Una fuente automática (Clases particulares) solo se
+  alimenta con pagos de clases. El Dashboard usa el ingreso **confirmado**, no el previsto.
 - Clases particulares: un pago solo cubre clases `dictada` + `pendiente` de un mismo alumno o de
   hermanos de una misma familia, por la suma exacta, y crea su `ingreso` en la misma transacción. Las tools MCP de clases no borran
   alumnos, clases ni pagos, no reabren un pago ni editan el ingreso. El ingreso de `origen='clases'`

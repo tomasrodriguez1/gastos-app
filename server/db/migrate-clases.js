@@ -75,6 +75,11 @@ export async function migrateClases(db = sql) {
     // familia_id dice de quién es. Pago de un solo alumno: alumno_id (y familia_id si tiene).
     await tx.unsafe('ALTER TABLE pago ADD COLUMN IF NOT EXISTS familia_id INTEGER REFERENCES familia(id) ON DELETE RESTRICT')
     await tx.unsafe('ALTER TABLE pago ALTER COLUMN alumno_id DROP NOT NULL')
+    // Un pago registrado por MCP nace 'pendiente' (con su ingreso pendiente) y las clases siguen
+    // sin cobrar hasta que un humano lo confirma (DEC-020). Los pagos de la UI nacen confirmados.
+    await tx.unsafe(`ALTER TABLE pago ADD COLUMN IF NOT EXISTS estado TEXT NOT NULL DEFAULT 'confirmado'`)
+    await tx.unsafe('ALTER TABLE pago DROP CONSTRAINT IF EXISTS pago_estado_check')
+    await tx.unsafe(`ALTER TABLE pago ADD CONSTRAINT pago_estado_check CHECK (estado IN ('pendiente', 'confirmado'))`)
     await tx.unsafe(`
       CREATE TABLE IF NOT EXISTS pago_clase (
         pago_id  INTEGER NOT NULL REFERENCES pago(id) ON DELETE CASCADE,

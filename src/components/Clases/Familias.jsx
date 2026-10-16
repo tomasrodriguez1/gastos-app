@@ -76,7 +76,7 @@ export function Familias({ familias, onCrear, onEditar, onEliminar }) {
           Sin familias. Creá una para cobrar juntos a hermanos y guardar al apoderado.
         </p>
       ) : (
-        <div className="space-y-2.5">
+        <div className="max-h-80 space-y-2.5 overflow-y-auto scrollbar-thin pr-1">
           {familias.map(f => editando === f.id ? (
             <FormFamilia
               key={f.id}

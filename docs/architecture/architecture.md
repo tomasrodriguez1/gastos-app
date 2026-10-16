@@ -45,7 +45,7 @@ Ninguno. Sync n8n disparado manualmente desde UI.
 | Servicio | Dirección | Propósito |
 |----------|-----------|-----------|
 | n8n | Cliente → webhook externo | Importar gastos bancarios |
-| Cliente MCP (agente externo) | Agente → `POST /mcp` (Bearer `MCP_TOKEN`) | Consultas de gastos, creación de gastos pendientes y gestión de clases particulares (agendar, cambiar estado, registrar pagos; DEC-019) |
+| Cliente MCP (agente externo) | Agente → `POST /mcp` (Bearer `MCP_TOKEN`) | Consultas de gastos, creación de gastos pendientes y gestión de clases particulares (agendar, cambiar estado, registrar pagos; DEC-019) y registro de ingresos. Ninguna escritura queda confirmada: gastos, ingresos y pagos de clases quedan pendientes para aprobación humana (DEC-020) |
 | Telegram vía n8n | n8n → `POST /api/agente/telegram/{chat,avisos,aviso}` (Bearer `TELEGRAM_AGENTE_TOKEN`); app → webhook n8n (`N8N_TELEGRAM_AVISO_URL`) | Mismo agente de `/agente` por chat; aviso por cada gasto de tarjeta flaco |
 | Railway | Deploy | Hosting API + frontend estático |
 | PostgreSQL (Railway) | Servidor → DB | Persistencia |

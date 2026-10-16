@@ -136,13 +136,34 @@ export function calcularTotalIngresos(presupuestoMes) {
   return Object.values(presupuestoMes.ingresos).reduce((s, v) => s + (v || 0), 0)
 }
 
-// Suma de ingresos reales (tabla `ingreso`, registrados a mano o por el agente) de un ciclo —
-// distinto de calcularTotalIngresos, que es la previsión planificada (presupuesto_ingreso).
+// Suma de ingresos reales CONFIRMADOS (tabla `ingreso`) de un ciclo — distinto de
+// calcularTotalIngresos, que es la previsión planificada (presupuesto_ingreso). Los pendientes
+// (los que registró una IA y nadie aprobó todavía) no cuentan (DEC-020).
 export function calcularTotalIngresosReales(ingresosReales, ciclo) {
   if (!ingresosReales?.length) return 0
   return ingresosReales
+    .filter(i => (i.estado || 'confirmado') === 'confirmado')
     .filter(i => !ciclo || i.ciclo_financiero === ciclo)
     .reduce((s, i) => s + (i.monto || 0), 0)
+}
+
+// Saldos del Dashboard a partir del resumen de ingresos del ciclo (GET /api/ingresos/resumen) y lo
+// gastado (DEC-020). Uso de fondos no es ingreso nuevo pero sí plata disponible: suma al saldo.
+//   saldoReal     = ingresos confirmados + uso de fondos − gastado
+//   saldoEsperado = ingresos esperados (previsto que falta llegar, clases por cobrar, pendientes
+//                   de aprobar) + uso de fondos − gastado
+export function calcularSaldosCiclo(resumenIngresos, gastado) {
+  const t = resumenIngresos?.totales
+  if (!t) return null
+  const fondos = t.fondos || 0
+  return {
+    ingresoReal: t.real,
+    previsto: t.previsto,
+    porAprobar: t.por_aprobar,
+    fondos,
+    saldoReal: t.real + fondos - gastado,
+    saldoEsperado: t.esperado + fondos - gastado,
+  }
 }
 
 export function calcularTotalPrevisto(presupuestoMes) {

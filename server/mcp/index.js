@@ -35,8 +35,10 @@ function crearServidorMcp(deps) {
         'gasto pendiente en la bandeja para aprobación humana. El presupuesto va por ciclo financiero ' +
         'YYYY-MM (del 29 del mes anterior al 28 del mes nominal), no por mes calendario. ' +
         'Clases particulares (módulo aparte): alumnos, clases y pagos. Se pueden crear alumnos, agendar, ' +
-        'mover, marcar dictada, cancelar y registrar pagos (el pago crea el ingreso). No se borra nada ' +
-        'ni se deshace un pago desde acá.',
+        'mover, marcar dictada, cancelar y registrar pagos. Ingresos: registrar_ingreso y resumen_ingresos. ' +
+        'Ninguna escritura queda confirmada: los gastos quedan pendientes en la bandeja y los ingresos y ' +
+        'pagos de clases quedan por aprobar en /ingresos; un humano los aprueba. No se borra nada ni ' +
+        'se deshace un pago desde acá.',
     },
   )
   const herramientas = definicionesTools()

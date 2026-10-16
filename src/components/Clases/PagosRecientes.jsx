@@ -4,14 +4,26 @@ import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 import { CARD, TITULO_CARD } from './estilos'
 
 // Pagos registrados en la app. Deshacer vuelve las clases a "No cobrado" y borra el ingreso.
-export function PagosRecientes({ pagos, onDeshacer }) {
+export function PagosRecientes({ pagos, onDeshacer, onConfirmar }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
   const [error, setError] = useState(null)
 
+  async function confirmar(pago) {
+    setError(null)
+    try {
+      await onConfirmar(pago.id)
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
   async function deshacer(pago) {
+    const pendiente = pago.estado === 'pendiente'
     const ok = window.confirm(
-      `¿Deshacer el pago de ${pago.cobrado_a} del ${formatFecha(pago.fecha)}? ` +
-      `Las ${pago.clases.length} clases vuelven a "No cobrado" y se borra el ingreso.`,
+      pendiente
+        ? `¿Descartar el pago por confirmar de ${pago.cobrado_a} del ${formatFecha(pago.fecha)}? Las clases siguen sin cobrar y se borra el ingreso pendiente.`
+        : `¿Deshacer el pago de ${pago.cobrado_a} del ${formatFecha(pago.fecha)}? ` +
+          `Las ${pago.clases.length} clases vuelven a "No cobrado" y se borra el ingreso.`,
     )
     if (!ok) return
     setError(null)
@@ -37,12 +49,16 @@ export function PagosRecientes({ pagos, onDeshacer }) {
                 <p className="text-xs text-slate-500">
                   {formatFecha(p.fecha)} · {p.clases.length} clase{p.clases.length === 1 ? '' : 's'}
                   {p.ciclo_financiero && ` · ciclo ${p.ciclo_financiero}`}
+                  {p.estado === 'pendiente' && <span className="text-sky-300"> · por confirmar</span>}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <span className="font-mono-numbers text-emerald-400">{privacyFormat(p.monto, isPrivacyModeEnabled)}</span>
+                <span className={`font-mono-numbers ${p.estado === 'pendiente' ? 'text-sky-300' : 'text-emerald-400'}`}>{privacyFormat(p.monto, isPrivacyModeEnabled)}</span>
+                {p.estado === 'pendiente' && (
+                  <button type="button" onClick={() => confirmar(p)} className="text-xs px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20">Confirmar</button>
+                )}
                 {p.ingreso_id && (
-                  <button type="button" onClick={() => deshacer(p)} className="text-xs text-slate-500 hover:text-red-400">Deshacer</button>
+                  <button type="button" onClick={() => deshacer(p)} className="text-xs text-slate-500 hover:text-red-400">{p.estado === 'pendiente' ? 'Descartar' : 'Deshacer'}</button>
                 )}
               </div>
             </div>
