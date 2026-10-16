@@ -2,7 +2,7 @@ import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:tes
 import postgres from 'postgres'
 import {
   calcularMonto, crearAlumno, editarAlumno, agendarClase, moverClase, marcarDictada, cancelarClase,
-  registrarPago, deshacerPago, eliminarClase, resumenClases, buscarClases, ingresosClasesCiclo, listarPagos,
+  registrarPago, deshacerPago, eliminarClase, resumenClases, crearFamilia, editarFamilia, eliminarFamilia, listarFamilias, listarAlumnos, buscarClases, ingresosClasesCiclo, listarPagos,
   FUENTE_INGRESO_CLASES,
 } from './clases.js'
 import { editarIngreso, eliminarIngreso } from '../ingresos.js'
@@ -54,7 +54,7 @@ describe.skipIf(!usarDb)('clases contra Postgres', () => {
 
   beforeAll(async () => {
     db = postgres(URL_TEST, { max: 4, onnotice: () => {} })
-    await db`DROP TABLE IF EXISTS pago_clase, pago, clase, alumno, ingreso, clase_import_descartada CASCADE`
+    await db`DROP TABLE IF EXISTS pago_clase, pago, clase, alumno, familia, ingreso, clase_import_descartada CASCADE`
     await migrateIngresos(db)
     await migrateClases(db)
     // Idempotentes: correrlas dos veces no falla.
@@ -67,7 +67,7 @@ describe.skipIf(!usarDb)('clases contra Postgres', () => {
   })
 
   beforeEach(async () => {
-    await db`TRUNCATE pago_clase, pago, clase, alumno, ingreso, clase_import_descartada RESTART IDENTITY CASCADE`
+    await db`TRUNCATE pago_clase, pago, clase, alumno, familia, ingreso, clase_import_descartada RESTART IDENTITY CASCADE`
   })
 
   async function alumno(nombre = 'Cristóbal Mena', precio = 25000) {
@@ -292,13 +292,77 @@ describe.skipIf(!usarDb)('clases contra Postgres', () => {
 
     const r = await resumenClases({ desde: '2026-10-01', hasta: '2026-10-31' }, db)
     expect(r.deuda_por_alumno).toEqual([
-      { alumno_id: 1, alumno: 'Cristóbal Mena', deuda: 37500, desde: '2026-10-01', clases: 2 },
-      { alumno_id: 2, alumno: 'Rafaela Moraga', deuda: 20000, desde: '2026-10-03', clases: 1 },
+      { alumno_id: 1, alumno: 'Cristóbal Mena', familia_id: null, familia: null, deuda: 37500, desde: '2026-10-01', clases: 2 },
+      { alumno_id: 2, alumno: 'Rafaela Moraga', familia_id: null, familia: null, deuda: 20000, desde: '2026-10-03', clases: 1 },
     ])
+    // Sin familias, cada alumno es su propia cuenta de cobro.
+    expect(r.deuda_por_familia.map(c => [c.nombre, c.alumno_id, c.deuda])).toEqual([['Cristóbal Mena', 1, 37500], ['Rafaela Moraga', 2, 20000]])
     expect(r.deuda_total).toBe(57500)
     expect(r).toMatchObject({ horas_dictadas: 2.5, clases_dictadas: 3, monto_dictado: 57500, clases_programadas: 1, cobrado: 0 })
     // Cobrado por fecha de pago (septiembre), no por fecha de clase.
     expect((await resumenClases({ desde: '2026-09-01', hasta: '2026-09-30' }, db)).cobrado).toBe(25000)
+  })
+
+  test('familias: alta, apoderado, asignar hermanos, nombre único y borrado solo si está vacía', async () => {
+    const c = await alumno('Cristobal Mena')
+    const l = await alumno('Luciano Mena')
+    const { familia } = await crearFamilia({ nombre: 'Mena', apoderado_nombre: 'Isabel', apoderado_telefono: '+56 9 8765 4321' }, db)
+    expect(familia).toMatchObject({ nombre: 'Mena', apoderado_nombre: 'Isabel', alumnos: [] })
+    expect((await crearFamilia({ nombre: 'mena' }, db)).code).toBe('conflicto')
+    expect((await crearFamilia({ nombre: 'X', apoderado_telefono: 'abc' }, db)).code).toBe('validacion')
+
+    await editarAlumno(c.id, { familia_id: familia.id }, db)
+    const { alumno: lu } = await editarAlumno(l.id, { familia_id: familia.id }, db)
+    expect(lu).toMatchObject({ familia_id: familia.id, familia: 'Mena', apoderado_nombre: 'Isabel' })
+    expect((await listarFamilias(db))[0].alumnos.map(a => a.nombre)).toEqual(['Cristobal Mena', 'Luciano Mena'])
+    expect((await listarAlumnos({}, db)).every(a => a.familia === 'Mena')).toBe(true)
+    expect((await editarAlumno(l.id, { familia_id: 999 }, db)).code).toBe('no_encontrado')
+
+    expect((await editarFamilia(familia.id, { apoderado_nombre: 'Isabel Pérez' }, db)).familia.apoderado_nombre).toBe('Isabel Pérez')
+    expect((await eliminarFamilia(familia.id, db)).code).toBe('conflicto')
+    await editarAlumno(c.id, { familia_id: null }, db)
+    await editarAlumno(l.id, { familia_id: null }, db)
+    expect((await eliminarFamilia(familia.id, db)).ok).toBe(true)
+  })
+
+  test('pago de familia: un pago e ingreso por clases de varios hermanos; no mezcla familias', async () => {
+    const c = await alumno('Cristobal Mena', 20000)
+    const l = await alumno('Luciano Mena', 20000)
+    const otro = await alumno('Rafaela Moraga')
+    const { familia } = await crearFamilia({ nombre: 'Mena', apoderado_nombre: 'Isabel' }, db)
+    const { familia: otraFamilia } = await crearFamilia({ nombre: 'Moraga' }, db)
+    await editarAlumno(c.id, { familia_id: familia.id }, db)
+    await editarAlumno(l.id, { familia_id: familia.id }, db)
+    await editarAlumno(otro.id, { familia_id: otraFamilia.id }, db)
+    const c1 = await claseDictada('Cristobal Mena', '2026-10-04')
+    const l1 = await claseDictada('Luciano Mena', '2026-10-06')
+    const l2 = await claseDictada('Luciano Mena', '2026-10-08')
+    const r1 = await claseDictada('Rafaela Moraga', '2026-10-05')
+
+    const resumen = await resumenClases({}, db)
+    const mena = resumen.deuda_por_familia.find(x => x.familia_id === familia.id)
+    expect(mena).toMatchObject({ nombre: 'Familia Mena', apoderado_nombre: 'Isabel', deuda: 60000, desde: '2026-10-04', clases: 3 })
+    expect(mena.alumnos.map(a => [a.alumno, a.deuda])).toEqual([['Cristobal Mena', 20000], ['Luciano Mena', 40000]])
+
+    expect((await registrarPago({ claseIds: [c1.id, r1.id], fecha: HOY, hoy: HOY }, db)).code).toBe('validacion')
+    const r = await registrarPago({ claseIds: [c1.id, l1.id, l2.id], fecha: HOY, monto: 60000, hoy: HOY }, db)
+    expect(r.pago).toMatchObject({ alumno_id: null, familia_id: familia.id, cobrado_a: 'Familia Mena', monto: 60000 })
+    expect(r.ingreso.nota).toBe('Familia Mena — Cristobal Mena: 2026-10-04; Luciano Mena: 2026-10-06, 2026-10-08')
+    expect(await contar('ingreso')).toBe(1)
+    const { pagos } = await listarPagos({ familia_id: familia.id }, db)
+    expect(pagos[0]).toMatchObject({ cobrado_a: 'Familia Mena', clases: [{ alumno: 'Cristobal Mena' }, { alumno: 'Luciano Mena' }, { alumno: 'Luciano Mena' }] })
+    expect((await buscarClases({ familia_id: familia.id }, db)).filas).toHaveLength(3)
+
+    // Sin familia, dos alumnos distintos no se pagan juntos.
+    await editarAlumno(otro.id, { familia_id: null }, db)
+    const sinFamilia = await alumno('Baltazar Martinić')
+    const b1 = await claseDictada('Baltazar Martinić', '2026-10-02')
+    expect((await registrarPago({ claseIds: [b1.id, r1.id], fecha: HOY, hoy: HOY }, db)).code).toBe('validacion')
+    expect(sinFamilia.familia_id).toBeNull()
+
+    // Deshacer un pago de familia devuelve todo.
+    await deshacerPago(r.pago.id, db)
+    expect(await contar('ingreso')).toBe(0)
   })
 
   test('buscar clases filtra por alumno, rango, estado, cobro y actualizada_desde, con paginación', async () => {

@@ -371,7 +371,7 @@ restricción, salvo los de `origen='clases'` (ver arriba).
 GAP: sin detección de duplicados (ni en la UI ni en el agente) — un ingreso repetido el mismo
 día/fuente no se avisa.
 
-### Clases particulares (`alumno`, `clase`, `pago`, `pago_clase`)
+### Clases particulares (`familia`, `alumno`, `clase`, `pago`, `pago_clase`)
 
 Módulo aparte para agendar y cobrar clases particulares (reemplaza una base de Notion). No usa
 `gastos` ni `presupuesto_*`. El único contacto con las finanzas es que cada pago registrado en la
@@ -380,17 +380,24 @@ app crea un `ingreso`. Tablas en `server/db/migrate-clases.js`, que corre al arr
 `server/clases/clases.js`. Ver DEC-019.
 
 ```sql
-alumno(id, nombre UNIQUE + UNIQUE lower(nombre), precio_hora_default INTEGER > 0, activo, created_at, updated_at)
+familia(id, nombre UNIQUE lower(nombre), apoderado_nombre NULL, apoderado_telefono NULL, created_at, updated_at)
+alumno(id, nombre UNIQUE + UNIQUE lower(nombre), precio_hora_default INTEGER > 0, activo,
+       familia_id → familia NULL, created_at, updated_at)
 clase(id, alumno_id → alumno, fecha 'YYYY-MM-DD', hora_inicio 'HH:MM', duracion_minutos > 0,
       modalidad 'presencial'|'online', precio_hora INTEGER, monto INTEGER,
       estado 'programada'|'dictada'|'cancelada', cobro 'pendiente'|'pagado',
       notion_id UNIQUE NULL, notion_status NULL, nota, created_at, updated_at,
       CHECK NOT (estado='cancelada' AND cobro='pagado'))
-pago(id, alumno_id → alumno, fecha, monto INTEGER > 0, ingreso_id UNIQUE → ingreso ON DELETE RESTRICT NULL, created_at)
+pago(id, alumno_id → alumno NULL, familia_id → familia NULL, fecha, monto INTEGER > 0,
+     ingreso_id UNIQUE → ingreso ON DELETE RESTRICT NULL, created_at)
 pago_clase(pago_id → pago ON DELETE CASCADE, clase_id UNIQUE → clase, PK(pago_id, clase_id))
 clase_import_descartada(notion_id PK, eliminada_at)  -- clases importadas que se eliminaron en la app
 ```
 
+- **Familia = cuenta de cobro:** agrupa hermanos y guarda al apoderado (nombre y WhatsApp), que
+  es a quien se le cobra. Un alumno sin familia se cobra solo. La deuda se muestra por cuenta
+  (`resumen.deuda_por_familia`, con el detalle por hermano). Una familia solo se borra si no tiene
+  alumnos ni pagos.
 - **Precio:** cada clase congela su `precio_hora` y `monto = round(precio_hora × duracion_minutos / 60)`.
   Si cambia `alumno.precio_hora_default`, no se reescriben las clases: ese valor solo se propone al
   agendar. En clases importadas `monto` es el Price de Notion y `precio_hora = round(Price / Horas)`,
@@ -409,7 +416,10 @@ clase_import_descartada(notion_id PK, eliminada_at)  -- clases importadas que se
     import, su `notion_id` queda en `clase_import_descartada` y reimportar no la revive. No hay tool
     MCP que borre.
   - Una clase `cancelada` no cuenta en deuda, horas dictadas ni pagos.
-- **Pago:** cubre N clases del mismo alumno, todas `dictada` + `pendiente`, y `monto = Σ clase.monto`.
+- **Pago:** cubre N clases de un mismo alumno **o de hermanos de una misma familia**, todas
+  `dictada` + `pendiente`, y `monto = Σ clase.monto`. Pago de un solo alumno: `alumno_id` (más
+  `familia_id` si tiene familia). Pago de varios hermanos: `alumno_id = NULL` y `familia_id`; la
+  nota del ingreso queda como `"Familia Mena — Cristobal Mena: <fechas>; Luciano Mena: <fechas>"`.
   No hay pagos parciales ni por adelantado, y la fecha no puede ser futura. Todo pasa en una sola
   transacción, con `FOR UPDATE` sobre las clases:
   1. se inserta el `ingreso` (fuente `Clases particulares`, fecha y monto del pago, `origen='clases'`,
@@ -508,6 +518,8 @@ alumno 1──* clase
 alumno 1──* pago
 pago 1──1 ingreso (pago.ingreso_id, RESTRICT; NULL solo en datos importados)
 pago 1──* pago_clase *──1 clase (una clase está en a lo sumo un pago)
+familia 1──* alumno (opcional)
+familia 1──* pago (pagos de hermanos o de un alumno con familia)
 ```
 
 ## Máquinas de estado
@@ -551,6 +563,7 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | — | `fondo_ahorro_movimiento.tipo` (PG-only, `server/db/migrate-fondo-ahorro-tipo.js`) — distingue aporte de ajuste; pasa a ser la fuente del saldo de un fondo manual (antes solo informativo) |
 | — | `reserva_saldo.retiros`/`.crecimiento` (PG-only, `server/db/migrate-reserva-retiros.js`) — desglose persistido de cada lectura de saldo |
 | — | `ingreso.origen` acepta `'clases'` (PG-only, `server/db/migrate-ingresos.js` reemplaza el CHECK `ingreso_origen_check`) |
+| — | `familia`, `alumno.familia_id`, `pago.familia_id` (y `pago.alumno_id` pasa a NULL-able) (PG-only, `server/db/migrate-clases.js`) — cobro por familia |
 | — | `alumno`, `clase`, `pago`, `pago_clase`, `clase_import_descartada` (PG-only, `server/db/migrate-clases.js`, después de `migrateIngresos`) — clases particulares (DEC-019) |
 
 **PG:** schema aplicado vía `initSchema()` leyendo `schema.pg.sql`. GAP: sistema de migraciones versionadas para PG — las tablas nuevas siguen el mismo patrón `CREATE TABLE IF NOT EXISTS` que el resto del archivo.
@@ -578,8 +591,8 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
   mecanismo de revisión equivalente. `crear_reserva` no acepta un `grupo`/`subcategoria` fuera
   del catálogo (`validarVinculadoContraCatalogo`). El agente no crea `presupuesto_fondo` ni
   borra reservas (solo `activa=false`).
-- Clases particulares: un pago solo cubre clases `dictada` + `pendiente` de un mismo alumno, por la
-  suma exacta, y crea su `ingreso` en la misma transacción. Las tools MCP de clases no borran
+- Clases particulares: un pago solo cubre clases `dictada` + `pendiente` de un mismo alumno o de
+  hermanos de una misma familia, por la suma exacta, y crea su `ingreso` en la misma transacción. Las tools MCP de clases no borran
   alumnos, clases ni pagos, no reabren un pago ni editan el ingreso. El ingreso de `origen='clases'`
   solo se saca deshaciendo el pago.
 - Integridad referencial presupuesto → `presupuesto_ciclo`.

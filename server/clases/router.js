@@ -4,7 +4,7 @@
 import { Hono } from 'hono'
 import sql from '../db/client.js'
 import {
-  listarAlumnos, crearAlumno, editarAlumno,
+  listarAlumnos, crearAlumno, editarAlumno, listarFamilias, crearFamilia, editarFamilia, eliminarFamilia,
   buscarClases, agendarClase, moverClase, marcarDictada, cancelarClase, eliminarClase,
   registrarPago, deshacerPago, listarPagos, resumenClases, ingresosClasesCiclo,
 } from './clases.js'
@@ -33,10 +33,16 @@ export function createClasesRouter({ db = sql } = {}) {
 
   router.patch('/alumnos/:id', async (c) => responder(c, await editarAlumno(c.req.param('id'), await cuerpo(c), db), 'alumno'))
 
+  router.get('/familias', async (c) => c.json(await listarFamilias(db)))
+  router.post('/familias', async (c) => responder(c, await crearFamilia(await cuerpo(c), db), 'familia', 201))
+  router.patch('/familias/:id', async (c) => responder(c, await editarFamilia(c.req.param('id'), await cuerpo(c), db), 'familia'))
+  router.delete('/familias/:id', async (c) => responder(c, await eliminarFamilia(c.req.param('id'), db)))
+
   router.get('/', async (c) => {
     const q = c.req.query()
     return responder(c, await buscarClases({
       alumno_id: q.alumno_id || undefined,
+      familia_id: q.familia_id || undefined,
       desde: q.desde || undefined,
       hasta: q.hasta || undefined,
       estado: q.estado || undefined,
@@ -65,6 +71,7 @@ export function createClasesRouter({ db = sql } = {}) {
     const q = c.req.query()
     return responder(c, await listarPagos({
       alumno_id: q.alumno_id || undefined,
+      familia_id: q.familia_id || undefined,
       desde: q.desde || undefined,
       hasta: q.hasta || undefined,
       limite: q.limite ? Number(q.limite) : 50,

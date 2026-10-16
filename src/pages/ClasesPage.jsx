@@ -8,6 +8,7 @@ import { DeudaAlumnos } from '../components/Clases/DeudaAlumnos'
 import { RegistrarPago } from '../components/Clases/RegistrarPago'
 import { PagosRecientes } from '../components/Clases/PagosRecientes'
 import { Alumnos } from '../components/Clases/Alumnos'
+import { Familias } from '../components/Clases/Familias'
 import { CARD, formatHoras } from '../components/Clases/estilos'
 import { desplazarPeriodo, formatCiclo, obtenerCicloActual } from '../utils/ciclos'
 import { formatMes, getMesActual, privacyFormat } from '../utils/formatters'
@@ -68,7 +69,7 @@ export function ClasesPage({ ciclos }) {
 
   const { desde, hasta } = rangoMes(mes)
   const datos = useClases({ desde, hasta, ciclo })
-  const { clases, alumnos, resumen, pagos, cargando, error } = datos
+  const { clases, alumnos, familias, resumen, pagos, cargando, error } = datos
   const visibles = clases.filter(FILTROS.find(f => f.id === filtro).aplica)
   const fmt = (n) => privacyFormat(n, isPrivacyModeEnabled)
 
@@ -118,8 +119,8 @@ export function ClasesPage({ ciclos }) {
 
       {cobrando && (
         <RegistrarPago
-          key={cobrando.alumno_id}
-          alumno={cobrando}
+          key={cobrando.familia_id != null ? `f${cobrando.familia_id}` : `a${cobrando.alumno_id}`}
+          cuenta={cobrando}
           cargarClases={datos.clasesPagables}
           onRegistrar={datos.registrarPago}
           onCerrar={() => setCobrando(null)}
@@ -179,9 +180,10 @@ export function ClasesPage({ ciclos }) {
         </div>
 
         <div className="space-y-5">
-          <DeudaAlumnos deuda={resumen?.deuda_por_alumno} onCobrar={setCobrando} />
+          <DeudaAlumnos deuda={resumen?.deuda_por_familia} onCobrar={(cuenta) => { setCobrando(cuenta); window.scrollTo({ top: 0, behavior: 'smooth' }) }} />
           <PagosRecientes pagos={pagos} onDeshacer={datos.deshacerPago} />
-          <Alumnos alumnos={alumnos} onCrear={datos.crearAlumno} onEditar={datos.editarAlumno} />
+          <Familias familias={familias} onCrear={datos.crearFamilia} onEditar={datos.editarFamilia} onEliminar={datos.eliminarFamilia} />
+          <Alumnos alumnos={alumnos} familias={familias} onCrear={datos.crearAlumno} onEditar={datos.editarAlumno} />
         </div>
       </div>
     </main>

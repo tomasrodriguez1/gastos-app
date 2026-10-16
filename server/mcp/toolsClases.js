@@ -39,7 +39,9 @@ const NOTA_CLASES =
 const listarAlumnosTool = {
   name: 'listar_alumnos',
   description: [
-    'Lista los alumnos de clases particulares con su precio por hora por defecto y si están activos.',
+    'Lista los alumnos de clases particulares con su precio por hora por defecto, si están activos y',
+    'su familia (cuenta de cobro: hermanos que se cobran juntos) con el nombre y teléfono del',
+    'apoderado, que es a quien se le cobra. familia null = se le cobra al alumno solo.',
     'Usala para resolver el nombre exacto de un alumno antes de agendar. Solo lectura.',
   ].join(' '),
   annotations: { title: 'Listar alumnos', readOnlyHint: true, openWorldHint: false },
@@ -65,6 +67,7 @@ const buscarClasesTool = {
   schema: z.strictObject({
     alumno: z.string().trim().min(1).optional().describe('Parte del nombre del alumno, sin distinguir mayúsculas (ej. "mena")'),
     alumno_id: claseIdSchema.optional(),
+    familia_id: claseIdSchema.optional().describe('Clases de todos los hermanos de esa familia (de listar_alumnos)'),
     desde: fechaSchema.optional().describe('Fecha de la clase desde, inclusive'),
     hasta: fechaSchema.optional().describe('Fecha de la clase hasta, inclusive'),
     estado: z.enum(['programada', 'dictada', 'cancelada']).optional(),
@@ -85,6 +88,8 @@ const resumenClasesTool = {
     'Resumen de clases en un rango: horas y clases dictadas y programadas (por fecha de la clase),',
     'total cobrado (por fecha del pago) y la deuda actual por alumno con la fecha de su clase impaga',
     'más vieja. La deuda es la suma de clases dictadas y todavía sin cobrar; no depende del rango.',
+    '`deuda_por_familia` agrupa por cuenta de cobro (hermanos juntos, con apoderado y teléfono);',
+    'un alumno sin familia aparece solo.',
     'Sin desde/hasta usa el mes calendario actual. Las clases importadas de Notion ya pagadas no',
     'tienen pago registrado y no suman a `cobrado`.',
     NOTA_CLASES,
@@ -222,8 +227,8 @@ const cancelarClaseTool = {
 const registrarPagoTool = {
   name: 'registrar_pago',
   description: [
-    'Registra que un alumno pagó una o más clases. Todas las clases tienen que ser del mismo alumno,',
-    'estar dictadas y sin cobrar; el monto del pago es la suma de sus montos (no hay pagos parciales',
+    'Registra que se pagaron una o más clases. Todas tienen que ser del mismo alumno o de hermanos de',
+    'una misma familia (un solo pago por la transferencia del apoderado), estar dictadas y sin cobrar; el monto del pago es la suma de sus montos (no hay pagos parciales',
     'ni por adelantado). En una sola operación marca las clases como pagadas y crea un ingreso real',
     '"Clases particulares" con la fecha del pago, que cae en el ciclo financiero de esa fecha.',
     '`monto` es opcional: si lo pasás y no coincide con la suma, no se registra nada.',

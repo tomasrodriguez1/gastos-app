@@ -1,4 +1,4 @@
-// Clases particulares (DEC-019): alumnos, clases y pagos. Módulo propio, separado de gastos y
+// Clases particulares (DEC-019): familias, alumnos, clases y pagos. Módulo propio, separado de gastos y
 // presupuesto. Único contacto con las finanzas: registrarPago crea un `ingreso` real
 // (fuente "Clases particulares", origen 'clases') en la misma transacción que marca las clases
 // pagadas; deshacerPago lo borra. La deuda no se persiste: Σ monto de clases dictadas y
@@ -82,6 +82,20 @@ export function serializarAlumno(row) {
     nombre: row.nombre,
     precio_hora_default: entero(row.precio_hora_default),
     activo: row.activo,
+    familia_id: row.familia_id ?? null,
+    familia: row.familia ?? null,
+    apoderado_nombre: row.apoderado_nombre ?? null,
+    apoderado_telefono: row.apoderado_telefono ?? null,
+  }
+}
+
+export function serializarFamilia(row) {
+  return {
+    id: row.id,
+    nombre: row.nombre,
+    apoderado_nombre: row.apoderado_nombre || null,
+    apoderado_telefono: row.apoderado_telefono || null,
+    alumnos: (row.alumnos || []).filter(a => a && a.id != null),
   }
 }
 
@@ -90,6 +104,8 @@ export function serializarClase(row) {
     id: row.id,
     alumno_id: row.alumno_id,
     alumno: row.alumno ?? null,
+    familia_id: row.familia_id ?? null,
+    familia: row.familia ?? null,
     fecha: row.fecha,
     hora_inicio: row.hora_inicio,
     duracion_minutos: row.duracion_minutos,
@@ -107,11 +123,15 @@ export function serializarClase(row) {
   }
 }
 
+// `cobrado_a` es lo que se muestra: el alumno, o "Familia X" si el pago cubre a varios hermanos.
 function serializarPago(row) {
   return {
     id: row.id,
-    alumno_id: row.alumno_id,
+    alumno_id: row.alumno_id ?? null,
     alumno: row.alumno ?? null,
+    familia_id: row.familia_id ?? null,
+    familia: row.familia ?? null,
+    cobrado_a: row.alumno ?? (row.familia ? `Familia ${row.familia}` : null),
     fecha: row.fecha,
     monto: entero(row.monto),
     ingreso_id: row.ingreso_id ?? null,
@@ -121,9 +141,10 @@ function serializarPago(row) {
 }
 
 const SELECT_CLASE = (db) => db`
-  SELECT c.*, a.nombre AS alumno, pc.pago_id
+  SELECT c.*, a.nombre AS alumno, a.familia_id, f.nombre AS familia, pc.pago_id
   FROM clase c
   JOIN alumno a ON a.id = c.alumno_id
+  LEFT JOIN familia f ON f.id = a.familia_id
   LEFT JOIN pago_clase pc ON pc.clase_id = c.id
 `
 
@@ -134,10 +155,20 @@ async function leerClase(id, db) {
 
 // ─── Alumnos ─────────────────────────────────────────────────────────────────
 
+const SELECT_ALUMNO = (db) => db`
+  SELECT a.*, f.nombre AS familia, f.apoderado_nombre, f.apoderado_telefono
+  FROM alumno a LEFT JOIN familia f ON f.id = a.familia_id
+`
+
+async function leerAlumno(id, db) {
+  const [row] = await db`${SELECT_ALUMNO(db)} WHERE a.id = ${Number(id)}`
+  return row || null
+}
+
 export async function listarAlumnos({ incluirInactivos = true } = {}, db = sql) {
   const rows = incluirInactivos
-    ? await db`SELECT * FROM alumno ORDER BY activo DESC, nombre`
-    : await db`SELECT * FROM alumno WHERE activo ORDER BY nombre`
+    ? await db`${SELECT_ALUMNO(db)} ORDER BY a.activo DESC, a.nombre`
+    : await db`${SELECT_ALUMNO(db)} WHERE a.activo ORDER BY a.nombre`
   return rows.map(serializarAlumno)
 }
 
@@ -197,6 +228,16 @@ export async function editarAlumno(id, cambios = {}, db = sql) {
   const precio = cambios.precio_hora_default !== undefined ? Number(cambios.precio_hora_default) : actual.precio_hora_default
   if (!Number.isInteger(precio) || precio <= 0) return validacion('precio_hora_default tiene que ser un entero CLP > 0')
   const activo = cambios.activo !== undefined ? Boolean(cambios.activo) : actual.activo
+  let familiaId = actual.familia_id
+  if (cambios.familia_id !== undefined) {
+    if (cambios.familia_id === null || cambios.familia_id === '') familiaId = null
+    else {
+      if (!idValido(cambios.familia_id)) return validacion('familia_id inválido')
+      const [familia] = await db`SELECT id FROM familia WHERE id = ${Number(cambios.familia_id)}`
+      if (!familia) return noEncontrado(`No existe la familia ${cambios.familia_id}`)
+      familiaId = familia.id
+    }
+  }
 
   if (nombre.toLowerCase() !== actual.nombre.toLowerCase()) {
     const otro = await buscarAlumnoPorNombre(nombre, db)
@@ -204,18 +245,100 @@ export async function editarAlumno(id, cambios = {}, db = sql) {
   }
 
   const [row] = await db`
-    UPDATE alumno SET nombre = ${nombre}, precio_hora_default = ${precio}, activo = ${activo}, updated_at = NOW()
+    UPDATE alumno SET nombre = ${nombre}, precio_hora_default = ${precio}, activo = ${activo},
+      familia_id = ${familiaId}, updated_at = NOW()
     WHERE id = ${actual.id}
-    RETURNING *
+    RETURNING id
   `
-  return { alumno: serializarAlumno(row) }
+  return { alumno: serializarAlumno(await leerAlumno(row.id, db)) }
+}
+
+// ─── Familias ────────────────────────────────────────────────────────────────
+// Cuenta de cobro: agrupa hermanos y guarda al apoderado (nombre y WhatsApp).
+
+function datosFamilia(datos, actual = {}) {
+  const nombre = datos.nombre !== undefined ? textoONull(datos.nombre) : actual.nombre
+  if (!nombre) return { error: 'Falta el nombre de la familia' }
+  if (nombre.length > 120) return { error: 'Nombre demasiado largo' }
+  const apoderado = datos.apoderado_nombre !== undefined ? textoONull(datos.apoderado_nombre) : actual.apoderado_nombre ?? null
+  const telefono = datos.apoderado_telefono !== undefined ? textoONull(datos.apoderado_telefono) : actual.apoderado_telefono ?? null
+  if (telefono && !/^\+?[\d\s().-]{8,20}$/.test(telefono)) return { error: `Teléfono inválido (${telefono})` }
+  return { nombre, apoderado, telefono }
+}
+
+async function leerFamilia(id, db) {
+  const [row] = await db`
+    SELECT f.*, COALESCE(json_agg(json_build_object('id', a.id, 'nombre', a.nombre, 'activo', a.activo) ORDER BY a.nombre)
+      FILTER (WHERE a.id IS NOT NULL), '[]') AS alumnos
+    FROM familia f LEFT JOIN alumno a ON a.familia_id = f.id
+    WHERE f.id = ${Number(id)}
+    GROUP BY f.id
+  `
+  return row || null
+}
+
+export async function listarFamilias(db = sql) {
+  const rows = await db`
+    SELECT f.*, COALESCE(json_agg(json_build_object('id', a.id, 'nombre', a.nombre, 'activo', a.activo) ORDER BY a.nombre)
+      FILTER (WHERE a.id IS NOT NULL), '[]') AS alumnos
+    FROM familia f LEFT JOIN alumno a ON a.familia_id = f.id
+    GROUP BY f.id
+    ORDER BY f.nombre
+  `
+  return rows.map(serializarFamilia)
+}
+
+export async function crearFamilia(datos = {}, db = sql) {
+  const d = datosFamilia(datos)
+  if (d.error) return validacion(d.error)
+  const [row] = await db`
+    INSERT INTO familia (nombre, apoderado_nombre, apoderado_telefono)
+    VALUES (${d.nombre}, ${d.apoderado}, ${d.telefono})
+    ON CONFLICT DO NOTHING
+    RETURNING id
+  `
+  if (!row) return conflicto(`Ya existe la familia "${d.nombre}"`)
+  return { familia: serializarFamilia(await leerFamilia(row.id, db)) }
+}
+
+export async function editarFamilia(id, cambios = {}, db = sql) {
+  if (!idValido(id)) return validacion('Id inválido')
+  const [actual] = await db`SELECT * FROM familia WHERE id = ${Number(id)}`
+  if (!actual) return noEncontrado('Familia no encontrada')
+  const d = datosFamilia(cambios, actual)
+  if (d.error) return validacion(d.error)
+  if (d.nombre.toLowerCase() !== actual.nombre.toLowerCase()) {
+    const [otra] = await db`SELECT id FROM familia WHERE lower(nombre) = lower(${d.nombre})`
+    if (otra) return conflicto(`Ya existe la familia "${d.nombre}"`)
+  }
+  await db`
+    UPDATE familia SET nombre = ${d.nombre}, apoderado_nombre = ${d.apoderado}, apoderado_telefono = ${d.telefono},
+      updated_at = NOW()
+    WHERE id = ${actual.id}
+  `
+  return { familia: serializarFamilia(await leerFamilia(actual.id, db)) }
+}
+
+// Solo una familia vacía (sin alumnos ni pagos): sirve para corregir una creada por error.
+export async function eliminarFamilia(id, db = sql) {
+  if (!idValido(id)) return validacion('Id inválido')
+  const [actual] = await db`
+    SELECT f.id,
+      (SELECT COUNT(*) FROM alumno WHERE familia_id = f.id)::int AS alumnos,
+      (SELECT COUNT(*) FROM pago WHERE familia_id = f.id)::int AS pagos
+    FROM familia f WHERE f.id = ${Number(id)}
+  `
+  if (!actual) return noEncontrado('Familia no encontrada')
+  if (actual.alumnos || actual.pagos) return conflicto('La familia tiene alumnos o pagos: sacá a los alumnos primero')
+  await db`DELETE FROM familia WHERE id = ${actual.id}`
+  return { ok: true }
 }
 
 // ─── Clases ──────────────────────────────────────────────────────────────────
 
 export async function buscarClases(filtros = {}, db = sql) {
   const {
-    alumno_id, alumno, desde, hasta, estado, cobro, actualizada_desde,
+    alumno_id, familia_id, alumno, desde, hasta, estado, cobro, actualizada_desde,
     limite = 100, offset = 0,
   } = filtros
   if (desde && !fechaValida(desde)) return validacion(`desde: fecha inválida (${desde})`)
@@ -230,17 +353,20 @@ export async function buscarClases(filtros = {}, db = sql) {
     actualizadaDesde = d
   }
   if (alumno_id != null && !idValido(alumno_id)) return validacion('alumno_id inválido')
+  if (familia_id != null && !idValido(familia_id)) return validacion('familia_id inválido')
   const lim = Math.min(Math.max(Number(limite) || 100, 1), 1000)
   const off = Math.max(Number(offset) || 0, 0)
 
   const vacio = db``
   const rows = await db`
-    SELECT c.*, a.nombre AS alumno, pc.pago_id, COUNT(*) OVER () AS total
+    SELECT c.*, a.nombre AS alumno, a.familia_id, f.nombre AS familia, pc.pago_id, COUNT(*) OVER () AS total
     FROM clase c
     JOIN alumno a ON a.id = c.alumno_id
+    LEFT JOIN familia f ON f.id = a.familia_id
     LEFT JOIN pago_clase pc ON pc.clase_id = c.id
     WHERE true
       ${alumno_id != null ? db`AND c.alumno_id = ${Number(alumno_id)}` : vacio}
+      ${familia_id != null ? db`AND a.familia_id = ${Number(familia_id)}` : vacio}
       ${typeof alumno === 'string' && alumno.trim() ? db`AND a.nombre ILIKE ${'%' + alumno.trim() + '%'}` : vacio}
       ${desde ? db`AND c.fecha >= ${desde}` : vacio}
       ${hasta ? db`AND c.fecha <= ${hasta}` : vacio}
@@ -400,13 +526,17 @@ export async function eliminarClase(id, db = sql) {
 
 // ─── Pagos ───────────────────────────────────────────────────────────────────
 
-function notaPago(nombre, clases) {
-  const fechas = clases.map(c => c.fecha).sort()
-  return `${nombre}: ${fechas.join(', ')}`
+// "Cristobal Mena: 2026-10-01, 2026-10-08" o, si son varios hermanos,
+// "Familia Mena — Cristobal Mena: 2026-10-04; Luciano Mena: 2026-10-06".
+function notaPago(clases, familia) {
+  const porAlumno = new Map()
+  for (const c of clases) porAlumno.set(c.alumno, [...(porAlumno.get(c.alumno) || []), c.fecha])
+  const partes = [...porAlumno].map(([nombre, fechas]) => `${nombre}: ${fechas.sort().join(', ')}`)
+  return porAlumno.size > 1 ? `Familia ${familia} — ${partes.join('; ')}` : partes[0]
 }
 
-// Un pago cubre N clases dictadas y pendientes del mismo alumno; monto = Σ clase.monto (sin
-// parciales). En una transacción: ingreso → pago → pago_clase → clases pagadas. Si algo falla
+// Un pago cubre N clases dictadas y pendientes de un mismo alumno o de hermanos de una misma
+// familia (cuenta de cobro); monto = Σ clase.monto (sin parciales). En una transacción: ingreso → pago → pago_clase → clases pagadas. Si algo falla
 // no queda nada escrito. `monto` es opcional: si viene y no coincide con la suma, se rechaza.
 export async function registrarPago({ claseIds, fecha, monto, hoy = hoyLocal() } = {}, db = sql) {
   const lista = Array.isArray(claseIds) ? claseIds : []
@@ -418,8 +548,8 @@ export async function registrarPago({ claseIds, fecha, monto, hoy = hoyLocal() }
 
   return db.begin(async (tx) => {
     const rows = await tx`
-      SELECT c.*, a.nombre AS alumno
-      FROM clase c JOIN alumno a ON a.id = c.alumno_id
+      SELECT c.*, a.nombre AS alumno, a.familia_id, f.nombre AS familia
+      FROM clase c JOIN alumno a ON a.id = c.alumno_id LEFT JOIN familia f ON f.id = a.familia_id
       WHERE c.id = ANY(${ids})
       ORDER BY c.fecha, c.hora_inicio
       FOR UPDATE OF c
@@ -429,8 +559,11 @@ export async function registrarPago({ claseIds, fecha, monto, hoy = hoyLocal() }
     if (faltan.length) return noEncontrado(`No existen las clases: ${faltan.join(', ')}`)
 
     const alumnos = new Set(rows.map(r => r.alumno_id))
-    if (alumnos.size > 1) {
-      return validacion(`Un pago es de un solo alumno; estas clases son de ${[...new Set(rows.map(r => r.alumno))].join(', ')}`)
+    const familias = new Set(rows.map(r => r.familia_id))
+    if (alumnos.size > 1 && (familias.size > 1 || rows[0].familia_id == null)) {
+      return validacion(
+        `Un pago es de un solo alumno o de hermanos de una misma familia; estas clases son de ${[...new Set(rows.map(r => r.alumno))].join(', ')}`,
+      )
     }
     const noPagables = rows.filter(r => r.estado !== 'dictada' || r.cobro !== 'pendiente')
     if (noPagables.length) {
@@ -444,12 +577,14 @@ export async function registrarPago({ claseIds, fecha, monto, hoy = hoyLocal() }
     }
     if (total <= 0) return validacion('Las clases suman $0: no hay nada que cobrar')
 
-    const { alumno, alumno_id: alumnoId } = rows[0]
+    const unAlumno = alumnos.size === 1
+    const alumnoId = unAlumno ? rows[0].alumno_id : null
+    const { familia_id: familiaId, familia } = rows[0]
     const ingreso = await crearIngreso({
       fecha,
       fuente: FUENTE_INGRESO_CLASES,
       monto: total,
-      nota: notaPago(alumno, rows),
+      nota: notaPago(rows, familia),
       origen: 'clases',
     }, tx)
     // crearIngreso ya validó todo lo que podía fallar; si igual devuelve error, se aborta la
@@ -457,8 +592,8 @@ export async function registrarPago({ claseIds, fecha, monto, hoy = hoyLocal() }
     if (ingreso.error) throw new Error(`No se pudo crear el ingreso: ${ingreso.error}`)
 
     const [pago] = await tx`
-      INSERT INTO pago (alumno_id, fecha, monto, ingreso_id)
-      VALUES (${alumnoId}, ${fecha}, ${total}, ${ingreso.ingreso.id})
+      INSERT INTO pago (alumno_id, familia_id, fecha, monto, ingreso_id)
+      VALUES (${alumnoId}, ${familiaId}, ${fecha}, ${total}, ${ingreso.ingreso.id})
       RETURNING *
     `
     await tx`INSERT INTO pago_clase ${tx(rows.map(r => ({ pago_id: pago.id, clase_id: r.id })))}`
@@ -467,9 +602,10 @@ export async function registrarPago({ claseIds, fecha, monto, hoy = hoyLocal() }
     return {
       pago: serializarPago({
         ...pago,
-        alumno,
+        alumno: unAlumno ? rows[0].alumno : null,
+        familia,
         ciclo_financiero: ingreso.ingreso.ciclo_financiero,
-        clases: rows.map(r => ({ id: r.id, fecha: r.fecha, monto: entero(r.monto) })),
+        clases: rows.map(r => ({ id: r.id, alumno: r.alumno, fecha: r.fecha, monto: entero(r.monto) })),
       }),
       ingreso: ingreso.ingreso,
     }
@@ -493,26 +629,29 @@ export async function deshacerPago(id, db = sql) {
   })
 }
 
-export async function listarPagos({ alumno_id, desde, hasta, limite = 50 } = {}, db = sql) {
+export async function listarPagos({ alumno_id, familia_id, desde, hasta, limite = 50 } = {}, db = sql) {
   if (desde && !fechaValida(desde)) return validacion(`desde: fecha inválida (${desde})`)
   if (hasta && !fechaValida(hasta)) return validacion(`hasta: fecha inválida (${hasta})`)
   if (alumno_id != null && !idValido(alumno_id)) return validacion('alumno_id inválido')
   const lim = Math.min(Math.max(Number(limite) || 50, 1), 500)
   const vacio = db``
   const rows = await db`
-    SELECT p.*, a.nombre AS alumno, i.ciclo_financiero,
-      COALESCE(json_agg(json_build_object('id', c.id, 'fecha', c.fecha, 'monto', c.monto) ORDER BY c.fecha)
+    SELECT p.*, a.nombre AS alumno, f.nombre AS familia, i.ciclo_financiero,
+      COALESCE(json_agg(json_build_object('id', c.id, 'alumno', ca.nombre, 'fecha', c.fecha, 'monto', c.monto) ORDER BY c.fecha)
         FILTER (WHERE c.id IS NOT NULL), '[]') AS clases
     FROM pago p
-    JOIN alumno a ON a.id = p.alumno_id
+    LEFT JOIN alumno a ON a.id = p.alumno_id
+    LEFT JOIN familia f ON f.id = p.familia_id
     LEFT JOIN ingreso i ON i.id = p.ingreso_id
     LEFT JOIN pago_clase pc ON pc.pago_id = p.id
     LEFT JOIN clase c ON c.id = pc.clase_id
+    LEFT JOIN alumno ca ON ca.id = c.alumno_id
     WHERE true
       ${alumno_id != null ? db`AND p.alumno_id = ${Number(alumno_id)}` : vacio}
+      ${familia_id != null ? db`AND p.familia_id = ${Number(familia_id)}` : vacio}
       ${desde ? db`AND p.fecha >= ${desde}` : vacio}
       ${hasta ? db`AND p.fecha <= ${hasta}` : vacio}
-    GROUP BY p.id, a.nombre, i.ciclo_financiero
+    GROUP BY p.id, a.nombre, f.nombre, i.ciclo_financiero
     ORDER BY p.fecha DESC, p.id DESC
     LIMIT ${lim}
   `
@@ -549,11 +688,12 @@ export async function resumenClases({ desde, hasta } = {}, db = sql) {
       FROM pago WHERE true ${enRango('fecha')}
     `,
     db`
-      SELECT a.id AS alumno_id, a.nombre AS alumno, SUM(c.monto)::bigint AS deuda,
-        MIN(c.fecha) AS desde, COUNT(*)::int AS clases
-      FROM clase c JOIN alumno a ON a.id = c.alumno_id
+      SELECT a.id AS alumno_id, a.nombre AS alumno, a.familia_id, f.nombre AS familia,
+        f.apoderado_nombre, f.apoderado_telefono,
+        SUM(c.monto)::bigint AS deuda, MIN(c.fecha) AS desde, COUNT(*)::int AS clases
+      FROM clase c JOIN alumno a ON a.id = c.alumno_id LEFT JOIN familia f ON f.id = a.familia_id
       WHERE c.estado = 'dictada' AND c.cobro = 'pendiente'
-      GROUP BY a.id, a.nombre
+      GROUP BY a.id, a.nombre, f.id
       ORDER BY deuda DESC, a.nombre
     `,
   ])
@@ -561,10 +701,32 @@ export async function resumenClases({ desde, hasta } = {}, db = sql) {
   const deudaPorAlumno = deuda.map(d => ({
     alumno_id: d.alumno_id,
     alumno: d.alumno,
+    familia_id: d.familia_id ?? null,
+    familia: d.familia ?? null,
     deuda: Number(d.deuda),
     desde: d.desde,
     clases: d.clases,
   }))
+  // Por cuenta de cobro: hermanos de una familia juntos; un alumno sin familia, solo.
+  const cuentas = new Map()
+  for (const d of deuda) {
+    const clave = d.familia_id != null ? `familia:${d.familia_id}` : `alumno:${d.alumno_id}`
+    const cuenta = cuentas.get(clave) || {
+      familia_id: d.familia_id ?? null,
+      alumno_id: d.familia_id != null ? null : d.alumno_id,
+      nombre: d.familia_id != null ? `Familia ${d.familia}` : d.alumno,
+      apoderado_nombre: d.apoderado_nombre ?? null,
+      apoderado_telefono: d.apoderado_telefono ?? null,
+      deuda: 0, desde: d.desde, clases: 0, alumnos: [],
+    }
+    cuenta.deuda += Number(d.deuda)
+    cuenta.clases += d.clases
+    if (d.desde < cuenta.desde) cuenta.desde = d.desde
+    cuenta.alumnos.push({ alumno_id: d.alumno_id, alumno: d.alumno, deuda: Number(d.deuda), clases: d.clases })
+    cuentas.set(clave, cuenta)
+  }
+  for (const cuenta of cuentas.values()) cuenta.alumnos.sort((a, b) => a.alumno.localeCompare(b.alumno))
+  const deudaPorFamilia = [...cuentas.values()].sort((a, b) => b.deuda - a.deuda || a.nombre.localeCompare(b.nombre))
   return {
     rango: { desde: desde || null, hasta: hasta || null },
     horas_dictadas: clases.minutos_dictados / 60,
@@ -576,6 +738,7 @@ export async function resumenClases({ desde, hasta } = {}, db = sql) {
     pagos: cobrado.pagos,
     deuda_total: deudaPorAlumno.reduce((s, d) => s + d.deuda, 0),
     deuda_por_alumno: deudaPorAlumno,
+    deuda_por_familia: deudaPorFamilia,
   }
 }
 

@@ -1,6 +1,6 @@
 import sql from './client.js'
 
-// Módulo de clases particulares (DEC-019): alumno, clase, pago y pago_clase. Tablas propias, sin
+// Módulo de clases particulares (DEC-019): familia, alumno, clase, pago y pago_clase. Tablas propias, sin
 // tocar gastos ni presupuesto. El único vínculo con las finanzas es pago.ingreso_id: cada pago
 // registrado en la app crea un `ingreso` (origen='clases') en la misma transacción. RESTRICT en
 // esa FK para que el ingreso no se pueda borrar suelto: se saca deshaciendo el pago.
@@ -21,6 +21,20 @@ export async function migrateClases(db = sql) {
         updated_at          TIMESTAMPTZ DEFAULT NOW()
       )
     `)
+    // Familia = cuenta de cobro: agrupa hermanos y guarda al apoderado (a quién se le escribe por
+    // WhatsApp). Un alumno sin familia se cobra solo.
+    await tx.unsafe(`
+      CREATE TABLE IF NOT EXISTS familia (
+        id                 SERIAL PRIMARY KEY,
+        nombre             TEXT NOT NULL CHECK (length(trim(nombre)) > 0),
+        apoderado_nombre   TEXT,
+        apoderado_telefono TEXT,
+        created_at         TIMESTAMPTZ DEFAULT NOW(),
+        updated_at         TIMESTAMPTZ DEFAULT NOW()
+      )
+    `)
+    await tx.unsafe('CREATE UNIQUE INDEX IF NOT EXISTS idx_familia_nombre_lower ON familia (lower(nombre))')
+    await tx.unsafe('ALTER TABLE alumno ADD COLUMN IF NOT EXISTS familia_id INTEGER REFERENCES familia(id) ON DELETE RESTRICT')
     // El alta por MCP compara el nombre sin distinguir mayúsculas: "cristóbal mena" no duplica.
     await tx.unsafe('CREATE UNIQUE INDEX IF NOT EXISTS idx_alumno_nombre_lower ON alumno (lower(nombre))')
     await tx.unsafe(`
@@ -57,6 +71,10 @@ export async function migrateClases(db = sql) {
       )
     `)
     await tx.unsafe('CREATE INDEX IF NOT EXISTS idx_pago_fecha ON pago(fecha DESC, id DESC)')
+    // Un pago de familia puede cubrir clases de varios hermanos: alumno_id queda NULL y
+    // familia_id dice de quién es. Pago de un solo alumno: alumno_id (y familia_id si tiene).
+    await tx.unsafe('ALTER TABLE pago ADD COLUMN IF NOT EXISTS familia_id INTEGER REFERENCES familia(id) ON DELETE RESTRICT')
+    await tx.unsafe('ALTER TABLE pago ALTER COLUMN alumno_id DROP NOT NULL')
     await tx.unsafe(`
       CREATE TABLE IF NOT EXISTS pago_clase (
         pago_id  INTEGER NOT NULL REFERENCES pago(id) ON DELETE CASCADE,

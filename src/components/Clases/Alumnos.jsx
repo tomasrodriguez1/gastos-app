@@ -3,7 +3,7 @@ import { formatCLP } from '../../utils/formatters'
 import { BOTON_PRIMARIO, BOTON_SECUNDARIO, CARD, INPUT, TITULO_CARD } from './estilos'
 
 // Alumnos: alta, precio por hora por defecto y activar/desactivar. No se borran.
-export function Alumnos({ alumnos, onCrear, onEditar }) {
+export function Alumnos({ alumnos, familias = [], onCrear, onEditar }) {
   const [form, setForm] = useState(null)
   const [editando, setEditando] = useState(null)
   const [error, setError] = useState(null)
@@ -24,6 +24,15 @@ export function Alumnos({ alumnos, onCrear, onEditar }) {
     try {
       await onEditar(alumno.id, { precio_hora_default: Number(editando.precio) })
       setEditando(null)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  async function cambiarFamilia(alumno, valor) {
+    setError(null)
+    try {
+      await onEditar(alumno.id, { familia_id: valor ? Number(valor) : null })
     } catch (err) {
       setError(err.message)
     }
@@ -72,7 +81,18 @@ export function Alumnos({ alumnos, onCrear, onEditar }) {
         <div className="space-y-1.5">
           {alumnos.map(a => (
             <div key={a.id} className={`flex items-center justify-between gap-2 text-sm ${a.activo ? '' : 'opacity-50'}`}>
-              <span className="text-slate-200 truncate min-w-0">{a.nombre}</span>
+              <div className="min-w-0">
+                <p className="text-slate-200 truncate">{a.nombre}</p>
+                <select
+                  value={a.familia_id ?? ''}
+                  onChange={e => cambiarFamilia(a, e.target.value)}
+                  aria-label={`Familia de ${a.nombre}`}
+                  className="bg-transparent text-xs text-slate-500 hover:text-slate-300 outline-none cursor-pointer max-w-full"
+                >
+                  <option value="">Sin familia</option>
+                  {familias.map(f => <option key={f.id} value={f.id}>Familia {f.nombre}</option>)}
+                </select>
+              </div>
               <div className="flex items-center gap-2 shrink-0">
                 {editando?.id === a.id ? (
                   <>

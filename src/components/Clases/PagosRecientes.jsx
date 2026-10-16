@@ -10,7 +10,7 @@ export function PagosRecientes({ pagos, onDeshacer }) {
 
   async function deshacer(pago) {
     const ok = window.confirm(
-      `¿Deshacer el pago de ${pago.alumno} del ${formatFecha(pago.fecha)}? ` +
+      `¿Deshacer el pago de ${pago.cobrado_a} del ${formatFecha(pago.fecha)}? ` +
       `Las ${pago.clases.length} clases vuelven a "No cobrado" y se borra el ingreso.`,
     )
     if (!ok) return
@@ -33,7 +33,7 @@ export function PagosRecientes({ pagos, onDeshacer }) {
           {pagos.map(p => (
             <div key={p.id} className="flex items-center justify-between gap-2 text-sm">
               <div className="min-w-0">
-                <p className="text-slate-200 truncate">{p.alumno}</p>
+                <p className="text-slate-200 truncate">{p.cobrado_a}</p>
                 <p className="text-xs text-slate-500">
                   {formatFecha(p.fecha)} · {p.clases.length} clase{p.clases.length === 1 ? '' : 's'}
                   {p.ciclo_financiero && ` · ciclo ${p.ciclo_financiero}`}

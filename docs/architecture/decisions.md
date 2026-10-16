@@ -371,6 +371,11 @@ Alternatives considered: modelar las clases como categoría de gastos o de presu
 (descartada: mezcla agenda con finanzas y rompe el cálculo del ciclo); sincronizar con Google
 Calendar o con n8n desde la app (descartada: lo hace otro agente por MCP); dejar el ingreso de
 clases editable como cualquier otro (descartada: el pago y el ingreso se desincronizarían).
+Update 2026-10-16: se agrega `familia` (cuenta de cobro con apoderado y WhatsApp). Un pago puede
+cubrir clases de hermanos de una misma familia (antes: solo un alumno), porque el apoderado paga
+todo junto con una transferencia. Sigue siendo un solo ingreso por pago. El mensaje de cobro para
+WhatsApp se arma en el cliente (`src/utils/mensajeCobro.js`) y no se guarda; no hay envío
+automático.
 Consequences: la tarjeta Ingresos del Dashboard sigue usando la previsión (`presupuesto_ingreso`);
 los ingresos de clases solo aparecen como ingreso real. El MCP ahora tiene escrituras fuera de la
 bandeja de gastos; un cliente con `MCP_TOKEN` puede crear clases y registrar pagos, pero no

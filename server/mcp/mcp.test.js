@@ -534,7 +534,7 @@ describe.skipIf(!URL_TEST_CLASES || URL_TEST_CLASES === process.env.DATABASE_URL
     try {
       await migrateIngresos(db)
       await migrateClases(db)
-      await db`TRUNCATE pago_clase, pago, clase, alumno, ingreso RESTART IDENTITY CASCADE`
+      await db`TRUNCATE pago_clase, pago, clase, alumno, familia, ingreso RESTART IDENTITY CASCADE`
       const conDb = (fn) => (...args) => fn(...args, db)
       const depsDb = {
         ...depsPorDefecto,
@@ -558,7 +558,8 @@ describe.skipIf(!URL_TEST_CLASES || URL_TEST_CLASES === process.env.DATABASE_URL
         expect((await llamar(client, 'marcar_dictada', { clase_id: r.data.id })).ok).toBe(true)
       }
       const resumen = await llamar(client, 'resumen_clases')
-      expect(resumen.data.deuda_por_alumno).toEqual([{ alumno_id: 1, alumno: 'Julieta Chinetti', deuda: 50000, desde: '2026-10-01', clases: 2 }])
+      expect(resumen.data.deuda_por_alumno).toEqual([{ alumno_id: 1, alumno: 'Julieta Chinetti', familia_id: null, familia: null, deuda: 50000, desde: '2026-10-01', clases: 2 }])
+      expect(resumen.data.deuda_por_familia[0]).toMatchObject({ nombre: 'Julieta Chinetti', deuda: 50000 })
 
       const pago = await llamar(client, 'registrar_pago', { clase_ids: ids, fecha: '2026-10-06', monto: 50000 })
       expect(pago).toMatchObject({ ok: true, data: { ingreso: { fuente: 'Clases particulares', ciclo_financiero: '2026-10' } } })

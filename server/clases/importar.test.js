@@ -106,7 +106,7 @@ describe.skipIf(!usarDb)('import contra Postgres', () => {
     db = postgres(URL_TEST, { max: 2, onnotice: () => {} })
     await migrateIngresos(db)
     await migrateClases(db)
-    await db`TRUNCATE pago_clase, pago, clase, alumno, ingreso, clase_import_descartada RESTART IDENTITY CASCADE`
+    await db`TRUNCATE pago_clase, pago, clase, alumno, familia, ingreso, clase_import_descartada RESTART IDENTITY CASCADE`
   })
 
   afterAll(async () => {
