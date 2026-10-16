@@ -6,7 +6,7 @@ import sql from '../db/client.js'
 import {
   listarAlumnos, crearAlumno, editarAlumno, listarFamilias, crearFamilia, editarFamilia, eliminarFamilia,
   buscarClases, agendarClase, moverClase, marcarDictada, cancelarClase, eliminarClase,
-  registrarPago, deshacerPago, listarPagos, resumenClases, ingresosClasesCiclo,
+  registrarPago, deshacerPago, listarPagos, resumenClases, ingresosClasesCiclo, clasesParaAnalisis,
 } from './clases.js'
 import { obtenerCicloActual } from '../../src/utils/ciclos.js'
 
@@ -33,6 +33,7 @@ export function createClasesRouter({ db = sql } = {}) {
 
   router.patch('/alumnos/:id', async (c) => responder(c, await editarAlumno(c.req.param('id'), await cuerpo(c), db), 'alumno'))
 
+  router.get('/analisis', async (c) => c.json({ clases: await clasesParaAnalisis(db) }))
   router.get('/familias', async (c) => c.json(await listarFamilias(db)))
   router.post('/familias', async (c) => responder(c, await crearFamilia(await cuerpo(c), db), 'familia', 201))
   router.patch('/familias/:id', async (c) => responder(c, await editarFamilia(c.req.param('id'), await cuerpo(c), db), 'familia'))

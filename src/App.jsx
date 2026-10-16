@@ -11,6 +11,7 @@ import { PresupuestoPage } from './pages/PresupuestoPage'
 import { TarjetaPage } from './pages/TarjetaPage'
 import { FondosPage } from './pages/FondosPage'
 import { ClasesPage } from './pages/ClasesPage'
+import { ClasesAnalisisPage } from './pages/ClasesAnalisisPage'
 import { PasskeysPage } from './pages/PasskeysPage'
 import { AgenteChatProvider } from './contexts/AgenteChatContext'
 import { AgenteFlotante } from './components/Agente/AgenteFlotante'
@@ -217,6 +218,7 @@ export default function App() {
               element={<FondosPage {...sharedProps} gastos={todoLosGastos} reconciliacion={reconciliacion} fgp={fgp} resumenFGP={resumenFGP} />}
             />
             <Route path="/clases" element={<ClasesPage ciclos={ciclos} />} />
+            <Route path="/clases/analisis" element={<ClasesAnalisisPage />} />
             <Route path="/passkeys" element={<PasskeysPage />} />
           </Routes>
         </div>

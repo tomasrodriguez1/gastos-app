@@ -156,7 +156,6 @@ const NAVEGACION_DESKTOP = [
       { to: '/presupuesto', icon: IconPresupuesto, label: 'Presupuesto' },
       { to: '/fondos', icon: IconFondos, label: 'Fondos' },
       { to: '/tarjeta', icon: IconTarjeta, label: 'Tarjetas' },
-      { to: '/clases', icon: IconClases, label: 'Clases' },
     ],
   },
   {
@@ -164,6 +163,13 @@ const NAVEGACION_DESKTOP = [
     items: [
       { to: '/cashflow', icon: IconCashflow, label: 'Flujo del ciclo' },
       { to: '/analisis', icon: IconAnalisis, label: 'Análisis' },
+    ],
+  },
+  {
+    grupo: 'Clases particulares',
+    items: [
+      { to: '/clases', end: true, icon: IconClases, label: 'Agenda y cobros' },
+      { to: '/clases/analisis', icon: IconAnalisis, label: 'Análisis de clases' },
     ],
   },
 ]
@@ -180,7 +186,8 @@ const MOBILE_NAV_MAS = [
   { to: '/analisis', icon: IconAnalisis, label: 'Análisis' },
   { to: '/fondos', icon: IconFondos, label: 'Fondos' },
   { to: '/tarjeta', icon: IconTarjeta, label: 'Tarjetas' },
-  { to: '/clases', icon: IconClases, label: 'Clases' },
+  { to: '/clases', end: true, icon: IconClases, label: 'Clases' },
+  { to: '/clases/analisis', icon: IconAnalisis, label: 'Análisis clases' },
   { to: '/passkeys', icon: IconLlave, label: 'Cuenta' },
 ]
 
@@ -292,10 +299,11 @@ export function Sidebar({ gastos = [], gastosLocales = [] }) {
         {menuMasAbierto && (
           <div className="border-b border-slate-800 px-3 pt-3 pb-2">
             <div className="grid grid-cols-4 gap-1">
-              {MOBILE_NAV_MAS.map(({ to, icon: Icon, label, pendientes: mostrarPendientes }) => (
+              {MOBILE_NAV_MAS.map(({ to, end, icon: Icon, label, pendientes: mostrarPendientes }) => (
                 <NavLink
                   key={to}
                   to={to}
+                  end={end}
                   className={mobileNavClass}
                   onClick={cerrarMenus}
                 >

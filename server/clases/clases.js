@@ -751,3 +751,29 @@ export async function ingresosClasesCiclo(ciclo, db = sql) {
   `
   return { ciclo, total: Number(row.total), cantidad: row.cantidad }
 }
+
+// Todas las clases dictadas, compactas, para /clases/analisis (los cálculos se hacen en el
+// cliente con src/utils/analisisClases.js). Son pocas filas (cientos) y no se pagina.
+export async function clasesParaAnalisis(db = sql) {
+  const rows = await db`
+    SELECT c.id, c.fecha, c.hora_inicio, c.duracion_minutos, c.modalidad, c.precio_hora, c.monto, c.cobro,
+      c.alumno_id, a.nombre AS alumno, a.familia_id, f.nombre AS familia
+    FROM clase c JOIN alumno a ON a.id = c.alumno_id LEFT JOIN familia f ON f.id = a.familia_id
+    WHERE c.estado = 'dictada'
+    ORDER BY c.fecha, c.hora_inicio
+  `
+  return rows.map(r => ({
+    id: r.id,
+    fecha: r.fecha,
+    hora_inicio: r.hora_inicio,
+    horas: r.duracion_minutos / 60,
+    modalidad: r.modalidad,
+    precio_hora: entero(r.precio_hora),
+    monto: entero(r.monto),
+    cobro: r.cobro,
+    alumno_id: r.alumno_id,
+    alumno: r.alumno,
+    familia_id: r.familia_id ?? null,
+    familia: r.familia ?? null,
+  }))
+}
