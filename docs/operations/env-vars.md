@@ -5,9 +5,9 @@ Nunca commitear valores reales. Usar `.env.example` como referencia.
 | Variable | Servicio | Entorno | Required | Safe example | Purpose | Source |
 |----------|----------|-----------|----------|--------------|---------|--------|
 | `DATABASE_URL` | PostgreSQL | All | Yes | `postgresql://user:pass@localhost:5432/gastos` | Conexión a PostgreSQL | `server/db/client.js` |
-| `PASSKEY_RP_ID` | Passkey auth | Prod | Yes en prod | `gastos.midominio.cl` | Dominio (sin protocolo) del Relying Party WebAuthn. Dev default: `localhost` | `server/auth.js` |
+| `PASSKEY_RP_ID` | Passkey auth | Prod | Yes en prod | `tomas-gastos-app.venturanalytic.com` | Dominio (sin protocolo) del Relying Party WebAuthn. Dev default: `localhost` | `server/auth.js` |
 | `PASSKEY_RP_NAME` | Passkey auth | All | No | `Gastos App` | Nombre visible en el prompt de passkey del navegador | `server/auth.js` |
-| `PASSKEY_ORIGIN` | Passkey auth | Prod | Yes en prod | `https://gastos.midominio.cl` | Origin exacto (con `https://`) permitido para WebAuthn — sin wildcards. Dev default: `http://localhost:6001` | `server/auth.js` |
+| `PASSKEY_ORIGIN` | Passkey auth | Prod | Yes en prod | `https://tomas-gastos-app.venturanalytic.com` | Origin exacto (con `https://`) permitido para WebAuthn — sin wildcards. Dev default: `http://localhost:6001` | `server/auth.js` |
 | `PASSKEY_BOOTSTRAP_SECRET` | Passkey auth | All | Yes | `un-secreto-random-de-32-o-mas-chars` | Habilita el enrolamiento de la primera passkey; queda inerte apenas existe una passkey registrada | `server/auth.js` |
 | `PASSKEY_BOOTSTRAP_OVERRIDE_UNTIL` | Passkey auth | Prod (recuperación) | No | `2026-08-01T00:00:00Z` | Timestamp ISO futuro: reactiva el enrolamiento aunque ya existan passkeys (recuperación ante lockout). Ver `runbook.md` | `server/auth.js` (GAP: aún no implementado, ver Riesgos) |
 | `SESSION_MAX_AGE_SECONDS` | Passkey auth | All | No | `2592000` (30 días) | Duración de la sesión; se renueva con uso (throttleado a 1x/hora) | `server/auth.js` |
@@ -102,7 +102,5 @@ configurada mientras dure la convivencia — ver DEC-009 y el procedimiento de r
 ## GAPs
 
 - GAP: variables configuradas en el servicio de Railway no documentadas en repo (solo se listan las que lee el código).
-- GAP: dominio real de producción — `PASSKEY_RP_ID`/`PASSKEY_ORIGIN` quedan como placeholder
-  hasta definirlo (ver `deployment.md`).
 - GAP: nombre exacto de modelo Groq vigente — confirmar al desplegar, Groq puede deprecar
   modelos entre releases.

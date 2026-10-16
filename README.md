@@ -92,7 +92,8 @@ gastos-app/
 
 ## Gaps conocidos
 
-- GAP: URL de producción y responsable operacional.
+- Producción: `https://tomas-gastos-app.venturanalytic.com` (Railway). MCP remoto en `https://tomas-gastos-app.venturanalytic.com/mcp`.
+- GAP: responsable operacional.
 - GAP: documentación del workflow n8n.
 - GAP: migraciones PG versionadas post-migración inicial.
 - GAP: tests automatizados y CI.

@@ -61,6 +61,8 @@ GAP: logs centralizados en Railway no documentados.
 
 ### Producción (Railway)
 
+URL: `https://tomas-gastos-app.venturanalytic.com`.
+
 Redeploy o restart del servicio desde el dashboard de Railway.
 
 ## Migraciones
@@ -191,5 +193,4 @@ GAP: responsable operacional no documentado en repo.
 - GAP: alertas de downtime.
 - GAP: rotación de `ACCESS_TOKEN` documentada más allá de "rotar si se filtró" (ver
   `docs/engineering/security-checklist.md`) — de todas formas, en camino a retirarse (DEC-009).
-- GAP: dominio real de producción para completar `PASSKEY_RP_ID`/`PASSKEY_ORIGIN`.
 - GAP: health check configurado en Railway — ver `docs/operations/deployment.md`.

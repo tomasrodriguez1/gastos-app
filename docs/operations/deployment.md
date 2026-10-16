@@ -5,7 +5,7 @@
 | Entorno | Descripción |
 |---------|-------------|
 | Local | Vite + API Bun, PostgreSQL local o remoto |
-| Producción | Railway, un solo servicio configurado por `railway.json`. |
+| Producción | Railway, un solo servicio configurado por `railway.json`, en `https://tomas-gastos-app.venturanalytic.com` (MCP en `/mcp`). `PASSKEY_RP_ID` = `tomas-gastos-app.venturanalytic.com`, `PASSKEY_ORIGIN` = `https://tomas-gastos-app.venturanalytic.com` (rpId verificado el 2026-10-07). |
 
 ## Plataforma
 
@@ -108,7 +108,6 @@ Ver `docs/operations/env-vars.md`.
 
 ## Gaps
 
-- GAP: URL de producción exacta (bloquea completar `PASSKEY_RP_ID`/`PASSKEY_ORIGIN`).
 - GAP: branch de deploy (main vs otra).
 - GAP: CI/CD pipeline aparte del deploy automático de Railway.
 - GAP: health check endpoint dedicado (`GET /api/auth/status` sirve como proxy razonable
