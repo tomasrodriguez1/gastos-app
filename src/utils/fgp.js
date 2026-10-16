@@ -44,14 +44,18 @@ export function sumarMovimientosFGP(movimientos) {
   return tot
 }
 
-export function calcularFondoFGP({ gastos = [], presupuestos = {}, movimientos = [], cicloActual }) {
+// standby: ids de gastos que se dejan sin mover al fondo TC por ahora. Salen de `pendientesTC`
+// y quedan en `enStandby`; el saldo FGP no cambia.
+export function calcularFondoFGP({ gastos = [], presupuestos = {}, movimientos = [], standby = [], cicloActual }) {
   const ciclos = ciclosFGP(presupuestos, cicloActual)
   const setCiclos = new Set(ciclos)
   const lineasPorCiclo = Object.fromEntries(ciclos.map(c => [c, lineasFGP(presupuestos[c])]))
   const movidos = new Set(movimientos.filter(m => m.tipo === 'traspaso_tc').map(m => m.gasto_id))
+  const enPausa = new Set(standby)
 
   const gastadoPorCiclo = Object.fromEntries(ciclos.map(c => [c, {}]))
   const pendientesTC = []
+  const enStandby = []
 
   for (const g of gastos) {
     if (!setCiclos.has(g.ciclo_financiero) || !gastoCuenta(g)) continue
@@ -74,7 +78,9 @@ export function calcularFondoFGP({ gastos = [], presupuestos = {}, movimientos =
       !g.manual &&
       !movidos.has(g.id)
     ) {
-      pendientesTC.push({ gasto: g, ciclo: g.ciclo_financiero, grupo: r.grupo, sub: r.subcategoria, monto: Math.round(monto) })
+      const item = { gasto: g, ciclo: g.ciclo_financiero, grupo: r.grupo, sub: r.subcategoria, monto: Math.round(monto) }
+      if (enPausa.has(g.id)) enStandby.push(item)
+      else pendientesTC.push(item)
     }
   }
 
@@ -104,7 +110,9 @@ export function calcularFondoFGP({ gastos = [], presupuestos = {}, movimientos =
   const tot = sumarMovimientosFGP(movimientos.filter(m => m.ciclo <= cicloActual))
   const aportes = detalleCiclos.reduce((s, c) => s + c.previsto, 0)
   const gastado = detalleCiclos.reduce((s, c) => s + c.gastado, 0)
-  pendientesTC.sort((a, b) => (b.gasto.fecha || '').localeCompare(a.gasto.fecha || ''))
+  const masReciente = (a, b) => (b.gasto.fecha || '').localeCompare(a.gasto.fecha || '')
+  pendientesTC.sort(masReciente)
+  enStandby.sort(masReciente)
 
   // Un déficit se registra en el ciclo donde ocurrió el exceso y se paga con el sueldo del ciclo
   // siguiente: sigue "vivo" como compromiso mientras ese ciclo no haya pasado.
@@ -126,6 +134,8 @@ export function calcularFondoFGP({ gastos = [], presupuestos = {}, movimientos =
     saldo: aportes - gastado + tot.cobertura + tot.deficit + tot.ajuste,
     pendientesTC,
     totalPendienteTC: pendientesTC.reduce((s, p) => s + p.monto, 0),
+    enStandby,
+    totalStandby: enStandby.reduce((s, p) => s + p.monto, 0),
     compromisos,
   }
 }

@@ -454,6 +454,64 @@ de clases viejas: septiembre pagado en noviembre suma al ciclo de octubre). El i
 hace que el historial importado de Notion aparezca como ingreso real en el Dashboard (por ejemplo,
 las clases de septiembre ya cobradas son ingreso real del ciclo de octubre). No hay datos que migrar.
 
+## DEC-022 - Standby de gastos por mover y aviso de tarjeta por vencimiento
+
+Date: 2026-10-16
+Context: el aviso global del FGP pedía mover cada gasto de tarjeta al fondo TC sin importar cuándo
+se paga la tarjeta, y solo veía las líneas FGP (los gastos de categorías normales también hay que
+cubrir). La única salida era "marcar como movido", que dice algo falso. El usuario sabe que hay
+plata que no va a mover todavía y quiere que el sistema avise cuando importa: cerca del pago.
+Decision:
+- **Standby por gasto** (`fgp_standby`, tabla propia): saca el gasto de `pendientesTC` y lo lista
+  en `enStandby`. No es un `fgp_movimiento` (no cambia saldos ni el CHECK de `tipo`) ni "ya
+  movido". Mover o marcar el gasto lo saca solo del standby.
+- **`tarjeta_ciclo.dia_pago`** (opcional, 1–28) junto al cierre. Vencimiento de un período = el
+  primer `dia_pago` posterior al cierre. El usuario carga Edwards 5 y BICE 12; no se siembran filas
+  porque el cierre es su dato.
+- **Cobertura por vencimiento** (`calcularVencimientosTarjeta`, `src/utils/vencimientosTarjeta.js`):
+  cada gasto de tarjeta impago (todas las categorías, no solo FGP) pertenece a un vencimiento; el
+  fondo TC es común a ambas tarjetas, así que la deuda se acumula por fecha y el faltante de cada
+  vencimiento es `acumulado − saldo CLP`.
+- **Aviso global escalonado**: silencioso a más de 10 días (`DIAS_AVISO_VENCIMIENTO`), ámbar de 10
+  a 0 días, rojo si ya venció. Lejos del vencimiento la información sigue en `/tarjeta` y
+  `/fondos` (`ProximoVencimiento`). "FGP en rojo" se mantiene tal cual.
+Alternatives considered: standby como un `tipo` más de `fgp_movimiento` (descartada: obliga a
+alterar el CHECK en producción y mezcla una decisión de ánimo con el libro de movimientos); posponer
+hasta una fecha (descartada: con el vencimiento el aviso ya reaparece solo); solo ocultar el aviso
+fuera del Dashboard (no deja registrada la decisión).
+Consequences: sin `dia_pago` configurado el aviso por vencimiento queda silencioso para esa tarjeta
+(el chip de `/tarjeta` muestra "sin pago"). Cualquier gasto de tarjeta sin marcar `pagado` cuenta,
+así que hay que registrar los pagos en `/tarjeta` para que el aviso no pase a "vencido". Un gasto en
+USD sin `monto_clp_manual` se estima a 950 por dólar (`TIPO_CAMBIO_USD_DEFAULT`) en vez de dejarse
+fuera; es una constante, no una configuración. El caso de plata que se gasta apenas llega se
+resolvió aparte, en DEC-023.
+
+## DEC-023 - Reparto sugerido de un ingreso entre fondo TC y fondos de ahorro
+
+Date: 2026-10-16
+Context: hay plata que llega y se gasta enseguida (sueldo, pagos de clases): si nadie la aparta, el
+fondo TC y los fondos de ahorro nunca reciben nada y el aviso de DEC-022 avisa tarde. Se evaluó
+marcar fondos "de paso" o repartir cada ingreso al entrar; el usuario eligió lo segundo.
+Decision:
+- Al aprobar un ingreso (y desde "Repartir" en un ingreso confirmado de la lista) `/ingresos`
+  muestra un panel con una sugerencia (`sugerirReparto`, `src/utils/repartoIngreso.js`): primero el
+  fondo TC por `faltanteTotal` (toda la deuda de tarjeta, con o sin fecha de pago, menos el saldo
+  CLP del fondo), después cada fondo de ahorro manual activo por su `previsto_aportar` del ciclo
+  del ingreso, mientras alcance. Lo que sobra queda libre.
+- Es solo una sugerencia editable. Lo que se confirma usa los endpoints de siempre:
+  `POST /api/tarjeta/fondo/aportes` y `POST /api/fondos-ahorro/:nombre/movimientos`. No hay
+  endpoint ni tabla nueva.
+- No se ofrece para "Uso de fondos" (no es plata nueva), ni para el FGP (su aporte se deriva del
+  previsto del ciclo, no hay movimiento que registrar) ni para fondos vinculados (se alimentan con
+  los gastos de su categoría).
+Alternatives considered: fondos "de paso" que no piden mover nada (descartada por el usuario);
+reparto automático al aprobar (descartada: mueve plata sin que se vea); persistir el reparto ligado
+al ingreso (queda como mejora: evitaría repartir dos veces el mismo ingreso).
+Consequences: repartir dos veces el mismo ingreso duplica los aportes, porque el reparto no queda
+ligado a él. Si el ingreso se edita o se borra después, los aportes ya hechos no se tocan; se
+corrigen en `/fondos` o `/tarjeta`. Un fallo a mitad del reparto deja aplicadas las líneas
+anteriores (el panel las pone en 0 para que el reintento no las repita).
+
 ## GAP: decisions to document
 
 - Política de rotación de `ACCESS_TOKEN` (hasta su retiro definitivo, ver DEC-009).

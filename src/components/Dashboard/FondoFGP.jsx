@@ -113,6 +113,11 @@ export function FondoFGP({ gastos, mes, presupuestoMes, resumenFGP }) {
               Por mover a TC: <span className="font-mono-numbers font-semibold">{formatCLP(resumenFGP.totalPendienteTC)}</span>
             </span>
           )}
+          {resumenFGP.totalStandby > 0 && (
+            <span className="text-slate-500">
+              En standby: <span className="font-mono-numbers">{formatCLP(resumenFGP.totalStandby)}</span>
+            </span>
+          )}
           <Link to="/fondos#fgp" className="ml-auto text-sky-400 hover:text-sky-300">Gestionar fondo →</Link>
         </div>
       )}

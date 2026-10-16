@@ -3,9 +3,11 @@ import { TilesTarjeta } from '../components/Tarjeta/TilesTarjeta'
 import { deudaEnPesos } from '../components/Tarjeta/deudaEnPesos'
 import { TablaTarjeta } from '../components/Tarjeta/TablaTarjeta'
 import { CicloChip } from '../components/Tarjeta/CicloChip'
+import { ProximoVencimiento } from '../components/Tarjeta/ProximoVencimiento'
 import { HistorialFondo } from '../components/Tarjeta/HistorialFondo'
 import { formatMontoTarjeta } from '../components/Tarjeta/formato'
 import { usePrivacyMode } from '../contexts/PrivacyModeContext'
+import { cierreDelPeriodo } from '../utils/vencimientosTarjeta'
 
 const BANCOS = ['Edwards', 'BICE']
 const MONEDAS = ['CLP', 'USD']
@@ -24,13 +26,6 @@ const VACIO = {
 function esMoneda(gasto, moneda) {
   const usdPuro = gasto.usd > 0 && !gasto.monto
   return moneda === 'USD' ? usdPuro : !usdPuro
-}
-
-function cierreDelPeriodo(fechaISO, diaCierre) {
-  const [anio, mes, dia] = fechaISO.split('-').map(Number)
-  const enMesActual = dia <= diaCierre
-  const fecha = new Date(Date.UTC(anio, mes - 1 + (enMesActual ? 0 : 1), diaCierre))
-  return fecha.toISOString().slice(0, 10)
 }
 
 function facturadoGasto(gasto, diaCierre, hoyISO = new Date().toISOString().slice(0, 10)) {
@@ -59,7 +54,7 @@ function sumarMetricas(lista, moneda) {
   return total
 }
 
-export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefetchGastos, catalogos, obtenerPresupuesto, ciclos = [] }) {
+export function TarjetaPage({ gastos, reconciliacion, vencimientos, onActualizarGasto, onRefetchGastos, catalogos, obtenerPresupuesto, ciclos = [] }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
   const [bancos, setBancos] = useState(BANCOS)
   const [moneda, setMoneda] = useState('CLP')
@@ -154,12 +149,14 @@ export function TarjetaPage({ gastos, reconciliacion, onActualizarGasto, onRefet
             </div>
           )}
           <div className="flex flex-wrap gap-2 sm:ml-auto">
-            {BANCOS.map(banco => <CicloChip key={banco} banco={banco} diaCierre={ciclosCierre[banco]} onGuardar={reconciliacion.guardarCiclo} />)}
+            {BANCOS.map(banco => <CicloChip key={banco} banco={banco} diaCierre={ciclosCierre[banco]} diaPago={reconciliacion.diasPago?.[banco]} onGuardar={reconciliacion.guardarCiclo} />)}
           </div>
         </div>
       </div>
 
       {reconciliacion.error && <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-400">{reconciliacion.error}</div>}
+
+      <ProximoVencimiento vencimientos={vencimientos} />
 
       <TilesTarjeta
         moneda={moneda}

@@ -31,6 +31,7 @@ import { migrateFondoAhorroMovimientos } from './db/migrate-fondo-ahorro-movimie
 import { migrateFondoAhorroTipo } from './db/migrate-fondo-ahorro-tipo.js'
 import { fondoAhorroRouter } from './fondosAhorro.js'
 import { migrateFGP } from './db/migrate-fgp.js'
+import { migrateTarjetaPago } from './db/migrate-tarjeta-pago.js'
 import { fgpRouter } from './fgp.js'
 import { listarComercios, olvidarComercio } from './comercios.js'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
@@ -57,6 +58,7 @@ await migrateClases()
 await migrateFondoAhorroMovimientos()
 await migrateFondoAhorroTipo()
 await migrateFGP()
+await migrateTarjetaPago()
 await migrateTelegramAvisos()
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()

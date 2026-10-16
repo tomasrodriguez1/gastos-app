@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { registrarMovimientoFGP, registrarTraspasos, eliminarMovimientoFGP } from './fgp'
+import { registrarMovimientoFGP, registrarTraspasos, eliminarMovimientoFGP, fijarStandbyFGP, listarStandbyFGP } from './fgp'
 
 const gastoRow = (id, monto, extra = {}) => ({
   id, monto: String(monto), monto_real: String(monto), usd: '0', split: '0', banco: 'BICE',
   estado: 'confirmado', ciclo_financiero: '2026-10', tipos: [], presupuesto_manual: null, ...extra,
 })
 
-function dbFalsa({ gastos = [], fgp = [] } = {}) {
-  const state = { gastos, fgp: fgp.map(m => ({ ...m })), tarjeta: [], ahorro: [] }
+function dbFalsa({ gastos = [], fgp = [], standby = [] } = {}) {
+  const state = { gastos, fgp: fgp.map(m => ({ ...m })), tarjeta: [], ahorro: [], standby: [...standby] }
   const db = async (strings, ...values) => {
     const q = strings.join('?')
     if (q.includes('SELECT * FROM gastos WHERE id = ANY')) return state.gastos.filter(g => values[0].includes(g.id))
@@ -53,6 +53,15 @@ function dbFalsa({ gastos = [], fgp = [] } = {}) {
       state.fgp = state.fgp.filter(m => m.id !== values[0])
       return []
     }
+    if (q.includes('INSERT INTO fgp_standby')) {
+      if (!state.standby.includes(values[0])) state.standby.push(values[0])
+      return []
+    }
+    if (q.includes('DELETE FROM fgp_standby')) {
+      state.standby = state.standby.filter(id => !values[0].includes(id))
+      return []
+    }
+    if (q.includes('SELECT gasto_id FROM fgp_standby')) return state.standby.map(gasto_id => ({ gasto_id }))
     throw new Error(`Consulta no contemplada en test: ${q}`)
   }
   db.begin = fn => fn(db)
@@ -136,5 +145,28 @@ describe('eliminarMovimientoFGP', () => {
     await eliminarMovimientoFGP(movimiento.id, db)
     expect(state.ahorro).toHaveLength(0)
     expect(state.fgp).toHaveLength(0)
+  })
+})
+
+describe('standby', () => {
+  test('poner y sacar gastos del standby es idempotente', async () => {
+    const { db, state } = dbFalsa()
+    await fijarStandbyFGP({ gastoIds: ['a', 'b', 'a'], activo: true }, db)
+    await fijarStandbyFGP({ gastoIds: ['a'], activo: true }, db)
+    expect(await listarStandbyFGP(db)).toEqual(['a', 'b'])
+    await fijarStandbyFGP({ gastoIds: ['a'], activo: false }, db)
+    expect(state.standby).toEqual(['b'])
+  })
+
+  test('valida ids y activo', async () => {
+    const { db } = dbFalsa()
+    expect((await fijarStandbyFGP({ gastoIds: [], activo: true }, db)).status).toBe(400)
+    expect((await fijarStandbyFGP({ gastoIds: ['a'], activo: 'si' }, db)).status).toBe(400)
+  })
+
+  test('mover un gasto lo saca del standby', async () => {
+    const { db, state } = dbFalsa({ gastos: [gastoRow('a', 10000), gastoRow('b', 5000)], standby: ['a', 'b'] })
+    await registrarTraspasos({ gastoIds: ['a'], modo: 'mover', fecha: '2026-10-06', cicloActual: '2026-10' }, db)
+    expect(state.standby).toEqual(['b'])
   })
 })

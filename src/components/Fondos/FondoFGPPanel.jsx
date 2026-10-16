@@ -80,8 +80,9 @@ function FormCobertura({ faltante, cicloActual, fondosManuales, onRegistrar }) {
   )
 }
 
-function PendientesTC({ resumen, cicloActual, onTraspasar }) {
+function PendientesTC({ resumen, cicloActual, onTraspasar, onStandby }) {
   const [abiertos, setAbiertos] = useState(() => new Set([cicloActual]))
+  const [standbyAbierto, setStandbyAbierto] = useState(false)
   const [enviando, setEnviando] = useState(null)
   const [error, setError] = useState(null)
   const [aviso, setAviso] = useState(null)
@@ -108,6 +109,50 @@ function PendientesTC({ resumen, cicloActual, onTraspasar }) {
     }
   }
 
+  async function cambiarStandby(items, activo, claveEnvio) {
+    setEnviando(claveEnvio)
+    setError(null)
+    setAviso(null)
+    try {
+      await onStandby(items.map(p => p.gasto.id), activo)
+      setAviso(activo
+        ? `${items.length} gasto${items.length === 1 ? '' : 's'} en standby: no cuenta${items.length === 1 ? '' : 'n'} como por mover hasta que lo${items.length === 1 ? '' : 's'} reactives.`
+        : `${items.length} gasto${items.length === 1 ? '' : 's'} reactivado${items.length === 1 ? '' : 's'}.`)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setEnviando(null)
+    }
+  }
+
+  const standbyItems = resumen.enStandby || []
+  const seccionStandby = standbyItems.length > 0 && (
+    <div className="rounded-lg border border-slate-700/50">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-slate-800/40">
+        <button className="text-xs text-slate-300 font-medium" onClick={() => setStandbyAbierto(a => !a)}>
+          {standbyAbierto ? '▾' : '▸'} En standby
+        </button>
+        <span className="text-xs text-slate-500">{standbyItems.length} · <span className="font-mono-numbers">{formatCLP(resumen.totalStandby)}</span></span>
+        <button className={`${btnGris} ml-auto`} disabled={!!enviando} onClick={() => cambiarStandby(standbyItems, false, 'standby-todo')}>Reactivar todo</button>
+      </div>
+      {standbyAbierto && (
+        <div className="divide-y divide-slate-700/40">
+          {standbyItems.map(p => (
+            <div key={p.gasto.id} className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-xs">
+              <span className="text-slate-500 font-mono-numbers w-20 shrink-0">{p.gasto.fecha}</span>
+              <span className="text-slate-300 truncate max-w-56">{p.gasto.motivo}</span>
+              <span className="text-slate-500">{p.sub} · {p.gasto.banco}</span>
+              <span className="ml-auto font-mono-numbers text-slate-200">{formatCLP(p.monto)}</span>
+              <button className={btnSky} disabled={!!enviando} onClick={() => ejecutar([p], 'mover', p.gasto.id)}>Mover</button>
+              <button className={btnGris} disabled={!!enviando} onClick={() => ejecutar([p], 'marcar', `${p.gasto.id}-m`)}>Ya estaba</button>
+              <button className={btnGris} disabled={!!enviando} onClick={() => cambiarStandby([p], false, `${p.gasto.id}-s`)}>Reactivar</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
   const toggle = ciclo => setAbiertos(prev => {
     const next = new Set(prev)
     if (next.has(ciclo)) next.delete(ciclo)
@@ -116,7 +161,13 @@ function PendientesTC({ resumen, cicloActual, onTraspasar }) {
   })
 
   if (resumen.pendientesTC.length === 0) {
-    return <div className="text-xs text-slate-500">✓ No quedan gastos impagos de este ciclo por mover desde el FGP al fondo TC.{aviso && <span className="text-emerald-400"> {aviso}</span>}</div>
+    return (
+      <div className="space-y-3">
+        <div className="text-xs text-slate-500">✓ No quedan gastos impagos de este ciclo por mover desde el FGP al fondo TC.{aviso && <span className="text-emerald-400"> {aviso}</span>}</div>
+        {error && <div className="text-xs text-red-400">{error}</div>}
+        {seccionStandby}
+      </div>
+    )
   }
 
   return (
@@ -133,6 +184,10 @@ function PendientesTC({ resumen, cicloActual, onTraspasar }) {
           <button className={btnGris} disabled={!!enviando} onClick={() => ejecutar(resumen.pendientesTC, 'marcar', 'todo-marcar')}
             title="Para gastos que ya pasaste a la tarjeta a mano: no crea aporte en el fondo TC">
             {enviando === 'todo-marcar' ? 'Marcando…' : 'Marcar todo como movido'}
+          </button>
+          <button className={btnGris} disabled={!!enviando} onClick={() => cambiarStandby(resumen.pendientesTC, true, 'todo-standby')}
+            title="No los muevo por ahora: dejan de contar como por mover, pero siguen visibles abajo">
+            {enviando === 'todo-standby' ? 'Guardando…' : 'Todo a standby'}
           </button>
         </div>
       </div>
@@ -153,6 +208,7 @@ function PendientesTC({ resumen, cicloActual, onTraspasar }) {
                 <div className="ml-auto flex gap-2">
                   <button className={btnSky} disabled={!!enviando} onClick={() => ejecutar(items, 'mover', `${ciclo}-mover`)}>Mover ciclo</button>
                   <button className={btnGris} disabled={!!enviando} onClick={() => ejecutar(items, 'marcar', `${ciclo}-marcar`)}>Marcar ciclo</button>
+                  <button className={btnGris} disabled={!!enviando} onClick={() => cambiarStandby(items, true, `${ciclo}-standby`)}>Ciclo a standby</button>
                 </div>
               </div>
               {abierto && items.map(p => (
@@ -163,12 +219,14 @@ function PendientesTC({ resumen, cicloActual, onTraspasar }) {
                   <span className="ml-auto font-mono-numbers text-slate-200">{formatCLP(p.monto)}</span>
                   <button className={btnSky} disabled={!!enviando} onClick={() => ejecutar([p], 'mover', p.gasto.id)}>Mover</button>
                   <button className={btnGris} disabled={!!enviando} onClick={() => ejecutar([p], 'marcar', `${p.gasto.id}-m`)}>Ya estaba</button>
+                  <button className={btnGris} disabled={!!enviando} onClick={() => cambiarStandby([p], true, `${p.gasto.id}-s`)}>Standby</button>
                 </div>
               ))}
             </div>
           )
         })}
       </div>
+      {seccionStandby}
     </div>
   )
 }
@@ -396,7 +454,7 @@ export function FondoFGPPanel({ resumen, fgp, cicloActual, fondosPresupuesto = {
       </div>
 
       <div className="px-5 py-4 border-t border-slate-700/40">
-        <PendientesTC resumen={resumen} cicloActual={cicloActual} onTraspasar={fgp.traspasar} />
+        <PendientesTC resumen={resumen} cicloActual={cicloActual} onTraspasar={fgp.traspasar} onStandby={fgp.fijarStandby} />
       </div>
 
       <div className="px-5 py-3 border-t border-slate-700/40 bg-slate-800/60 space-y-3">

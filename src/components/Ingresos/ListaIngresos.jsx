@@ -6,7 +6,7 @@ import { EditorIngreso } from './EditorIngreso'
 
 // Ingresos del ciclo (confirmados y pendientes). Los de pagos de clases no se editan ni se borran
 // acá: se corrigen deshaciendo el pago en /clases.
-export function ListaIngresos({ ingresos, fuentes, fondosSugeridos, onEditar, onEliminar }) {
+export function ListaIngresos({ ingresos, fuentes, fondosSugeridos, onEditar, onEliminar, onRepartir }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
   const [editando, setEditando] = useState(null)
   const [error, setError] = useState(null)
@@ -58,6 +58,9 @@ export function ListaIngresos({ ingresos, fuentes, fondosSugeridos, onEditar, on
                   <span className="text-[10px] uppercase tracking-wider text-slate-500" title="Se corrige deshaciendo el pago en Clases">Clases</span>
                 ) : (
                   <>
+                    {onRepartir && i.estado === 'confirmado' && !i.fondo && (
+                      <button type="button" onClick={() => onRepartir(i)} className="text-xs text-slate-500 hover:text-emerald-400">Repartir</button>
+                    )}
                     <button type="button" onClick={() => setEditando(i.id)} className="text-xs text-slate-500 hover:text-emerald-400">Editar</button>
                     <button type="button" onClick={() => eliminar(i)} className="text-xs text-slate-500 hover:text-red-400">Eliminar</button>
                   </>

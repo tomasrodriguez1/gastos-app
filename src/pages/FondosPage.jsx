@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ReservasList } from '../components/Fondos/ReservasList'
 import { FondoTarjetaResumen } from '../components/Fondos/FondoTarjetaResumen'
+import { ProximoVencimiento } from '../components/Tarjeta/ProximoVencimiento'
 import { FondoFGPPanel } from '../components/Fondos/FondoFGPPanel'
 import { FondosAhorro } from '../components/Dashboard/FondosAhorro'
 import { useReservas } from '../hooks/useReservas'
@@ -8,7 +9,7 @@ import { obtenerCicloActual } from '../utils/ciclos'
 
 export function FondosPage({
   catalogos, reconciliacion, gastos, obtenerPresupuesto, guardarPresupuesto,
-  onAgregarGasto, onRefetchGastos, onActualizarGasto, fgp, resumenFGP,
+  onAgregarGasto, onRefetchGastos, onActualizarGasto, fgp, resumenFGP, vencimientos,
 }) {
   const { reservas, cargando, error, crear, editar, cargarSaldos, registrarSaldo } = useReservas()
   const ciclo = obtenerCicloActual()
@@ -25,6 +26,8 @@ export function FondosPage({
           Dashboard, mismo dato), reservas externas y el fondo común de tarjeta.
         </p>
       </div>
+
+      <ProximoVencimiento vencimientos={vencimientos} />
 
       {resumenFGP && (
         <FondoFGPPanel

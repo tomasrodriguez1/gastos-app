@@ -1,3 +1,5 @@
+import { cierreDelPeriodo } from '../../utils/vencimientosTarjeta'
+
 function numero(valor) {
   if (valor == null || valor === '') return 0
   const n = typeof valor === 'number' ? valor : Number(valor)
@@ -11,14 +13,6 @@ function redondearUsd(valor) {
 // Misma regla que monedaGasto en server/tarjeta.js: USD solo si hay dólares y el monto CLP está vacío.
 function esUsdPuro(gasto) {
   return numero(gasto.usd) > 0 && numero(gasto.monto) === 0
-}
-
-function cierreDelPeriodo(fechaISO, diaCierre) {
-  const [anio, mes, dia] = String(fechaISO || '').split('-').map(Number)
-  if (!anio || !mes || !dia || !diaCierre) return null
-  const enMesActual = dia <= diaCierre
-  const fecha = new Date(Date.UTC(anio, mes - 1 + (enMesActual ? 0 : 1), diaCierre))
-  return fecha.toISOString().slice(0, 10)
 }
 
 function estaFacturado(gasto, ciclos, hoyISO) {

@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import sql from './db/client.js'
 import { toMonto } from './db/numeric.js'
+import { cierreDelPeriodo } from '../src/utils/vencimientosTarjeta.js'
 
 export const BANCOS_TARJETA = ['Edwards', 'BICE']
 export const MONEDAS_TARJETA = ['CLP', 'USD']
@@ -40,12 +41,7 @@ function desdeUnidades(valor, moneda) {
   return valor / (moneda === 'USD' ? 100 : 1)
 }
 
-export function cierreDelPeriodo(fechaISO, diaCierre) {
-  const [anio, mes, dia] = fechaISO.split('-').map(Number)
-  const enMesActual = dia <= diaCierre
-  const fecha = new Date(Date.UTC(anio, mes - 1 + (enMesActual ? 0 : 1), diaCierre))
-  return fecha.toISOString().slice(0, 10)
-}
+export { cierreDelPeriodo }
 
 export function facturado(fechaISO, diaCierre, hoyISO = new Date().toISOString().slice(0, 10)) {
   if (!diaCierre) return null
@@ -244,23 +240,33 @@ export function createTarjetaRouter({ db = sql } = {}) {
   })
 
   router.get('/ciclos', async (c) => {
-    const rows = await db`SELECT banco, dia_cierre FROM tarjeta_ciclo ORDER BY banco`
-    return c.json(rows.map(r => ({ banco: r.banco, dia_cierre: r.dia_cierre })))
+    const rows = await db`SELECT banco, dia_cierre, dia_pago FROM tarjeta_ciclo ORDER BY banco`
+    return c.json(rows.map(r => ({ banco: r.banco, dia_cierre: r.dia_cierre, dia_pago: r.dia_pago ?? null })))
   })
 
   router.put('/ciclos/:banco', async (c) => {
     const banco = decodeURIComponent(c.req.param('banco'))
-    const { dia_cierre: diaCierre } = await c.req.json()
+    const body = await c.req.json().catch(() => ({}))
+    const diaCierre = body?.dia_cierre
     if (!BANCOS_TARJETA.includes(banco)) return respuestaError(c, 'Banco no permitido')
     if (!Number.isInteger(diaCierre) || diaCierre < 1 || diaCierre > 28) {
       return respuestaError(c, 'Día de cierre inválido (debe ser entre 1 y 28)')
     }
+    // dia_pago es opcional: sin la clave se conserva el actual; null lo borra.
+    const tienePago = Object.prototype.hasOwnProperty.call(body, 'dia_pago')
+    const diaPago = tienePago ? body.dia_pago : null
+    if (tienePago && diaPago !== null && (!Number.isInteger(diaPago) || diaPago < 1 || diaPago > 28)) {
+      return respuestaError(c, 'Día de pago inválido (debe ser entre 1 y 28)')
+    }
     await db`
-      INSERT INTO tarjeta_ciclo (banco, dia_cierre, updated_at)
-      VALUES (${banco}, ${diaCierre}, NOW())
-      ON CONFLICT (banco) DO UPDATE SET dia_cierre = EXCLUDED.dia_cierre, updated_at = NOW()
+      INSERT INTO tarjeta_ciclo (banco, dia_cierre, dia_pago, updated_at)
+      VALUES (${banco}, ${diaCierre}, ${diaPago}, NOW())
+      ON CONFLICT (banco) DO UPDATE SET
+        dia_cierre = EXCLUDED.dia_cierre,
+        dia_pago = CASE WHEN ${tienePago}::boolean THEN EXCLUDED.dia_pago ELSE tarjeta_ciclo.dia_pago END,
+        updated_at = NOW()
     `
-    return c.json({ ok: true, banco, dia_cierre: diaCierre })
+    return c.json({ ok: true, banco, dia_cierre: diaCierre, ...(tienePago ? { dia_pago: diaPago } : {}) })
   })
 
   router.get('/fondo', async (c) => {

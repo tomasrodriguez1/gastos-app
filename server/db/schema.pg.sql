@@ -217,6 +217,7 @@ CREATE TABLE IF NOT EXISTS reserva_tarjeta (
 CREATE TABLE IF NOT EXISTS tarjeta_ciclo (
   banco      TEXT PRIMARY KEY,
   dia_cierre SMALLINT NOT NULL CHECK (dia_cierre BETWEEN 1 AND 28),
+  dia_pago   SMALLINT CHECK (dia_pago BETWEEN 1 AND 28),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -304,6 +305,12 @@ CREATE TABLE IF NOT EXISTS fgp_movimiento (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fgp_traspaso_gasto ON fgp_movimiento(gasto_id) WHERE tipo = 'traspaso_tc';
 CREATE INDEX IF NOT EXISTS idx_fgp_movimiento_fecha ON fgp_movimiento(fecha DESC, id DESC);
+
+-- Gastos que se dejan sin mover al fondo TC "por ahora": salen de la cola de pendientes, no cambian saldos.
+CREATE TABLE IF NOT EXISTS fgp_standby (
+  gasto_id   TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
 -- ─── AUTENTICACIÓN (WebAuthn / Passkeys) ────────────────────────────────────
 -- Reemplaza ACCESS_TOKEN. Ver docs/architecture/decisions.md DEC-009.

@@ -104,12 +104,14 @@ function dbCiclosFalsa(filasIniciales = []) {
   const filas = filasIniciales.map(fila => ({ ...fila }))
   const db = async (strings, ...values) => {
     const consulta = strings.join('?')
-    if (consulta.includes('SELECT banco, dia_cierre FROM tarjeta_ciclo')) return filas
+    if (consulta.includes('FROM tarjeta_ciclo')) return filas
     if (consulta.includes('INSERT INTO tarjeta_ciclo')) {
-      const [banco, diaCierre] = values
+      const [banco, diaCierre, diaPago, tienePago] = values
       const existente = filas.find(f => f.banco === banco)
-      if (existente) existente.dia_cierre = diaCierre
-      else filas.push({ banco, dia_cierre: diaCierre })
+      if (existente) {
+        existente.dia_cierre = diaCierre
+        if (tienePago) existente.dia_pago = diaPago
+      } else filas.push({ banco, dia_cierre: diaCierre, dia_pago: diaPago })
       return []
     }
     throw new Error(`Consulta no contemplada en test: ${consulta}`)
@@ -131,7 +133,13 @@ describe('endpoints de ciclo de facturación', () => {
     const router = createTarjetaRouter({ db })
     const respuesta = await router.request('/ciclos')
     expect(respuesta.status).toBe(200)
-    expect(await respuesta.json()).toEqual([{ banco: 'Edwards', dia_cierre: 15 }])
+    expect(await respuesta.json()).toEqual([{ banco: 'Edwards', dia_cierre: 15, dia_pago: null }])
+  })
+
+  test('GET /ciclos incluye el día de pago', async () => {
+    const { db } = dbCiclosFalsa([{ banco: 'BICE', dia_cierre: 1, dia_pago: 12 }])
+    const router = createTarjetaRouter({ db })
+    expect(await (await router.request('/ciclos')).json()).toEqual([{ banco: 'BICE', dia_cierre: 1, dia_pago: 12 }])
   })
 
   test('PUT /ciclos/:banco hace upsert del día de cierre', async () => {
@@ -139,7 +147,26 @@ describe('endpoints de ciclo de facturación', () => {
     const router = createTarjetaRouter({ db })
     const respuesta = await put(router, '/ciclos/Edwards', { dia_cierre: 20 })
     expect(respuesta.status).toBe(200)
-    expect(filas).toEqual([{ banco: 'Edwards', dia_cierre: 20 }])
+    expect(filas).toEqual([{ banco: 'Edwards', dia_cierre: 20, dia_pago: null }])
+  })
+
+  test('PUT /ciclos/:banco guarda el día de pago, lo conserva si no viene y lo borra con null', async () => {
+    const { db, filas } = dbCiclosFalsa()
+    const router = createTarjetaRouter({ db })
+    expect((await put(router, '/ciclos/Edwards', { dia_cierre: 22, dia_pago: 5 })).status).toBe(200)
+    expect(filas[0]).toMatchObject({ dia_cierre: 22, dia_pago: 5 })
+    await put(router, '/ciclos/Edwards', { dia_cierre: 23 })
+    expect(filas[0]).toMatchObject({ dia_cierre: 23, dia_pago: 5 })
+    await put(router, '/ciclos/Edwards', { dia_cierre: 23, dia_pago: null })
+    expect(filas[0].dia_pago).toBeNull()
+  })
+
+  test('PUT /ciclos/:banco rechaza un día de pago fuera de rango', async () => {
+    const { db } = dbCiclosFalsa()
+    const router = createTarjetaRouter({ db })
+    expect((await put(router, '/ciclos/Edwards', { dia_cierre: 22, dia_pago: 0 })).status).toBe(400)
+    expect((await put(router, '/ciclos/Edwards', { dia_cierre: 22, dia_pago: 29 })).status).toBe(400)
+    expect((await put(router, '/ciclos/Edwards', { dia_cierre: 22, dia_pago: 5.5 })).status).toBe(400)
   })
 
   test('PUT /ciclos/:banco rechaza banco o día de cierre inválidos', async () => {

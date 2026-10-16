@@ -139,6 +139,18 @@ fgp_movimiento(id, tipo 'traspaso_tc'|'cobertura'|'deficit'|'ajuste', ciclo YYYY
 UNIQUE (gasto_id) WHERE tipo = 'traspaso_tc'
 ```
 
+**Standby** (`fgp_standby`, DEC-022): un gasto pendiente de mover que se decide dejar sin mover por
+ahora. No es un movimiento (no toca saldos ni el fondo de tarjeta) ni "ya movido": solo lo saca de
+`pendientesTC`/`totalPendienteTC` y lo lista en `enStandby`/`totalStandby`.
+
+```sql
+fgp_standby(gasto_id TEXT PK, created_at)
+```
+
+Sin FK a `gastos` (los ids de `gastos` son texto y un gasto borrado deja una fila huérfana
+inofensiva). Registrar un traspaso del gasto (mover o marcar) lo saca del standby; deshacer ese
+traspaso lo devuelve a pendiente, no a standby.
+
 | tipo | Saldo FGP | Qué es |
 |------|-----------|--------|
 | `traspaso_tc` | no afecta | El gasto ya pasó al fondo de tarjeta. Con `tarjeta_movimiento_id` si generó un aporte real (un aporte por lote); `NULL` si solo se marcó como "ya movido" (historial) |
@@ -270,8 +282,13 @@ genera gastos (el cargo ya está en `gastos`; un aporte como gasto lo contaría 
 Día de cierre configurable por tarjeta, una fila por `banco` (PK):
 
 ```sql
-tarjeta_ciclo(banco PK, dia_cierre SMALLINT CHECK 1-28, updated_at)
+tarjeta_ciclo(banco PK, dia_cierre SMALLINT CHECK 1-28, dia_pago SMALLINT NULL CHECK 1-28, updated_at)
 ```
+
+`dia_pago` (DEC-022) es el día en que vence el estado de cuenta: el primer `dia_pago` posterior al
+cierre (mismo mes si `dia_pago > dia_cierre`, si no el mes siguiente; cierre 22 y pago 5 vence el 5
+del mes siguiente). Es opcional: sin él esa tarjeta no entra al aviso por vencimiento. Se agrega con
+`server/db/migrate-tarjeta-pago.js` (idempotente, corre en cada arranque).
 
 Se usa para calcular si un movimiento pendiente de `/tarjeta` ya quedó en un estado de cuenta
 cerrado ("facturado") o si todavía puede aparecer en el próximo corte ("no facturado"). **Diseño
@@ -282,7 +299,8 @@ al instante sin tener que re-sincronizar filas existentes (mismo motivo que llev
 esto). Sin fila para un banco = "sin ciclo configurado"; `crearResumenTarjeta` y el frontend tratan
 ese caso como `facturado = null` (no se asume un día por defecto).
 
-`GET/PUT /api/tarjeta/ciclos(/:banco)` gestionan la tabla; `GET /api/tarjeta/resumen` la consulta
+`GET/PUT /api/tarjeta/ciclos(/:banco)` gestionan la tabla (`PUT` exige `dia_cierre`; `dia_pago` es
+opcional: sin la clave se conserva, `null` lo borra); `GET /api/tarjeta/resumen` la consulta
 para anotar `facturados`/`no_facturados`/`monto_facturado`/`monto_no_facturado` en cada nivel de
 `crearResumenTarjeta` (totales, por banco y por categoría).
 

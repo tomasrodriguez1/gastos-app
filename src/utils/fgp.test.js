@@ -60,6 +60,25 @@ describe('calcularFondoFGP', () => {
     expect(r.gastado).toBe(122000)
   })
 
+  test('un gasto en standby sale de pendientes a TC y no cambia el saldo', () => {
+    const gastos = [gasto('a', '2026-10', 'Carrete', 10000), gasto('b', '2026-10', 'Carrete', 5000)]
+    const base = calcularFondoFGP({ gastos, presupuestos, movimientos: [], cicloActual: '2026-10' })
+    const r = calcularFondoFGP({ gastos, presupuestos, movimientos: [], standby: ['a'], cicloActual: '2026-10' })
+    expect(r.pendientesTC.map(p => p.gasto.id)).toEqual(['b'])
+    expect(r.totalPendienteTC).toBe(5000)
+    expect(r.enStandby.map(p => p.gasto.id)).toEqual(['a'])
+    expect(r.totalStandby).toBe(10000)
+    expect(r.saldo).toBe(base.saldo)
+  })
+
+  test('un gasto ya movido no aparece en standby aunque quede marcado', () => {
+    const gastos = [gasto('a', '2026-10', 'Carrete', 10000)]
+    const movimientos = [{ tipo: 'traspaso_tc', gasto_id: 'a', ciclo: '2026-10', monto: 10000 }]
+    const r = calcularFondoFGP({ gastos, presupuestos, movimientos, standby: ['a'], cicloActual: '2026-10' })
+    expect(r.enStandby).toEqual([])
+    expect(r.pendientesTC).toEqual([])
+  })
+
   test('coberturas, déficits y ajustes suman al saldo; el déficit queda como compromiso del sueldo siguiente', () => {
     const gastos = [gasto('a', '2026-10', 'Regalos', 200000)]
     const movimientos = [

@@ -7,6 +7,9 @@
 // tarjeta. "mover" crea un único aporte CLP en fondo_tarjeta_movimiento por el total del lote y
 // una fila traspaso_tc por gasto ligada a ese aporte; "marcar" solo deja la fila (historial que
 // ya se había movido a mano), sin tocar el fondo de tarjeta.
+//
+// Standby: un gasto que se decide dejar sin mover por ahora (fgp_standby). No cuenta como "por
+// mover", pero sigue visible en /fondos y se puede reactivar. No cambia ningún saldo.
 
 import { Hono } from 'hono'
 import sql from './db/client.js'
@@ -128,8 +131,32 @@ export async function registrarTraspasos({ gastoIds, modo = 'mover', fecha = hoy
         VALUES ('traspaso_tc', ${gasto.ciclo_financiero}, ${fecha}, ${monto}, ${gasto.id}, ${tarjetaMovId}, ${notaFila})
       `
     }
+    // Un gasto ya movido deja de estar en standby: si después se deshace el traspaso, vuelve a
+    // aparecer como pendiente en vez de quedar oculto.
+    await tx`DELETE FROM fgp_standby WHERE gasto_id = ANY(${porRegistrar.map(p => p.gasto.id)})`
     return { registrados: porRegistrar.length, total, tarjeta_movimiento_id: tarjetaMovId, omitidos }
   })
+}
+
+export async function listarStandbyFGP(db = sql) {
+  const rows = await db`SELECT gasto_id FROM fgp_standby ORDER BY created_at, gasto_id`
+  return rows.map(r => r.gasto_id)
+}
+
+// Pone (activo=true) o saca (activo=false) gastos del standby. Idempotente.
+export async function fijarStandbyFGP({ gastoIds, activo = true } = {}, db = sql) {
+  const ids = [...new Set((Array.isArray(gastoIds) ? gastoIds : []).filter(id => typeof id === 'string' && id))]
+  if (ids.length === 0) return { error: 'Faltan gastoIds', status: 400 }
+  if (typeof activo !== 'boolean') return { error: 'activo debe ser booleano', status: 400 }
+
+  await db.begin(async (tx) => {
+    if (activo) {
+      for (const id of ids) await tx`INSERT INTO fgp_standby (gasto_id) VALUES (${id}) ON CONFLICT (gasto_id) DO NOTHING`
+    } else {
+      await tx`DELETE FROM fgp_standby WHERE gasto_id = ANY(${ids})`
+    }
+  })
+  return { ok: true, gasto_ids: ids, activo }
 }
 
 // Deshacer. Un traspaso real se deshace borrando su aporte de tarjeta (el CASCADE devuelve a
@@ -174,6 +201,15 @@ export function createFGPRouter({ db = sql } = {}) {
       modo: body?.modo,
       fecha: body?.fecha ?? hoyISO(),
     }, db)
+    if (resultado.error) return c.json({ error: resultado.error }, resultado.status)
+    return c.json(resultado)
+  })
+
+  router.get('/standby', async (c) => c.json(await listarStandbyFGP(db)))
+
+  router.put('/standby', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    const resultado = await fijarStandbyFGP({ gastoIds: body?.gasto_ids, activo: body?.activo }, db)
     if (resultado.error) return c.json({ error: resultado.error }, resultado.status)
     return c.json(resultado)
   })

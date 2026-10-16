@@ -14,6 +14,7 @@ export function useReconciliacionTarjeta() {
   const [resumen, setResumen] = useState(null)
   const [fondo, setFondo] = useState({ saldos: { CLP: 0, USD: 0 }, movimientos: [] })
   const [ciclos, setCiclos] = useState({})
+  const [diasPago, setDiasPago] = useState({})
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
 
@@ -32,6 +33,7 @@ export function useReconciliacionTarjeta() {
       setResumen(nuevoResumen)
       setFondo(nuevoFondo)
       setCiclos(Object.fromEntries(filasCiclo.map(row => [row.banco, row.dia_cierre])))
+      setDiasPago(Object.fromEntries(filasCiclo.filter(row => row.dia_pago != null).map(row => [row.banco, row.dia_pago])))
       setError(null)
     } catch (e) {
       setError(e.message)
@@ -58,13 +60,22 @@ export function useReconciliacionTarjeta() {
   const ajustarSaldoFondo = useCallback((moneda, saldo) => enviarFondo('/saldo', 'PUT', { moneda, saldo }), [enviarFondo])
   const eliminarMovimientoFondo = useCallback(id => enviarFondo(`/movimientos/${id}`, 'DELETE'), [enviarFondo])
 
-  const guardarCiclo = useCallback(async (banco, diaCierre) => {
+  // diaPago: número, null (borra) o undefined (no lo toca).
+  const guardarCiclo = useCallback(async (banco, diaCierre, diaPago) => {
     await leerJson(await fetch(`/api/tarjeta/ciclos/${encodeURIComponent(banco)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dia_cierre: diaCierre }),
+      body: JSON.stringify(diaPago === undefined ? { dia_cierre: diaCierre } : { dia_cierre: diaCierre, dia_pago: diaPago }),
     }))
     setCiclos(prev => ({ ...prev, [banco]: diaCierre }))
+    if (diaPago !== undefined) {
+      setDiasPago(prev => {
+        const siguiente = { ...prev }
+        if (diaPago === null) delete siguiente[banco]
+        else siguiente[banco] = diaPago
+        return siguiente
+      })
+    }
   }, [])
 
   const ejecutar = useCallback(async (accion, payload) => {
@@ -81,6 +92,7 @@ export function useReconciliacionTarjeta() {
     resumen,
     fondo,
     ciclos,
+    diasPago,
     cargando,
     error,
     refrescar,

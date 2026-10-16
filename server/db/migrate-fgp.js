@@ -10,7 +10,9 @@ import sql from './client.js'
 //   deficit     — exceso que se paga con el sueldo del ciclo `ciclo` (+, compromiso).
 //   ajuste      — corrección manual del saldo (±).
 // Borrar el aporte de tarjeta o el movimiento de fondo de ahorro asociado borra la fila (CASCADE),
-// así el gasto vuelve a quedar pendiente de mover. Idempotente — corre en cada arranque.
+// así el gasto vuelve a quedar pendiente de mover.
+// fgp_standby: gastos que se decidió dejar sin mover al fondo TC por ahora. Solo los saca de la
+// cola de "por mover"; no cambia saldos. Idempotente — corre en cada arranque.
 export async function migrateFGP() {
   await sql.begin(async (tx) => {
     await tx.unsafe(`
@@ -30,13 +32,19 @@ export async function migrateFGP() {
     `)
     await tx.unsafe(`CREATE UNIQUE INDEX IF NOT EXISTS idx_fgp_traspaso_gasto ON fgp_movimiento(gasto_id) WHERE tipo = 'traspaso_tc'`)
     await tx.unsafe('CREATE INDEX IF NOT EXISTS idx_fgp_movimiento_fecha ON fgp_movimiento(fecha DESC, id DESC)')
+    await tx.unsafe(`
+      CREATE TABLE IF NOT EXISTS fgp_standby (
+        gasto_id   TEXT PRIMARY KEY,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `)
   })
 }
 
 if (import.meta.main) {
   try {
     await migrateFGP()
-    console.log('[migrate:fgp] ✓ Tabla fgp_movimiento lista')
+    console.log('[migrate:fgp] ✓ Tablas fgp_movimiento y fgp_standby listas')
   } finally {
     await sql.end({ timeout: 5 })
   }

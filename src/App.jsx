@@ -25,6 +25,7 @@ import { useReconciliacionTarjeta } from './hooks/useReconciliacionTarjeta'
 import { useFGP } from './hooks/useFGP'
 import { AvisoFGP } from './components/shared/AvisoFGP'
 import { calcularFondoFGP } from './utils/fgp'
+import { calcularVencimientosTarjeta } from './utils/vencimientosTarjeta'
 import { cargarReglas } from './utils/mapeo'
 import { obtenerCicloActual } from './utils/ciclos'
 
@@ -87,7 +88,15 @@ export default function App() {
 
   const todoLosGastos = [...gastos, ...gastosLocales]
   const resumenFGP = fgp.cargando ? null : calcularFondoFGP({
-    gastos: todoLosGastos, presupuestos, movimientos: fgp.movimientos, cicloActual: obtenerCicloActual(),
+    gastos: todoLosGastos, presupuestos, movimientos: fgp.movimientos, standby: fgp.standby, cicloActual: obtenerCicloActual(),
+  })
+
+  // Sin la conciliación cargada el fondo TC aparece en 0 y avisaría un faltante falso.
+  const vencimientosTarjeta = reconciliacion.cargando ? null : calcularVencimientosTarjeta({
+    gastos: todoLosGastos,
+    ciclos: reconciliacion.ciclos,
+    diasPago: reconciliacion.diasPago,
+    saldoFondoClp: reconciliacion.fondo?.saldos?.CLP || 0,
   })
 
   const sharedProps = {
@@ -113,7 +122,7 @@ export default function App() {
               {errorGuardado} — recargá la página y volvé a intentarlo
             </div>
           )}
-          <AvisoFGP resumen={resumenFGP} />
+          <AvisoFGP resumen={resumenFGP} vencimientos={vencimientosTarjeta} />
           <Routes>
             <Route
               path="/"
@@ -210,15 +219,16 @@ export default function App() {
                   {...sharedProps}
                   gastos={todoLosGastos}
                   reconciliacion={reconciliacion}
+                  vencimientos={vencimientosTarjeta}
                   onActualizarGasto={actualizarCualquierGasto}
                 />
               }
             />
             <Route
               path="/fondos"
-              element={<FondosPage {...sharedProps} gastos={todoLosGastos} reconciliacion={reconciliacion} fgp={fgp} resumenFGP={resumenFGP} />}
+              element={<FondosPage {...sharedProps} gastos={todoLosGastos} reconciliacion={reconciliacion} fgp={fgp} resumenFGP={resumenFGP} vencimientos={vencimientosTarjeta} />}
             />
-            <Route path="/ingresos" element={<IngresosPage ciclos={ciclos} obtenerPresupuesto={obtenerCiclo} />} />
+            <Route path="/ingresos" element={<IngresosPage ciclos={ciclos} obtenerPresupuesto={obtenerCiclo} reconciliacion={reconciliacion} vencimientos={vencimientosTarjeta} />} />
             <Route path="/clases" element={<ClasesPage ciclos={ciclos} />} />
             <Route path="/clases/analisis" element={<ClasesAnalisisPage />} />
             <Route path="/passkeys" element={<PasskeysPage />} />

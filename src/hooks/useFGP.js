@@ -10,12 +10,18 @@ async function leerJson(res) {
 // onCambioExterno: refresca lo que un movimiento FGP toca fuera de esta tabla (fondo de tarjeta).
 export function useFGP({ onCambioExterno } = {}) {
   const [movimientos, setMovimientos] = useState([])
+  const [standby, setStandby] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
 
   const refrescar = useCallback(async () => {
     try {
-      setMovimientos(await leerJson(await fetch('/api/fgp/movimientos')))
+      const [movs, enPausa] = await Promise.all([
+        leerJson(await fetch('/api/fgp/movimientos')),
+        leerJson(await fetch('/api/fgp/standby')),
+      ])
+      setMovimientos(movs)
+      setStandby(enPausa)
       setError(null)
     } catch (e) {
       setError(e.message)
@@ -42,6 +48,7 @@ export function useFGP({ onCambioExterno } = {}) {
   const registrar = useCallback(datos => enviar('/movimientos', 'POST', datos), [enviar])
   const traspasar = useCallback((gastoIds, modo) => enviar('/traspasos', 'POST', { gasto_ids: gastoIds, modo }), [enviar])
   const eliminar = useCallback(id => enviar(`/movimientos/${id}`, 'DELETE'), [enviar])
+  const fijarStandby = useCallback((gastoIds, activo) => enviar('/standby', 'PUT', { gasto_ids: gastoIds, activo }), [enviar])
 
-  return { movimientos, cargando, error, refrescar, registrar, traspasar, eliminar }
+  return { movimientos, standby, fijarStandby, cargando, error, refrescar, registrar, traspasar, eliminar }
 }
