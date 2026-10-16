@@ -195,8 +195,8 @@ async function resolverFuente(fuente, { origen, fondo }, db) {
 }
 
 // estado: 'confirmado' para manual/clases, 'pendiente' para lo que registra una IA. registrarPago
-// de clases lo pasa explícito.
-export async function crearIngreso({ fecha, fuente, monto, nota, origen = 'manual', fondo, estado } = {}, db = sql) {
+// de clases lo pasa explícito, junto con el ciclo de ingreso (mes de las clases + 1).
+export async function crearIngreso({ fecha, fuente, monto, nota, origen = 'manual', fondo, estado, ciclo } = {}, db = sql) {
   if (!textoONull(fuente)) return validacion('Falta fuente')
   const montoNum = Number(monto)
   if (!Number.isFinite(montoNum) || montoNum <= 0) return validacion('Monto inválido')
@@ -207,6 +207,14 @@ export async function crearIngreso({ fecha, fuente, monto, nota, origen = 'manua
     cicloFinanciero = obtenerCicloFinanciero(fecha)
   } catch {
     return validacion('Fecha inválida')
+  }
+
+  // Un pago de clases se atribuye al ciclo del mes siguiente a las clases, no al de la fecha del
+  // pago (DEC-021). Solo lo indica registrarPago.
+  if (ciclo !== undefined) {
+    if (origen !== 'clases') return validacion('ciclo solo se indica en ingresos de clases')
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ciclo)) return validacion('ciclo debe ser YYYY-MM')
+    cicloFinanciero = ciclo
   }
 
   const r = await resolverFuente(fuente, { origen, fondo }, db)

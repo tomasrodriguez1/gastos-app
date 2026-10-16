@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  cicloIngresoDeClase,
+  mesClasesDeCiclo,
   obtenerCicloActual,
   obtenerCicloAnterior,
   obtenerCicloFinanciero,
@@ -47,5 +49,21 @@ describe('ciclos financieros 29–28', () => {
     expect(obtenerDiaDelCiclo('2026-03-01')).toBe(1)
     expect(obtenerDuracionCiclo('2026-03')).toBe(28)
     expect(obtenerRangoCiclo('2024-03').desde).toBe('2024-02-29')
+  })
+})
+
+describe('ingreso de clases particulares (DEC-021)', () => {
+  test('las clases del mes M son ingreso del ciclo M+1, sin importar el día', () => {
+    expect(cicloIngresoDeClase('2026-10-01')).toBe('2026-11')
+    expect(cicloIngresoDeClase('2026-10-28')).toBe('2026-11')
+    // El 29–31 ya es del ciclo siguiente para gastos, pero la clase sigue siendo "de octubre".
+    expect(cicloIngresoDeClase('2026-10-31')).toBe('2026-11')
+    expect(cicloIngresoDeClase('2026-12-15')).toBe('2027-01')
+    expect(() => cicloIngresoDeClase('2026-02-30')).toThrow()
+  })
+
+  test('mesClasesDeCiclo es el inverso', () => {
+    expect(mesClasesDeCiclo('2026-11')).toBe('2026-10')
+    expect(mesClasesDeCiclo('2027-01')).toBe('2026-12')
   })
 })

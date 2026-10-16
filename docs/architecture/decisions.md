@@ -359,8 +359,8 @@ Decision:
   deuda no se persiste: es Σ monto de las dictadas sin cobrar.
 - Un pago cubre N clases dictadas y pendientes del mismo alumno, por su suma exacta, sin pagos
   parciales ni por adelantado. En una transacción inserta el `ingreso` (fuente "Clases
-  particulares", `origen='clases'` nuevo, ciclo de la fecha del pago), el `pago` y `pago_clase`,
-  y marca las clases como pagadas.
+  particulares", `origen='clases'` nuevo, ciclo de la fecha del pago —ver DEC-021, que lo cambia—),
+  el `pago` y `pago_clase`, y marca las clases como pagadas.
 - El ingreso de clases solo se corrige deshaciendo el pago desde la UI. `/api/ingresos` responde
   409 a editarlo o borrarlo, y la FK `pago.ingreso_id ON DELETE RESTRICT` lo protege en la DB.
 - Mismo servidor MCP y mismo `MCP_TOKEN` (amplía DEC-017). Las tools de clases crean y cambian
@@ -421,6 +421,33 @@ Consequences: antes de que llegue el sueldo del ciclo el Saldo real es negativo 
 junto al esperado). Hay que aprobar lo que registran las IAs; el menú muestra un contador. El agente
 de `/agente` no tiene las tools de clases, así que no propone el pago de clases a partir de "me
 transfirieron". Una fuente nueva tiene que existir en el catálogo antes de usarse.
+
+## DEC-021 - Las clases de un mes son ingreso del ciclo siguiente
+
+Date: 2026-10-16
+Context: las clases particulares se cobran al mes siguiente: lo que se dicta en octubre se paga a
+comienzos de noviembre. DEC-019 hacía caer el ingreso en el ciclo de la fecha del pago, así que un
+pago adelantado, o uno tardío, contaba en un ciclo distinto al del trabajo que pagaba, y el
+Dashboard esperaba en octubre la plata de las clases de octubre.
+Decision:
+- Las clases del mes calendario M son ingreso del ciclo M+1 (`cicloIngresoDeClase` en
+  `src/utils/ciclos.js`): las de octubre son ingreso del ciclo de noviembre (29 oct → 28 nov), sin
+  importar el día de la clase ni cuándo se pague.
+- `registrarPago` pone `ingreso.ciclo_financiero` con ese ciclo (`ingreso.fecha` sigue siendo la
+  fecha en que llegó la plata). Un cobro con clases de meses distintos crea un pago con su ingreso
+  por cada ciclo, en la misma transacción, para mantener el pago 1–1 con su ingreso.
+- `resumenIngresosCiclo`: lo "por cobrar" de Clases particulares en el ciclo N es lo que deben las
+  clases dictadas del mes N−1 (antes era toda la deuda actual). Así el saldo esperado de octubre ya
+  no cuenta las clases de octubre y el de noviembre sí.
+- Horas, clases dictadas y el análisis de clases siguen contándose por la fecha de la clase, y
+  "cobrado" por fecha del pago (es plata que entró, no el ciclo del ingreso).
+Alternatives considered: atribuir por ciclo financiero de la clase (las del 29–31 de octubre
+caerían en diciembre; el usuario piensa en meses de clases); mantener la fecha del pago (descartada
+por lo anterior); un ingreso con partes por ciclo (descartada: rompe `pago.ingreso_id` 1–1).
+Consequences: un pago de varios meses se registra como varios pagos/ingresos, que se aprueban por
+separado si vienen por MCP. Un ingreso de clases puede quedar en un ciclo ya cerrado (cobro tardío
+de clases viejas: septiembre pagado en noviembre suma al ciclo de octubre). No hay datos que
+migrar: en producción todavía no había pagos de clases.
 
 ## GAP: decisions to document
 

@@ -231,10 +231,12 @@ const registrarPagoTool = {
     'Registra que se pagaron una o más clases. Todas tienen que ser del mismo alumno o de hermanos de',
     'una misma familia (un solo pago por la transferencia del apoderado), estar dictadas y sin cobrar;',
     'el monto del pago es la suma de sus montos (no hay pagos parciales ni por adelantado).',
-    'El pago queda POR CONFIRMAR: crea el pago y un ingreso "Clases particulares" PENDIENTES (en el',
-    'ciclo financiero de la fecha del pago) y las clases siguen como no cobradas hasta que una persona',
-    'lo apruebe en /ingresos. No digas que ya quedó cobrado. Mientras esté por confirmar, esas clases',
-    'no se pueden volver a pagar, mover ni cancelar.',
+    'El pago queda POR CONFIRMAR: crea el pago y un ingreso "Clases particulares" PENDIENTES y las',
+    'clases siguen como no cobradas hasta que una persona lo apruebe en /ingresos. No digas que ya',
+    'quedó cobrado. Mientras esté por confirmar, esas clases no se pueden volver a pagar, mover ni',
+    'cancelar. El ingreso se atribuye al ciclo del MES SIGUIENTE a las clases (las clases de octubre',
+    'son ingreso del ciclo de noviembre), no al de la fecha del pago; si las clases son de meses',
+    'distintos se crea un pago con su ingreso por cada ciclo (`pagos` / `ingresos` los traen todos).',
     '`monto` es opcional: si lo pasás y no coincide con la suma, no se registra nada.',
     'Un pago no se puede confirmar ni deshacer por acá: confirmá con el usuario las clases y la fecha',
     'antes. Fecha del pago YYYY-MM-DD, no futura.',
@@ -257,7 +259,11 @@ const registrarPagoTool = {
       data: {
         pago: r.pago,
         ingreso: r.ingreso,
-        mensaje: 'El pago quedó por confirmar en /ingresos. Las clases siguen como no cobradas hasta que se apruebe.',
+        pagos: r.pagos,
+        ingresos: r.ingresos,
+        mensaje: r.pagos.length > 1
+          ? `Quedaron ${r.pagos.length} pagos por confirmar en /ingresos (uno por ciclo de ingreso). Las clases siguen como no cobradas hasta que se aprueben.`
+          : 'El pago quedó por confirmar en /ingresos. Las clases siguen como no cobradas hasta que se apruebe.',
       },
       meta: { por_confirmar: true },
     }

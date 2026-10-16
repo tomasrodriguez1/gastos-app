@@ -100,7 +100,7 @@ export function ClasesPage({ ciclos }) {
         <h1 className="font-heading text-3xl text-white">Clases</h1>
         <p className="mt-1 text-sm text-slate-500">
           Agenda y cobro de clases particulares. Al registrar un pago se crea un ingreso real
-          "Clases particulares" en el ciclo de la fecha del pago.
+          "Clases particulares" en el ciclo del mes siguiente a las clases (las de octubre son ingreso de noviembre).
         </p>
       </div>
 
@@ -112,7 +112,7 @@ export function ClasesPage({ ciclos }) {
         <Kpi titulo="Deuda" valor={fmt(resumen?.deuda_total ?? 0)} detalle="Dictado y no cobrado" />
         <Kpi titulo="Dictado del mes" valor={fmt(resumen?.monto_dictado ?? 0)} detalle={`${resumen?.clases_dictadas ?? 0} clases`} />
         <Kpi titulo="Horas dictadas" valor={formatHoras(resumen?.horas_dictadas ?? 0)} detalle={`${formatHoras(resumen?.horas_programadas ?? 0)} programadas`} />
-        <Kpi titulo="Ingresos del ciclo" valor={fmt(resumen?.ingresos_ciclo?.total ?? 0)} detalle="Por fecha de pago">
+        <Kpi titulo="Ingresos del ciclo" valor={fmt(resumen?.ingresos_ciclo?.total ?? 0)} detalle="Pagos de las clases del mes anterior">
           <SelectorCicloCompacto ciclo={ciclo} ciclos={ciclos} onChange={setCiclo} />
         </Kpi>
       </div>

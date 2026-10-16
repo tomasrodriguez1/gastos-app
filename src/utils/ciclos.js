@@ -39,6 +39,18 @@ export function obtenerMesCalendario(fecha) {
   return fecha.slice(0, 7)
 }
 
+// Clases particulares (DEC-021): lo que se dicta en un mes calendario se cobra al mes siguiente, así
+// que las clases de octubre son ingreso del ciclo de noviembre (el que va del 29 de octubre al 28
+// de noviembre), sin importar cuándo se pague. Se atribuye por la fecha de la clase, no del pago.
+export function cicloIngresoDeClase(fechaClase) {
+  return desplazarPeriodo(obtenerMesCalendario(fechaClase), 1)
+}
+
+// Inverso: el mes calendario cuyas clases son ingreso de ese ciclo (ciclo noviembre ← clases de octubre).
+export function mesClasesDeCiclo(ciclo) {
+  return desplazarPeriodo(ciclo, -1)
+}
+
 export function obtenerCicloActual(ahora = new Date()) {
   const fechaLocal = [
     ahora.getFullYear(),

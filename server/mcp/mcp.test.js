@@ -77,10 +77,11 @@ const deps = {
     totales: { previsto: 0, real: 0, esperado: 0, por_aprobar: 0, fondos: 0 },
   })),
   listarPendientes: mock(async () => [{ id: 31, fuente: 'Proyectos propios', monto: 300000, estado: 'pendiente', origen: 'mcp' }]),
-  registrarPago: mock(async ({ claseIds, fecha }) => ({
-    pago: { id: 5, alumno_id: 1, fecha, monto: 50000, ingreso_id: 9, ciclo_financiero: '2026-10', clases: claseIds.map(id => ({ id })) },
-    ingreso: { id: 9, fecha, fuente: 'Clases particulares', monto: 50000, origen: 'clases', ciclo_financiero: '2026-10' },
-  })),
+  registrarPago: mock(async ({ claseIds, fecha }) => {
+    const pago = { id: 5, alumno_id: 1, fecha, monto: 50000, ingreso_id: 9, ciclo_financiero: '2026-10', clases: claseIds.map(id => ({ id })) }
+    const ingreso = { id: 9, fecha, fuente: 'Clases particulares', monto: 50000, origen: 'clases', ciclo_financiero: '2026-10' }
+    return { pago, ingreso, pagos: [pago], ingresos: [ingreso] }
+  }),
   ahora: () => AHORA,
 }
 
@@ -521,13 +522,23 @@ describe('tools de clases', () => {
     await client.close()
   })
 
+  test('registrar_pago con clases de meses distintos informa que quedan varios pagos por confirmar', async () => {
+    const p1 = { id: 5, monto: 25000, ciclo_financiero: '2026-10' }
+    const p2 = { id: 6, monto: 25000, ciclo_financiero: '2026-11' }
+    deps.registrarPago.mockImplementationOnce(async () => ({ pago: p1, ingreso: { id: 9 }, pagos: [p1, p2], ingresos: [{ id: 9 }, { id: 10 }] }))
+    const client = await conectar()
+    const r = await llamar(client, 'registrar_pago', { clase_ids: [10, 11], fecha: '2026-10-06' })
+    expect(r).toMatchObject({ ok: true, data: { pagos: [{ id: 5 }, { id: 6 }], mensaje: expect.stringContaining('2 pagos por confirmar') } })
+    await client.close()
+  })
+
   test('registrar_pago pasa ids, fecha y hoy local del servidor', async () => {
     const client = await conectar()
     const r = await llamar(client, 'registrar_pago', { clase_ids: [10, 11], fecha: '2026-10-06' })
     expect(r).toMatchObject({ ok: true, data: { pago: { id: 5, monto: 50000 }, ingreso: { origen: 'clases' } } })
     // El pago por MCP siempre queda por confirmar: lo aprueba un humano en /ingresos.
     expect(deps.registrarPago.mock.calls[0][0]).toEqual({ claseIds: [10, 11], fecha: '2026-10-06', monto: undefined, porConfirmar: true, hoy: '2026-10-06' })
-    expect(r).toMatchObject({ meta: { por_confirmar: true }, data: { mensaje: expect.stringContaining('por confirmar') } })
+    expect(r).toMatchObject({ meta: { por_confirmar: true }, data: { mensaje: expect.stringContaining('por confirmar'), pagos: [{ id: 5 }], ingresos: [{ id: 9 }] } })
     expect(await llamar(client, 'registrar_pago', { clase_ids: [], fecha: '2026-10-06' })).toMatchObject({ code: 'validacion' })
     await client.close()
   })
@@ -639,7 +650,8 @@ describe.skipIf(!URL_TEST_CLASES || URL_TEST_CLASES === process.env.DATABASE_URL
       expect(resumen.data.deuda_por_familia[0]).toMatchObject({ nombre: 'Julieta Chinetti', deuda: 50000 })
 
       const pago = await llamar(client, 'registrar_pago', { clase_ids: ids, fecha: '2026-10-06', monto: 50000 })
-      expect(pago).toMatchObject({ ok: true, data: { ingreso: { fuente: 'Clases particulares', ciclo_financiero: '2026-10' } } })
+      // Clases de octubre → ingreso del ciclo de NOVIEMBRE, aunque el pago sea del 6 de octubre.
+      expect(pago).toMatchObject({ ok: true, data: { ingreso: { fuente: 'Clases particulares', ciclo_financiero: '2026-11', fecha: '2026-10-06' } } })
       // Por MCP el pago y su ingreso quedan PENDIENTES: las clases siguen sin cobrar y en la deuda.
       expect(pago.data.pago).toMatchObject({ estado: 'pendiente' })
       const [ing] = await db`SELECT origen, estado, monto::int FROM ingreso`

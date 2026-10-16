@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { formatCLP, formatFecha } from '../../utils/formatters'
+import { formatCLP, formatFecha, formatMesLargo } from '../../utils/formatters'
+import { cicloIngresoDeClase, formatCiclo, mesClasesDeCiclo } from '../../utils/ciclos'
 import { armarMensajeCobro, linkWhatsApp } from '../../utils/mensajeCobro'
 import { BOTON_PRIMARIO, BOTON_SECUNDARIO, INPUT, formatHoras } from './estilos'
 
 // Cobro de una cuenta (familia o alumno sin familia): clases dictadas y pendientes, todas
 // marcadas. Arma el mensaje para WhatsApp con las clases elegidas y, cuando llega la plata,
-// registra el pago (monto = suma; la fecha del pago define el ciclo del ingreso).
+// registra el pago (monto = suma). El ingreso cae en el ciclo del mes siguiente a las clases (DEC-021).
 export function RegistrarPago({ cuenta, cargarClases, onRegistrar, onCerrar }) {
   const [clases, setClases] = useState(null)
   const [elegidas, setElegidas] = useState(new Set())
@@ -35,6 +36,17 @@ export function RegistrarPago({ cuenta, cargarClases, onRegistrar, onCerrar }) {
   )
   const mensaje = mensajeEditado ?? mensajeGenerado
   const whatsapp = mensaje ? linkWhatsApp(cuenta.apoderado_telefono, mensaje) : null
+
+  // Dónde cae el ingreso: las clases de un mes son ingreso del ciclo siguiente (octubre → noviembre).
+  // Si el cobro mezcla meses, se registra un pago por ciclo.
+  const porCiclo = useMemo(() => {
+    const grupos = new Map()
+    for (const c of seleccion) {
+      const ciclo = cicloIngresoDeClase(c.fecha)
+      grupos.set(ciclo, { ciclo, clases: (grupos.get(ciclo)?.clases || 0) + 1, total: (grupos.get(ciclo)?.total || 0) + c.monto })
+    }
+    return [...grupos.values()].sort((a, b) => a.ciclo.localeCompare(b.ciclo))
+  }, [seleccion])
 
   const porAlumno = useMemo(() => {
     const grupos = new Map()
@@ -153,7 +165,15 @@ export function RegistrarPago({ cuenta, cargarClases, onRegistrar, onCerrar }) {
           </button>
         </div>
       </div>
-      <p className="text-xs text-slate-500">El pago se registra como ingreso real "Clases particulares" en el ciclo de su fecha.</p>
+      <div className="text-xs text-slate-500 space-y-0.5">
+        <p>Se registra como ingreso real "Clases particulares" en el ciclo del mes siguiente a las clases, no en el de la fecha del pago:</p>
+        {porCiclo.map(g => (
+          <p key={g.ciclo} className="text-slate-400">
+            Clases de {formatMesLargo(mesClasesDeCiclo(g.ciclo))} → {formatCiclo(g.ciclo)} · {formatCLP(g.total)}
+          </p>
+        ))}
+        {porCiclo.length > 1 && <p className="text-amber-400/90">Son de meses distintos: se registran {porCiclo.length} pagos, uno por ciclo.</p>}
+      </div>
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:tes
 import postgres from 'postgres'
 import {
   calcularMonto, crearAlumno, editarAlumno, agendarClase, moverClase, marcarDictada, cancelarClase,
-  registrarPago, confirmarPago, deshacerPago, eliminarClase, resumenClases, crearFamilia, editarFamilia, eliminarFamilia, listarFamilias, listarAlumnos, buscarClases, ingresosClasesCiclo, listarPagos,
+  registrarPago, confirmarPago, deshacerPago, eliminarClase, resumenClases, deudaClasesDelMes, crearFamilia, editarFamilia, eliminarFamilia, listarFamilias, listarAlumnos, buscarClases, ingresosClasesCiclo, listarPagos,
   FUENTE_INGRESO_CLASES,
 } from './clases.js'
 import { editarIngreso, eliminarIngreso } from '../ingresos.js'
@@ -147,27 +147,106 @@ describe.skipIf(!usarDb)('clases contra Postgres', () => {
     expect((await marcarDictada(9999, db)).code).toBe('no_encontrado')
   })
 
-  test('pago feliz: un ingreso en el ciclo de la fecha del pago, clases pagadas, pago_clase por clase', async () => {
+  test('pago feliz: un ingreso en el ciclo del mes siguiente a las clases, clases pagadas, pago_clase por clase', async () => {
     await alumno()
     const c1 = await claseDictada('Cristóbal Mena', '2026-10-01')
     const c2 = await claseDictada('Cristóbal Mena', '2026-10-08')
     const c3 = await claseDictada('Cristóbal Mena', '2026-10-15', { duracion_minutos: 90 })
 
-    // Día 29 → ciclo financiero del mes siguiente.
+    // Pagado antes (29 de septiembre, ciclo de octubre): las clases son de octubre, así que el
+    // ingreso es del ciclo de noviembre igual (DEC-021).
     const r = await registrarPago({ claseIds: [c3.id, c1.id, c2.id, c1.id], fecha: '2026-09-29', hoy: HOY }, db)
     expect(r.error).toBeUndefined()
-    expect(r.pago).toMatchObject({ monto: 87500, fecha: '2026-09-29', ciclo_financiero: '2026-10' })
+    expect(r.pagos).toHaveLength(1)
+    expect(r.pago).toMatchObject({ monto: 87500, fecha: '2026-09-29', ciclo_financiero: '2026-11' })
     expect(r.ingreso).toMatchObject({
-      fuente: FUENTE_INGRESO_CLASES, monto: 87500, fecha: '2026-09-29', ciclo_financiero: '2026-10', origen: 'clases',
+      fuente: FUENTE_INGRESO_CLASES, monto: 87500, fecha: '2026-09-29', ciclo_financiero: '2026-11', origen: 'clases',
       nota: 'Cristóbal Mena: 2026-10-01, 2026-10-08, 2026-10-15',
     })
     expect(await contar('pago_clase')).toBe(3)
     const cobros = await db`SELECT DISTINCT cobro FROM clase`
     expect(cobros.map(c => c.cobro)).toEqual(['pagado'])
-    expect((await ingresosClasesCiclo('2026-10', db))).toMatchObject({ total: 87500, cantidad: 1 })
+    expect((await ingresosClasesCiclo('2026-11', db))).toMatchObject({ total: 87500, cantidad: 1 })
+    expect((await ingresosClasesCiclo('2026-10', db))).toMatchObject({ total: 0, cantidad: 0 })
 
     const { pagos } = await listarPagos({}, db)
     expect(pagos[0].clases.map(c => c.id)).toEqual([c1.id, c2.id, c3.id])
+  })
+
+  describe('ciclo del ingreso: las clases del mes M son ingreso del ciclo M+1 (DEC-021)', () => {
+    test('pagar dentro del mismo mes no mueve el ingreso: sigue siendo del ciclo siguiente', async () => {
+      await alumno()
+      const c = await claseDictada('Cristóbal Mena', '2026-10-01')
+      const r = await registrarPago({ claseIds: [c.id], fecha: '2026-10-15', hoy: HOY }, db)
+      expect(r.ingreso).toMatchObject({ fecha: '2026-10-15', ciclo_financiero: '2026-11' })
+    })
+
+    test('el 29–31 sigue siendo "del mes": una clase del 30 de octubre también es ingreso de noviembre', async () => {
+      await alumno()
+      const c = await claseDictada('Cristóbal Mena', '2026-10-30')
+      expect((await registrarPago({ claseIds: [c.id], fecha: HOY, hoy: HOY }, db)).ingreso.ciclo_financiero).toBe('2026-11')
+    })
+
+    test('un cobro con clases de meses distintos crea un pago e ingreso por ciclo, en una sola transacción', async () => {
+      await alumno()
+      const sep = await claseDictada('Cristóbal Mena', '2026-09-30')
+      const oct1 = await claseDictada('Cristóbal Mena', '2026-10-05')
+      const oct2 = await claseDictada('Cristóbal Mena', '2026-10-29', { duracion_minutos: 90 })
+      const r = await registrarPago({ claseIds: [oct2.id, sep.id, oct1.id], fecha: HOY, monto: 87500, hoy: HOY }, db)
+
+      expect(r.pagos.map(p => [p.ciclo_financiero, p.monto])).toEqual([['2026-10', 25000], ['2026-11', 62500]])
+      expect(r.ingresos.map(i => [i.ciclo_financiero, i.monto, i.estado])).toEqual([['2026-10', 25000, 'confirmado'], ['2026-11', 62500, 'confirmado']])
+      expect(r.pago.id).toBe(r.pagos[0].id)
+      expect(r.ingresos[1].nota).toBe('Cristóbal Mena: 2026-10-05, 2026-10-29')
+      expect((await db`SELECT DISTINCT cobro FROM clase`).map(x => x.cobro)).toEqual(['pagado'])
+      expect(await contar('pago_clase')).toBe(3)
+      expect((await ingresosClasesCiclo('2026-10', db)).total).toBe(25000)
+      expect((await ingresosClasesCiclo('2026-11', db)).total).toBe(62500)
+
+      // Cada pago se deshace por separado: el otro queda.
+      await deshacerPago(r.pagos[1].id, db)
+      expect(await contar('ingreso')).toBe(1)
+      expect((await db`SELECT cobro FROM clase WHERE id = ${sep.id}`)[0].cobro).toBe('pagado')
+      expect((await db`SELECT cobro FROM clase WHERE id = ${oct1.id}`)[0].cobro).toBe('pendiente')
+    })
+
+    test('por confirmar con meses distintos: dos pagos pendientes; cada uno se aprueba por separado', async () => {
+      await alumno()
+      const sep = await claseDictada('Cristóbal Mena', '2026-09-20')
+      const oct = await claseDictada('Cristóbal Mena', '2026-10-05')
+      const r = await registrarPago({ claseIds: [sep.id, oct.id], fecha: HOY, porConfirmar: true, hoy: HOY }, db)
+      expect(r.pagos.map(p => [p.ciclo_financiero, p.estado])).toEqual([['2026-10', 'pendiente'], ['2026-11', 'pendiente']])
+      expect(await confirmarPago(r.pagos[0].id, db)).toMatchObject({ ok: true })
+      expect((await db`SELECT cobro FROM clase WHERE id = ${sep.id}`)[0].cobro).toBe('pagado')
+      expect((await db`SELECT cobro FROM clase WHERE id = ${oct.id}`)[0].cobro).toBe('pendiente')
+    })
+
+    test('una clase de $0 de otro mes se suma al grupo con monto (un pago no puede ser $0)', async () => {
+      await alumno()
+      const gratis = await claseDictada('Cristóbal Mena', '2026-09-10', { precio_hora: 0 })
+      const oct = await claseDictada('Cristóbal Mena', '2026-10-05')
+      const r = await registrarPago({ claseIds: [gratis.id, oct.id], fecha: HOY, hoy: HOY }, db)
+      expect(r.pagos).toHaveLength(1)
+      expect(r.pago).toMatchObject({ monto: 25000, ciclo_financiero: '2026-11' })
+      expect(await contar('pago_clase')).toBe(2)
+      // Solo clases de $0: nada que cobrar.
+      const otra = await claseDictada('Cristóbal Mena', '2026-10-12', { precio_hora: 0 })
+      expect((await registrarPago({ claseIds: [otra.id], fecha: HOY, hoy: HOY }, db)).code).toBe('validacion')
+    })
+
+    test('deudaClasesDelMes: solo las dictadas sin cobrar de ese mes calendario, con lo ya por confirmar', async () => {
+      await alumno()
+      await claseDictada('Cristóbal Mena', '2026-09-30')
+      const a = await claseDictada('Cristóbal Mena', '2026-10-01')
+      await claseDictada('Cristóbal Mena', '2026-10-31')
+      await agendarClase({ alumno: 'Cristóbal Mena', fecha: '2026-10-20', hora_inicio: '19:00' }, db) // programada: no cuenta
+      await registrarPago({ claseIds: [a.id], fecha: HOY, porConfirmar: true, hoy: HOY }, db)
+
+      expect(await deudaClasesDelMes('2026-10', db)).toEqual({ mes: '2026-10', deuda: 50000, clases: 2, por_confirmar: 25000 })
+      expect(await deudaClasesDelMes('2026-09', db)).toMatchObject({ deuda: 25000, clases: 1, por_confirmar: 0 })
+      expect(await deudaClasesDelMes('2026-11', db)).toMatchObject({ deuda: 0, clases: 0 })
+      expect((await deudaClasesDelMes('mal', db)).code).toBe('validacion')
+    })
   })
 
   test('rechazos de pago dejan la DB intacta', async () => {
@@ -240,7 +319,7 @@ describe.skipIf(!usarDb)('clases contra Postgres', () => {
       expect(res).toMatchObject({ cobrado: 0, pagos: 0, deuda_total: 40000, por_confirmar_total: 40000 })
       expect(res.deuda_por_familia[0]).toMatchObject({ deuda: 40000, por_confirmar: 40000 })
       // Ni cobrado ni ingresos del ciclo lo cuentan todavía.
-      expect(await ingresosClasesCiclo('2026-10', db)).toMatchObject({ total: 0, cantidad: 0 })
+      expect(await ingresosClasesCiclo('2026-11', db)).toMatchObject({ total: 0, cantidad: 0 })
 
       const clases = (await buscarClases({}, db)).filas
       expect(clases.every(c => c.pago_estado === 'pendiente' && c.cobro === 'pendiente')).toBe(true)
@@ -272,7 +351,7 @@ describe.skipIf(!usarDb)('clases contra Postgres', () => {
       expect((await db`SELECT estado FROM ingreso`)[0].estado).toBe('confirmado')
       expect((await db`SELECT DISTINCT cobro FROM clase`).map(x => x.cobro)).toEqual(['pagado'])
       expect(await resumenClases({}, db)).toMatchObject({ cobrado: 40000, pagos: 1, deuda_total: 0, por_confirmar_total: 0 })
-      expect(await ingresosClasesCiclo('2026-10', db)).toMatchObject({ total: 40000, cantidad: 1 })
+      expect(await ingresosClasesCiclo('2026-11', db)).toMatchObject({ total: 40000, cantidad: 1 })
       expect((await confirmarPago(pago.id, db)).code).toBe('conflicto')
       expect((await confirmarPago(999, db)).code).toBe('no_encontrado')
       expect((await confirmarPago('x', db)).code).toBe('validacion')

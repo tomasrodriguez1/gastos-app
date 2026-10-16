@@ -8,8 +8,8 @@ import { toMonto } from './db/numeric.js'
 import {
   FUENTE_CLASES, confirmarIngreso, descartarIngreso, listarFuentes, serializarIngreso,
 } from './ingresos.js'
-import { confirmarPago, deshacerPago, resumenClases, hoyLocal } from './clases/clases.js'
-import { obtenerCicloActual, obtenerRangoCiclo } from '../src/utils/ciclos.js'
+import { confirmarPago, deshacerPago, deudaClasesDelMes, hoyLocal } from './clases/clases.js'
+import { mesClasesDeCiclo, obtenerCicloActual, obtenerRangoCiclo } from '../src/utils/ciclos.js'
 
 const fallo = (status, error, code) => ({ error, status, code })
 
@@ -91,23 +91,24 @@ const clave = (nombre) => String(nombre).trim().toLowerCase()
 
 // Previsto vs real del ciclo por fuente. `real` = ingresos confirmados; `por_aprobar` = pendientes
 // (no cuentan todavía). Uso de fondos va aparte de los ingresos: suma al saldo pero no es ingreso
-// nuevo. `esperado` = lo que se espera tener al cierre: para clases, lo real más lo que deben
-// (solo en el ciclo actual o futuro: la deuda de hoy no es del ciclo pasado); para uso de fondos,
-// solo lo real; para el resto, lo mayor entre previsto y real+por aprobar.
+// nuevo. `esperado` = lo que se espera tener al cierre: para clases, lo real más lo que deben las
+// clases del mes anterior al ciclo (las de octubre son ingreso del ciclo de noviembre, DEC-021: lo
+// real y lo por cobrar de un ciclo son siempre del mismo mes de clases); para uso de fondos, solo
+// lo real; para el resto, lo mayor entre previsto y real+por aprobar.
 export async function resumenIngresosCiclo(ciclo = obtenerCicloActual(), { hoy = hoyLocal() } = {}, db = sql) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ciclo || '')) return fallo(400, 'ciclo debe ser YYYY-MM', 'validacion')
 
   const [{ existe }] = await db`SELECT to_regclass('public.presupuesto_ingreso') IS NOT NULL AS existe`
-  const [fuentes, previstos, reales, clases] = await Promise.all([
+  const mesClases = mesClasesDeCiclo(ciclo)
+  const [fuentes, previstos, reales, deudaClases] = await Promise.all([
     listarFuentes({}, db),
     existe ? db`SELECT fuente, monto FROM presupuesto_ingreso WHERE ciclo = ${ciclo}` : [],
     db`
       SELECT fuente, estado, SUM(monto) AS total, COUNT(*)::int AS n
       FROM ingreso WHERE ciclo_financiero = ${ciclo} GROUP BY fuente, estado
     `,
-    resumenClases({}, db),
+    deudaClasesDelMes(mesClases, db),
   ])
-  if (clases.error) return clases
 
   const mapa = new Map()
   const fila = (nombre, base = {}) => {
@@ -127,14 +128,13 @@ export async function resumenIngresosCiclo(ciclo = obtenerCicloActual(), { hoy =
     if (r.estado === 'confirmado') { f.real += toMonto(r.total); f.n_real += r.n } else { f.por_aprobar += toMonto(r.total); f.n_por_aprobar += r.n }
   }
 
-  const incluirDeuda = ciclo >= obtenerCicloActual(new Date(`${hoy}T12:00:00`))
   const filas = [...mapa.values()]
     // Una fuente desactivada solo aparece si tiene algo en el ciclo.
     .filter(f => f.activa || f.previsto || f.real || f.por_aprobar)
     .sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre))
     .map((f) => {
       const esClases = clave(f.nombre) === clave(FUENTE_CLASES)
-      const porCobrar = esClases && incluirDeuda ? clases.deuda_total : 0
+      const porCobrar = esClases ? deudaClases.deuda : 0
       let esperado
       if (f.tipo === 'fondos') esperado = f.real
       else if (esClases) esperado = f.real + porCobrar
@@ -156,7 +156,7 @@ export async function resumenIngresosCiclo(ciclo = obtenerCicloActual(), { hoy =
         por_aprobar: f.por_aprobar,
         esperado,
         estado,
-        ...(esClases ? { por_cobrar: porCobrar, por_confirmar: f.por_aprobar } : {}),
+        ...(esClases ? { por_cobrar: porCobrar, por_confirmar: f.por_aprobar, mes_clases: mesClases } : {}),
       }
     })
 

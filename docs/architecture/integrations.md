@@ -325,22 +325,22 @@ devuelven las clases con: `id`, `alumno_id`, `alumno`, `fecha`, `hora_inicio`, `
 |------|-------|--------|
 | `listar_alumnos` | `incluir_inactivos?` (default true) | Nombre, precio por hora, activo y familia (`familia_id`, `familia`, `apoderado_nombre`, `apoderado_telefono`) |
 | `buscar_clases` | `alumno?` (parte del nombre), `alumno_id?`, `familia_id?`, `desde?`, `hasta?`, `estado?`, `cobro?`, `actualizada_desde?` (ISO 8601), `limite` 1–100 (default 50), `offset` | Clases ordenadas por fecha y hora. `meta.truncado`. `actualizada_desde` sirve para sincronizar un calendario: incluye las canceladas |
-| `resumen_clases` | `desde?`, `hasta?` (default: el mes calendario actual) | Horas, clases y monto dictado, y horas programadas (por fecha de la clase); `cobrado` (por fecha del pago); `deuda_total`, `deuda_por_alumno` (`deuda`, `desde` = clase impaga más vieja, `clases`) y `deuda_por_familia` (por cuenta de cobro, con apoderado, teléfono y detalle por hermano). La deuda es la actual, no depende del rango |
+| `resumen_clases` | `desde?`, `hasta?` (default: el mes calendario actual) | Horas, clases y monto dictado, y horas programadas (por fecha de la clase); `cobrado` (por fecha del pago: plata que entró en el rango, no el ciclo del ingreso); `deuda_total`, `deuda_por_alumno` (`deuda`, `desde` = clase impaga más vieja, `clases`) y `deuda_por_familia` (por cuenta de cobro, con apoderado, teléfono y detalle por hermano). La deuda es la actual, no depende del rango |
 | `crear_alumno` | `nombre`, `precio_hora?` (default 25000) | Si el nombre existe (sin distinguir mayúsculas) devuelve ese alumno con `meta.existente=true`, sin cambiar su precio; si estaba inactivo, lo reactiva |
 | `agendar_clase` | `alumno` o `alumno_id`, `fecha`, `hora` (HH:MM), `horas?` (múltiplo de 0,25; default 1), `modalidad?` (default presencial), `precio_hora?`, `nota?` | Crea la clase `programada`/`pendiente`. Sin precio usa el del alumno. Si ya hay una clase de ese alumno ese día a esa hora → `conflicto` |
 | `mover_clase` | `clase_id` y al menos uno de `fecha`, `hora`, `horas`, `modalidad`, `precio_hora` | Solo si sigue `programada` + `pendiente`. Recalcula `monto` |
 | `marcar_dictada` | `clase_id` | `programada` → `dictada`. No cobra |
 | `cancelar_clase` | `clase_id` | → `cancelada` (no se borra), solo si `cobro='pendiente'` |
-| `registrar_pago` | `clase_ids` (1–50), `fecha` (no futura), `monto?` (verificación) | En una transacción crea el `pago` (`estado='pendiente'`) y el `ingreso` con fuente "Clases particulares", la fecha del pago y `origen='clases'`, también `pendiente`, en el ciclo de esa fecha. Las clases (mismo alumno o hermanos de una misma familia, todas `dictada` + `pendiente`) **siguen sin cobrar** hasta que un humano lo confirma en `/ingresos`. Si `monto` no coincide con la suma → `validacion`; si alguna clase ya tiene un pago por confirmar → `conflicto`. En ambos casos no escribe nada |
+| `registrar_pago` | `clase_ids` (1–50), `fecha` (no futura), `monto?` (verificación) | En una transacción crea el `pago` (`estado='pendiente'`) y el `ingreso` con fuente "Clases particulares", la fecha del pago y `origen='clases'`, también `pendiente`, en el ciclo del **mes siguiente a las clases** (las de octubre son ingreso del ciclo de noviembre, aunque se paguen en octubre; DEC-021). Si las clases son de meses distintos crea un pago e ingreso por ciclo (`data.pagos` / `data.ingresos`; `pago` / `ingreso` = el primero). Las clases (mismo alumno o hermanos de una misma familia, todas `dictada` + `pendiente`) **siguen sin cobrar** hasta que un humano lo confirma en `/ingresos`. Si `monto` no coincide con la suma → `validacion`; si alguna clase ya tiene un pago por confirmar → `conflicto`. En ambos casos no escribe nada |
 
 **`registrar_pago`** `{ "clase_ids": [12, 15], "fecha": "2026-10-16", "monto": 50000 }`
 
 ```json
 { "ok": true, "data": {
   "pago": { "id": 4, "alumno_id": 1, "alumno": "Cristóbal Mena", "fecha": "2026-10-16", "monto": 50000,
-            "estado": "pendiente", "ingreso_id": 31, "ciclo_financiero": "2026-10",
+            "estado": "pendiente", "ingreso_id": 31, "ciclo_financiero": "2026-11",
             "clases": [{ "id": 12, "fecha": "2026-10-01", "monto": 25000 }, { "id": 15, "fecha": "2026-10-08", "monto": 25000 }] },
-  "ingreso": { "id": 31, "fecha": "2026-10-16", "ciclo_financiero": "2026-10", "fuente": "Clases particulares",
+  "ingreso": { "id": 31, "fecha": "2026-10-16", "ciclo_financiero": "2026-11", "fuente": "Clases particulares",
                "monto": 50000, "nota": "Cristóbal Mena: 2026-10-01, 2026-10-08", "origen": "clases", "estado": "pendiente" },
   "mensaje": "El pago quedó por confirmar en /ingresos. Las clases siguen como no cobradas hasta que se apruebe."
 }, "meta": { "por_confirmar": true } }

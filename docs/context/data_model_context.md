@@ -394,7 +394,8 @@ fondos (tipo `fondos`).
 `/ingresos`, `/presupuesto` y la tool `resumen_ingresos`): por fuente `previsto`
 (`presupuesto_ingreso`), `real` (confirmados), `por_aprobar` (pendientes), `esperado` y `estado`
 (`llego` | `por_aprobar` | `pendiente` | `atrasado`). `esperado` de cada fuente: Clases =
-`real + por_cobrar` (la deuda actual dictada y sin cobrar, solo en el ciclo actual o futuro); Uso de
+`real + por_cobrar`, donde `por_cobrar` es lo que deben las clases dictadas del **mes calendario
+anterior al ciclo** (`mes_clases`: las de octubre son ingreso del ciclo de noviembre, DEC-021); Uso de
 fondos = `real`; el resto = `max(previsto, real + por_aprobar)`. Totales de ingresos:
 `previsto`, `real`, `esperado`, `por_aprobar`; `fondos` aparte. Una fuente con datos que no está en
 el catálogo aparece como `fuera_catalogo`.
@@ -467,7 +468,8 @@ clase_import_descartada(notion_id PK, eliminada_at)  -- clases importadas que se
   No hay pagos parciales ni por adelantado, y la fecha no puede ser futura. Todo pasa en una sola
   transacción, con `FOR UPDATE` sobre las clases:
   1. se inserta el `ingreso` (fuente `Clases particulares`, fecha y monto del pago, `origen='clases'`,
-     nota `"<alumno>: <fechas>"`, `ciclo_financiero = obtenerCicloFinanciero(fecha del pago)`);
+     nota `"<alumno>: <fechas>"`, `ciclo_financiero = cicloIngresoDeClase(fecha de las clases)`, o
+     sea el ciclo del mes siguiente a las clases, **no** el de la fecha del pago; ver abajo);
   2. se inserta el `pago`;
   3. se insertan las filas de `pago_clase`;
   4. las clases pasan a `cobro='pagado'`.
@@ -486,8 +488,17 @@ clase_import_descartada(notion_id PK, eliminada_at)  -- clases importadas que se
   - Deuda por alumno: `Σ monto` con `estado='dictada'` y `cobro='pendiente'`; "desde" es la fecha
     de la clase impaga más vieja.
   - El "$ till now" de Notion: `Σ monto` de las dictadas del rango.
-  - Horas y clases dictadas se cuentan por la fecha de la clase. "Cobrado" se cuenta por
-    `pago.fecha`, y el ingreso cae en el ciclo de esa fecha.
+  - Horas y clases dictadas se cuentan por la fecha de la clase. "Cobrado" (plata que entró en un
+    rango) se cuenta por `pago.fecha`.
+  - **Ciclo del ingreso (DEC-021):** las clases del mes calendario M son ingreso del ciclo M+1 (las
+    de octubre, del ciclo de noviembre: 29 oct → 28 nov), sin importar cuándo se paguen ni el día
+    (una clase del 30 de octubre también es "de octubre"). El pago de septiembre del mes en curso no
+    mueve el ingreso. `ingreso.fecha` sigue siendo la fecha en que llegó la plata; solo cambia
+    `ingreso.ciclo_financiero` (`crearIngreso` acepta `ciclo` únicamente con `origen='clases'`).
+    Un cobro con clases de meses distintos crea un `pago` con su `ingreso` por cada ciclo, en la
+    misma transacción (`registrarPago` devuelve `pagos` / `ingresos`, y `pago` / `ingreso` = el
+    primero); cada pago se confirma o se deshace por separado. Una clase de $0 se suma al grupo con
+    monto (un pago no puede ser $0). `deudaClasesDelMes(mes)` da lo que deben las clases de un mes.
 - **Clases importadas ya pagadas** (`Pagado` en Notion): `cobro='pagado'` sin fila en `pago` ni
   `ingreso`. No suman a "cobrado" ni a los ingresos del ciclo, y no se pueden "deshacer".
 

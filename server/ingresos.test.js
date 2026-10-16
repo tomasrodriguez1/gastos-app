@@ -178,6 +178,15 @@ describe.skipIf(!usarDb)('ingresos contra Postgres', () => {
       expect((await crearIngreso({ fecha: '2026-10-05', fuente: 'Otros', monto: 1000 }, db)).error).toContain('desactivada')
     })
 
+    test('el ciclo se puede indicar solo en ingresos de clases (DEC-021)', async () => {
+      const base = { fecha: '2026-10-20', monto: 1000 }
+      const ok = await crearIngreso({ ...base, fuente: 'Clases particulares', origen: 'clases', ciclo: '2026-11' }, db)
+      expect(ok.ingreso).toMatchObject({ fecha: '2026-10-20', ciclo_financiero: '2026-11' })
+      expect((await crearIngreso({ ...base, fuente: 'Mesada', ciclo: '2026-11' }, db)).status).toBe(400)
+      expect((await crearIngreso({ ...base, fuente: 'Clases particulares', origen: 'clases', ciclo: '2026-13' }, db)).status).toBe(400)
+      expect((await crearIngreso({ ...base, fuente: 'Mesada', origen: 'mcp', ciclo: '2026-11' }, db)).status).toBe(400)
+    })
+
     test('"fondo" solo con la fuente de tipo fondos', async () => {
       const ok = await crearIngreso({ fecha: '2026-10-05', fuente: 'Uso de fondos', monto: 50000, fondo: 'Vacaciones' }, db)
       expect(ok.ingreso).toMatchObject({ fuente: 'Uso de fondos', fondo: 'Vacaciones' })
@@ -279,7 +288,8 @@ describe.skipIf(!usarDb)('ingresos contra Postgres', () => {
       expect(f.Mesada).toMatchObject({ previsto: 115000, real: 115000, estado: 'llego' })
       expect(f['Proyectos propios']).toMatchObject({ real: 0, por_aprobar: 300000, esperado: 300000, estado: 'por_aprobar' })
       expect(f.Otros).toMatchObject({ previsto: 509679, esperado: 509679, estado: 'pendiente' })
-      expect(f['Clases particulares']).toMatchObject({ previsto: 500000, real: 0, por_cobrar: 20000, por_confirmar: 0, esperado: 20000 })
+      // La clase es del 8 de octubre: es ingreso del ciclo de NOVIEMBRE (DEC-021), no de octubre.
+      expect(f['Clases particulares']).toMatchObject({ previsto: 500000, real: 0, por_cobrar: 0, por_confirmar: 0, esperado: 0, mes_clases: '2026-09' })
       expect(f['Uso de fondos']).toMatchObject({ tipo: 'fondos', real: 50000, esperado: 50000 })
       expect(f.Legacy).toMatchObject({ fuera_catalogo: true, real: 7000 })
 
@@ -287,14 +297,19 @@ describe.skipIf(!usarDb)('ingresos contra Postgres', () => {
       expect(res.totales).toEqual({
         previsto: 1480000 + 500000 + 115000 + 509679,
         real: 115000 + 7000,
-        esperado: 1480000 + 20000 + 115000 + 300000 + 509679 + 7000,
+        esperado: 1480000 + 115000 + 300000 + 509679 + 7000,
         por_aprobar: 300000,
         fondos: 50000,
       })
       expect(res.rango).toEqual({ desde: '2026-09-29', hasta: '2026-10-28' })
+
+      // En el ciclo de noviembre sí: lo que deben las clases de octubre.
+      const nov = await resumenIngresosCiclo('2026-11', { hoy: HOY }, db)
+      expect(nov.fuentes.find(x => x.nombre === 'Clases particulares')).toMatchObject({ por_cobrar: 20000, esperado: 20000, mes_clases: '2026-10' })
+      expect(nov.totales.esperado).toBe(20000)
     })
 
-    test('antes del día esperado no está atrasado; ciclo pasado no suma la deuda de hoy; ciclo inválido', async () => {
+    test('antes del día esperado no está atrasado; la deuda de clases va al ciclo siguiente a las clases; ciclo inválido', async () => {
       await editarFuente(await fuenteId('Sueldo Zalantos'), { dia_esperado: 25 }, db)
       const { alumno } = await crearAlumno({ nombre: 'Rafaela Moraga', precio_hora_default: 20000 }, db)
       const r = await agendarClase({ alumno_id: alumno.id, fecha: '2026-10-08', hora_inicio: '18:00' }, db)
@@ -302,7 +317,9 @@ describe.skipIf(!usarDb)('ingresos contra Postgres', () => {
 
       const actual = await resumenIngresosCiclo('2026-10', { hoy: HOY }, db)
       expect(actual.fuentes.find(x => x.nombre === 'Sueldo Zalantos').estado).toBe('pendiente')
-      expect(actual.fuentes.find(x => x.nombre === 'Clases particulares').por_cobrar).toBe(20000)
+      // Las clases dictadas en octubre todavía no son plata esperada de octubre sino de noviembre.
+      expect(actual.fuentes.find(x => x.nombre === 'Clases particulares').por_cobrar).toBe(0)
+      expect((await resumenIngresosCiclo('2026-11', { hoy: HOY }, db)).fuentes.find(x => x.nombre === 'Clases particulares').por_cobrar).toBe(20000)
 
       const pasado = await resumenIngresosCiclo('2026-08', { hoy: HOY }, db)
       expect(pasado.fuentes.find(x => x.nombre === 'Sueldo Zalantos').estado).toBe('atrasado')
@@ -316,11 +333,13 @@ describe.skipIf(!usarDb)('ingresos contra Postgres', () => {
       await marcarDictada(a.clase.id, db)
       await registrarPago({ claseIds: [a.clase.id], fecha: HOY, porConfirmar: true, hoy: HOY }, db)
 
-      const res = await resumenIngresosCiclo('2026-10', { hoy: HOY }, db)
+      // Clase del 8 de octubre pagada el 16: el ingreso (pendiente) es del ciclo de noviembre.
+      const res = await resumenIngresosCiclo('2026-11', { hoy: HOY }, db)
       const c = res.fuentes.find(x => x.nombre === 'Clases particulares')
       expect(c).toMatchObject({ real: 0, por_aprobar: 20000, por_confirmar: 20000, por_cobrar: 20000, esperado: 20000, estado: 'por_aprobar' })
       expect(res.totales.real).toBe(0)
       expect(res.totales.por_aprobar).toBe(20000)
+      expect((await resumenIngresosCiclo('2026-10', { hoy: HOY }, db)).totales.por_aprobar).toBe(0)
       // La clase sigue en la deuda mientras el pago está por confirmar.
       expect((await resumenClases({}, db)).deuda_total).toBe(20000)
     })

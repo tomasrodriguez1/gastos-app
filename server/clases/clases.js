@@ -10,7 +10,7 @@
 
 import sql from '../db/client.js'
 import { crearIngreso, FUENTE_CLASES } from '../ingresos.js'
-import { obtenerCicloFinanciero } from '../../src/utils/ciclos.js'
+import { obtenerCicloFinanciero, cicloIngresoDeClase } from '../../src/utils/ciclos.js'
 
 export const FUENTE_INGRESO_CLASES = FUENTE_CLASES
 export const MODALIDADES = ['presencial', 'online']
@@ -545,10 +545,32 @@ function notaPago(clases, familia) {
   return porAlumno.size > 1 ? `Familia ${familia} — ${partes.join('; ')}` : partes[0]
 }
 
+// Clases agrupadas por el ciclo en que son ingreso: las del mes calendario M son del ciclo M+1
+// (DEC-021). Una clase de $0 no puede ser un pago propio (pago.monto > 0): se suma al primer grupo
+// con monto (siempre hay uno: registrarPago ya verificó que el total > 0).
+function agruparPorCicloIngreso(rows) {
+  const grupos = new Map()
+  for (const r of rows) {
+    const ciclo = cicloIngresoDeClase(r.fecha)
+    if (!grupos.has(ciclo)) grupos.set(ciclo, [])
+    grupos.get(ciclo).push(r)
+  }
+  const total = (clases) => clases.reduce((s, r) => s + entero(r.monto), 0)
+  const ordenados = [...grupos].sort(([a], [b]) => a.localeCompare(b)).map(([ciclo, clases]) => ({ ciclo, clases }))
+  const conMonto = ordenados.filter(g => total(g.clases) > 0)
+  for (const g of ordenados.filter(x => total(x.clases) === 0)) conMonto[0].clases.push(...g.clases)
+  return conMonto
+}
+
 // Un pago cubre N clases dictadas y pendientes de un mismo alumno o de hermanos de una misma
 // familia (cuenta de cobro); monto = Σ clase.monto (sin parciales). En una transacción: ingreso →
 // pago → pago_clase → clases pagadas. Si algo falla no queda nada escrito. `monto` es opcional: si
 // viene y no coincide con la suma, se rechaza.
+//
+// El ingreso cae en el ciclo del mes siguiente a las clases (las de octubre son ingreso de
+// noviembre), no en el de la fecha del pago (DEC-021). Si las clases son de meses distintos se crea
+// un pago con su ingreso por cada ciclo, en la misma transacción: `pagos` e `ingresos` traen todos
+// (ordenados por ciclo) y `pago` / `ingreso` el primero.
 //
 // porConfirmar (pagos que registra una IA por MCP, DEC-020): el pago y su ingreso nacen
 // 'pendiente' y las clases siguen sin cobrar (siguen en la deuda) hasta que un humano lo confirma
@@ -599,39 +621,44 @@ export async function registrarPago({ claseIds, fecha, monto, porConfirmar = fal
     }
     if (total <= 0) return validacion('Las clases suman $0: no hay nada que cobrar')
 
-    const unAlumno = alumnos.size === 1
-    const alumnoId = unAlumno ? rows[0].alumno_id : null
     const { familia_id: familiaId, familia } = rows[0]
-    const ingreso = await crearIngreso({
-      fecha,
-      fuente: FUENTE_INGRESO_CLASES,
-      monto: total,
-      nota: notaPago(rows, familia),
-      origen: 'clases',
-      estado: porConfirmar ? 'pendiente' : 'confirmado',
-    }, tx)
-    // crearIngreso ya validó todo lo que podía fallar; si igual devuelve error, se aborta la
-    // transacción para no dejar el pago a medias.
-    if (ingreso.error) throw new Error(`No se pudo crear el ingreso: ${ingreso.error}`)
+    const estado = porConfirmar ? 'pendiente' : 'confirmado'
+    const pagos = []
+    const ingresos = []
+    for (const grupo of agruparPorCicloIngreso(rows)) {
+      const totalGrupo = grupo.clases.reduce((s, r) => s + entero(r.monto), 0)
+      const unAlumno = new Set(grupo.clases.map(r => r.alumno_id)).size === 1
+      const ingreso = await crearIngreso({
+        fecha,
+        fuente: FUENTE_INGRESO_CLASES,
+        monto: totalGrupo,
+        nota: notaPago(grupo.clases, familia),
+        origen: 'clases',
+        estado,
+        ciclo: grupo.ciclo,
+      }, tx)
+      // crearIngreso ya validó todo lo que podía fallar; si igual devuelve error, se aborta la
+      // transacción para no dejar el pago a medias.
+      if (ingreso.error) throw new Error(`No se pudo crear el ingreso: ${ingreso.error}`)
 
-    const [pago] = await tx`
-      INSERT INTO pago (alumno_id, familia_id, fecha, monto, ingreso_id, estado)
-      VALUES (${alumnoId}, ${familiaId}, ${fecha}, ${total}, ${ingreso.ingreso.id}, ${porConfirmar ? 'pendiente' : 'confirmado'})
-      RETURNING *
-    `
-    await tx`INSERT INTO pago_clase ${tx(rows.map(r => ({ pago_id: pago.id, clase_id: r.id })))}`
-    if (!porConfirmar) await tx`UPDATE clase SET cobro = 'pagado', updated_at = NOW() WHERE id = ANY(${ids})`
-
-    return {
-      pago: serializarPago({
+      const [pago] = await tx`
+        INSERT INTO pago (alumno_id, familia_id, fecha, monto, ingreso_id, estado)
+        VALUES (${unAlumno ? grupo.clases[0].alumno_id : null}, ${familiaId}, ${fecha}, ${totalGrupo}, ${ingreso.ingreso.id}, ${estado})
+        RETURNING *
+      `
+      await tx`INSERT INTO pago_clase ${tx(grupo.clases.map(r => ({ pago_id: pago.id, clase_id: r.id })))}`
+      pagos.push(serializarPago({
         ...pago,
-        alumno: unAlumno ? rows[0].alumno : null,
+        alumno: unAlumno ? grupo.clases[0].alumno : null,
         familia,
         ciclo_financiero: ingreso.ingreso.ciclo_financiero,
-        clases: rows.map(r => ({ id: r.id, alumno: r.alumno, fecha: r.fecha, monto: entero(r.monto) })),
-      }),
-      ingreso: ingreso.ingreso,
+        clases: grupo.clases.map(r => ({ id: r.id, alumno: r.alumno, fecha: r.fecha, monto: entero(r.monto) })),
+      }))
+      ingresos.push(ingreso.ingreso)
     }
+    if (!porConfirmar) await tx`UPDATE clase SET cobro = 'pagado', updated_at = NOW() WHERE id = ANY(${ids})`
+
+    return { pago: pagos[0], ingreso: ingresos[0], pagos, ingresos }
   })
 }
 
@@ -706,7 +733,7 @@ export async function listarPagos({ alumno_id, familia_id, desde, hasta, limite 
 
 // ─── Resúmenes ───────────────────────────────────────────────────────────────
 
-// Horas y montos de clases por fecha de la clase; cobrado por fecha del pago. La deuda es la
+// Horas y montos de clases por fecha de la clase; cobrado (plata que entró) por fecha del pago. La deuda es la
 // actual (no depende del rango): dictada + pendiente, con la clase impaga más vieja.
 // Las clases importadas ya pagadas no tienen fila en `pago`, así que no suman a `cobrado`.
 export async function resumenClases({ desde, hasta } = {}, db = sql) {
@@ -793,7 +820,20 @@ export async function resumenClases({ desde, hasta } = {}, db = sql) {
   }
 }
 
-// Ingresos de clases del ciclo financiero (por fecha de pago), desde la tabla `ingreso`.
+// Lo que deben las clases dictadas de un mes calendario (las clases de ese mes son ingreso del
+// ciclo siguiente, DEC-021). `por_confirmar` = la parte que ya tiene un pago por confirmar.
+export async function deudaClasesDelMes(mes, db = sql) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes || '')) return validacion('mes debe ser YYYY-MM')
+  const [row] = await db`
+    SELECT COALESCE(SUM(c.monto), 0)::bigint AS deuda, COUNT(*)::int AS clases,
+      COALESCE(SUM(c.monto) FILTER (WHERE EXISTS (SELECT 1 FROM pago_clase pc WHERE pc.clase_id = c.id)), 0)::bigint AS por_confirmar
+    FROM clase c
+    WHERE c.estado = 'dictada' AND c.cobro = 'pendiente' AND substr(c.fecha, 1, 7) = ${mes}
+  `
+  return { mes, deuda: Number(row.deuda), clases: row.clases, por_confirmar: Number(row.por_confirmar) }
+}
+
+// Ingresos de clases del ciclo (los pagos de las clases del mes anterior, DEC-021), confirmados.
 export async function ingresosClasesCiclo(ciclo, db = sql) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ciclo || '')) return validacion('ciclo debe ser YYYY-MM')
   const [row] = await db`
