@@ -10,7 +10,7 @@
 
 import sql from '../db/client.js'
 import { crearIngreso, FUENTE_CLASES } from '../ingresos.js'
-import { obtenerCicloFinanciero, cicloIngresoDeClase } from '../../src/utils/ciclos.js'
+import { obtenerCicloFinanciero, cicloIngresoDeClase, mesClasesDeCiclo } from '../../src/utils/ciclos.js'
 
 export const FUENTE_INGRESO_CLASES = FUENTE_CLASES
 export const MODALIDADES = ['presencial', 'online']
@@ -833,14 +833,41 @@ export async function deudaClasesDelMes(mes, db = sql) {
   return { mes, deuda: Number(row.deuda), clases: row.clases, por_confirmar: Number(row.por_confirmar) }
 }
 
-// Ingresos de clases del ciclo (los pagos de las clases del mes anterior, DEC-021), confirmados.
+// Ingreso automático de un mes de clases (DEC-021): las clases dictadas y ya cobradas que no tienen
+// un pago registrado (las que vinieron de Notion como "Pagado") se asumen como ingreso sin que haya
+// que registrar nada. Las que se pagaron con un pago registrado ya tienen su `ingreso` y no entran
+// acá (no se cuentan dos veces); las que tienen un pago por confirmar siguen sin cobrar.
+export async function ingresoAutomaticoClases(mes, db = sql) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes || '')) return validacion('mes debe ser YYYY-MM')
+  const [row] = await db`
+    SELECT COALESCE(SUM(c.monto), 0)::bigint AS total, COUNT(*)::int AS clases
+    FROM clase c
+    WHERE c.estado = 'dictada' AND c.cobro = 'pagado' AND substr(c.fecha, 1, 7) = ${mes}
+      AND NOT EXISTS (SELECT 1 FROM pago_clase pc WHERE pc.clase_id = c.id)
+  `
+  return { mes, total: Number(row.total), clases: row.clases }
+}
+
+// Ingresos de clases del ciclo (DEC-021): los pagos confirmados de las clases del mes anterior más
+// las clases de ese mes ya cobradas sin pago registrado (ingreso automático). `total` es la suma.
 export async function ingresosClasesCiclo(ciclo, db = sql) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ciclo || '')) return validacion('ciclo debe ser YYYY-MM')
-  const [row] = await db`
-    SELECT COUNT(*)::int AS cantidad, COALESCE(SUM(monto), 0)::float8 AS total
-    FROM ingreso WHERE ciclo_financiero = ${ciclo} AND fuente = ${FUENTE_INGRESO_CLASES} AND estado = 'confirmado'
-  `
-  return { ciclo, total: Number(row.total), cantidad: row.cantidad }
+  const [[row], automatico] = await Promise.all([
+    db`
+      SELECT COUNT(*)::int AS cantidad, COALESCE(SUM(monto), 0)::float8 AS total
+      FROM ingreso WHERE ciclo_financiero = ${ciclo} AND fuente = ${FUENTE_INGRESO_CLASES} AND estado = 'confirmado'
+    `,
+    ingresoAutomaticoClases(mesClasesDeCiclo(ciclo), db),
+  ])
+  const registrado = Number(row.total)
+  return {
+    ciclo,
+    total: registrado + automatico.total,
+    registrado,
+    automatico: automatico.total,
+    cantidad: row.cantidad,
+    clases_automaticas: automatico.clases,
+  }
 }
 
 // Todas las clases dictadas, compactas, para /clases/analisis (los cálculos se hacen en el

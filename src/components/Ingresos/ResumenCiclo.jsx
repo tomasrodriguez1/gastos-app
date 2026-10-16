@@ -33,6 +33,11 @@ export function ResumenCiclo({ resumen }) {
               Clases de {formatMesLargo(f.mes_clases)}: por cobrar {fmt(f.por_cobrar)}{f.por_confirmar > 0 && ` · pagos por confirmar ${fmt(f.por_confirmar)}`}
             </p>
           )}
+          {f.automatica && f.real_automatico > 0 && (
+            <p className="text-xs text-slate-500" title="Clases ya cobradas que no tienen un pago registrado (por ejemplo, las importadas de Notion): se asumen como ingreso solas">
+              Incluye {fmt(f.real_automatico)} automáticos · {f.clases_automaticas} clase{f.clases_automaticas === 1 ? '' : 's'} ya cobradas, sin pago registrado
+            </p>
+          )}
         </td>
         <td className="py-2 px-2 text-right font-mono-numbers text-slate-400">{f.previsto ? fmt(f.previsto) : '—'}</td>
         <td className="py-2 px-2 text-right font-mono-numbers text-slate-100">{f.real ? fmt(f.real) : '—'}</td>

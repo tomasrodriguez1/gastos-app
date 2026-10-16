@@ -8,7 +8,7 @@ import { toMonto } from './db/numeric.js'
 import {
   FUENTE_CLASES, confirmarIngreso, descartarIngreso, listarFuentes, serializarIngreso,
 } from './ingresos.js'
-import { confirmarPago, deshacerPago, deudaClasesDelMes, hoyLocal } from './clases/clases.js'
+import { confirmarPago, deshacerPago, deudaClasesDelMes, hoyLocal, ingresoAutomaticoClases } from './clases/clases.js'
 import { mesClasesDeCiclo, obtenerCicloActual, obtenerRangoCiclo } from '../src/utils/ciclos.js'
 
 const fallo = (status, error, code) => ({ error, status, code })
@@ -95,12 +95,16 @@ const clave = (nombre) => String(nombre).trim().toLowerCase()
 // clases del mes anterior al ciclo (las de octubre son ingreso del ciclo de noviembre, DEC-021: lo
 // real y lo por cobrar de un ciclo son siempre del mismo mes de clases); para uso de fondos, solo
 // lo real; para el resto, lo mayor entre previsto y real+por aprobar.
+//
+// El real de Clases particulares incluye el ingreso automático: las clases de ese mes ya cobradas
+// que no tienen un pago registrado (las importadas como "Pagado") se asumen como ingreso, sin que
+// haya que registrar nada (`real_automatico`).
 export async function resumenIngresosCiclo(ciclo = obtenerCicloActual(), { hoy = hoyLocal() } = {}, db = sql) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ciclo || '')) return fallo(400, 'ciclo debe ser YYYY-MM', 'validacion')
 
   const [{ existe }] = await db`SELECT to_regclass('public.presupuesto_ingreso') IS NOT NULL AS existe`
   const mesClases = mesClasesDeCiclo(ciclo)
-  const [fuentes, previstos, reales, deudaClases] = await Promise.all([
+  const [fuentes, previstos, reales, deudaClases, automaticoClases] = await Promise.all([
     listarFuentes({}, db),
     existe ? db`SELECT fuente, monto FROM presupuesto_ingreso WHERE ciclo = ${ciclo}` : [],
     db`
@@ -108,6 +112,7 @@ export async function resumenIngresosCiclo(ciclo = obtenerCicloActual(), { hoy =
       FROM ingreso WHERE ciclo_financiero = ${ciclo} GROUP BY fuente, estado
     `,
     deudaClasesDelMes(mesClases, db),
+    ingresoAutomaticoClases(mesClases, db),
   ])
 
   const mapa = new Map()
@@ -135,13 +140,15 @@ export async function resumenIngresosCiclo(ciclo = obtenerCicloActual(), { hoy =
     .map((f) => {
       const esClases = clave(f.nombre) === clave(FUENTE_CLASES)
       const porCobrar = esClases ? deudaClases.deuda : 0
+      const automatico = esClases ? automaticoClases.total : 0
+      const real = f.real + automatico
       let esperado
-      if (f.tipo === 'fondos') esperado = f.real
-      else if (esClases) esperado = f.real + porCobrar
-      else esperado = Math.max(f.previsto, f.real + f.por_aprobar)
+      if (f.tipo === 'fondos') esperado = real
+      else if (esClases) esperado = real + porCobrar
+      else esperado = Math.max(f.previsto, real + f.por_aprobar)
 
       let estado = 'pendiente'
-      if (f.real > 0) estado = 'llego'
+      if (real > 0) estado = 'llego'
       else if (f.por_aprobar > 0) estado = 'por_aprobar'
       else if (f.tipo === 'fijo' && f.dia_esperado && hoy > fechaEsperadaCiclo(ciclo, f.dia_esperado)) estado = 'atrasado'
 
@@ -152,11 +159,19 @@ export async function resumenIngresosCiclo(ciclo = obtenerCicloActual(), { hoy =
         dia_esperado: f.dia_esperado,
         fuera_catalogo: f.fuera_catalogo,
         previsto: f.previsto,
-        real: f.real,
+        real,
         por_aprobar: f.por_aprobar,
         esperado,
         estado,
-        ...(esClases ? { por_cobrar: porCobrar, por_confirmar: f.por_aprobar, mes_clases: mesClases } : {}),
+        ...(esClases
+          ? {
+              por_cobrar: porCobrar,
+              por_confirmar: f.por_aprobar,
+              mes_clases: mesClases,
+              real_automatico: automatico,
+              clases_automaticas: automaticoClases.clases,
+            }
+          : {}),
       }
     })
 

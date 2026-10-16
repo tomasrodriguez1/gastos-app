@@ -500,7 +500,14 @@ clase_import_descartada(notion_id PK, eliminada_at)  -- clases importadas que se
     primero); cada pago se confirma o se deshace por separado. Una clase de $0 se suma al grupo con
     monto (un pago no puede ser $0). `deudaClasesDelMes(mes)` da lo que deben las clases de un mes.
 - **Clases importadas ya pagadas** (`Pagado` en Notion): `cobro='pagado'` sin fila en `pago` ni
-  `ingreso`. No suman a "cobrado" ni a los ingresos del ciclo, y no se pueden "deshacer".
+  `ingreso`. No suman a "cobrado" (no tienen fecha de pago) y no se pueden "deshacer", pero **sí son
+  ingreso automático** (DEC-021): las clases dictadas y ya cobradas de un mes que no tienen un
+  `pago_clase` se asumen como ingreso del ciclo siguiente sin registrar nada
+  (`ingresoAutomaticoClases(mes)`). Entra en `real` de Clases particulares en el resumen del ciclo
+  (`real_automatico`, `clases_automaticas`) y en el KPI de `/clases` (`ingresosClasesCiclo`:
+  `total = registrado + automatico`). No se duplica: una clase pagada con un pago registrado ya
+  tiene su `ingreso`; una con pago por confirmar sigue sin cobrar. Si no queda nada por cobrar
+  en un mes con clases dictadas, todo ese mes es ingreso real sin que haya que hacer nada.
 
 #### Import desde Notion
 

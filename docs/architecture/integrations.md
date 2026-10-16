@@ -353,7 +353,7 @@ Catálogo de fuentes y reglas en `docs/context/data_model_context.md` (sección 
 | Tool | Input | Efecto |
 |------|-------|--------|
 | `registrar_ingreso` | `fuente` (del catálogo, sin distinguir mayúsculas), `monto` (entero CLP > 0), `fecha` (no futura), `nota?`, `fondo?` (solo con "Uso de fondos"), `ignorar_duplicado?` | Crea el ingreso `pendiente` con `origen='mcp'`: no cuenta como ingreso real hasta que se aprueba en `/ingresos`. Fuente fuera del catálogo → `validacion` con `data.fuentes_validas`. "Clases particulares" → `validacion` (se registra con `registrar_pago`). Posible duplicado (misma fuente, monto ±10 %, fecha ±5 días) → `code: "duplicado"` con `data.candidatos`, sin insertar |
-| `resumen_ingresos` | `ciclo?` (YYYY-MM, default el actual) | Por fuente: `previsto`, `real` (confirmado), `por_aprobar`, `esperado` y `estado` (`llego` / `por_aprobar` / `pendiente` / `atrasado`); en Clases además `por_cobrar` y `por_confirmar`. `totales` (`previsto`, `real`, `esperado`, `por_aprobar`, `fondos`) y la lista de `pendientes` |
+| `resumen_ingresos` | `ciclo?` (YYYY-MM, default el actual) | Por fuente: `previsto`, `real` (confirmado), `por_aprobar`, `esperado` y `estado` (`llego` / `por_aprobar` / `pendiente` / `atrasado`); en Clases además `por_cobrar`, `por_confirmar`, `mes_clases` y `real_automatico` (el `real` de Clases ya lo incluye: las clases de ese mes ya cobradas sin un pago registrado, como las importadas de Notion, se asumen como ingreso solas; DEC-021). `totales` (`previsto`, `real`, `esperado`, `por_aprobar`, `fondos`) y la lista de `pendientes` |
 
 **`registrar_ingreso`** `{ "fuente": "Proyectos propios", "monto": 300000, "fecha": "2026-10-14", "nota": "Landing cliente" }`
 

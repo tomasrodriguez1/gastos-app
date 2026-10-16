@@ -112,7 +112,7 @@ export function ClasesPage({ ciclos }) {
         <Kpi titulo="Deuda" valor={fmt(resumen?.deuda_total ?? 0)} detalle="Dictado y no cobrado" />
         <Kpi titulo="Dictado del mes" valor={fmt(resumen?.monto_dictado ?? 0)} detalle={`${resumen?.clases_dictadas ?? 0} clases`} />
         <Kpi titulo="Horas dictadas" valor={formatHoras(resumen?.horas_dictadas ?? 0)} detalle={`${formatHoras(resumen?.horas_programadas ?? 0)} programadas`} />
-        <Kpi titulo="Ingresos del ciclo" valor={fmt(resumen?.ingresos_ciclo?.total ?? 0)} detalle="Pagos de las clases del mes anterior">
+        <Kpi titulo="Ingresos del ciclo" valor={fmt(resumen?.ingresos_ciclo?.total ?? 0)} detalle="De las clases del mes anterior, ya cobradas">
           <SelectorCicloCompacto ciclo={ciclo} ciclos={ciclos} onChange={setCiclo} />
         </Kpi>
       </div>

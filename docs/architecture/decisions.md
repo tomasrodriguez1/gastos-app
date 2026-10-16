@@ -439,6 +439,10 @@ Decision:
 - `resumenIngresosCiclo`: lo "por cobrar" de Clases particulares en el ciclo N es lo que deben las
   clases dictadas del mes N−1 (antes era toda la deuda actual). Así el saldo esperado de octubre ya
   no cuenta las clases de octubre y el de noviembre sí.
+- **Ingreso automático**: las clases dictadas y ya cobradas de un mes que no tienen un pago
+  registrado (las importadas de Notion como "Pagado") se asumen como ingreso del ciclo siguiente sin
+  que haya que registrar nada (`ingresoAutomaticoClases`). Entran en el `real` de Clases y en el KPI
+  de `/clases`; no se duplican con los pagos registrados (esas clases ya tienen su ingreso).
 - Horas, clases dictadas y el análisis de clases siguen contándose por la fecha de la clase, y
   "cobrado" por fecha del pago (es plata que entró, no el ciclo del ingreso).
 Alternatives considered: atribuir por ciclo financiero de la clase (las del 29–31 de octubre
@@ -446,8 +450,9 @@ caerían en diciembre; el usuario piensa en meses de clases); mantener la fecha 
 por lo anterior); un ingreso con partes por ciclo (descartada: rompe `pago.ingreso_id` 1–1).
 Consequences: un pago de varios meses se registra como varios pagos/ingresos, que se aprueban por
 separado si vienen por MCP. Un ingreso de clases puede quedar en un ciclo ya cerrado (cobro tardío
-de clases viejas: septiembre pagado en noviembre suma al ciclo de octubre). No hay datos que
-migrar: en producción todavía no había pagos de clases.
+de clases viejas: septiembre pagado en noviembre suma al ciclo de octubre). El ingreso automático
+hace que el historial importado de Notion aparezca como ingreso real en el Dashboard (por ejemplo,
+las clases de septiembre ya cobradas son ingreso real del ciclo de octubre). No hay datos que migrar.
 
 ## GAP: decisions to document
 

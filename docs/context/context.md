@@ -338,7 +338,9 @@ etc.) no cambió — sigue detrás del mismo gate global, ahora combinado (sesi�
   antes de esa migración; el saldo desde ese punto en adelante es correcto pero el historial de
   un fondo viejo puede arrancar sin explicación.
 - GAP: clases particulares. Las clases importadas de Notion como `Pagado` no tienen fila en `pago`
-  ni ingreso, así que no suman a "cobrado" ni a ingresos. El formato real del export de Notion se
+  ni ingreso: no suman a "cobrado" (no tienen fecha de pago), pero sí cuentan como ingreso
+  automático del ciclo siguiente (DEC-021). Hoy una clase solo pasa a cobrada con un pago
+  registrado o por el import: no hay "marcar cobrada" sin pago. El formato real del export de Notion se
   validó con el CSV del usuario (checkbox `Property`, `Horas` como `1:30` / `1 (2)`).
   `buscar_clases.actualizada_desde` depende de `updated_at`, que solo se actualiza por la app.
 - El Dashboard (DEC-020): la card "Ingresos" muestra el ingreso **real confirmado** (con el previsto

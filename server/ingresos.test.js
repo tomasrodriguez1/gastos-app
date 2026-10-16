@@ -327,6 +327,35 @@ describe.skipIf(!usarDb)('ingresos contra Postgres', () => {
       expect((await resumenIngresosCiclo('2026-13', { hoy: HOY }, db)).status).toBe(400)
     })
 
+    test('ingreso automático: las clases del mes ya cobradas sin pago registrado cuentan como real, sin duplicar', async () => {
+      const { alumno } = await crearAlumno({ nombre: 'Julieta Chinetti', precio_hora_default: 20000 }, db)
+      const clase = async (fecha) => {
+        const r = await agendarClase({ alumno_id: alumno.id, fecha, hora_inicio: '18:00' }, db)
+        await marcarDictada(r.clase.id, db)
+        return r.clase.id
+      }
+      // Septiembre (ingreso del ciclo de octubre): dos cobradas "a la antigua" (sin pago), una con pago
+      // registrado y confirmado, una todavía por cobrar.
+      const [a, b, conPago, debe] = [await clase('2026-09-02'), await clase('2026-09-09'), await clase('2026-09-16'), await clase('2026-09-23')]
+      await db`UPDATE clase SET cobro = 'pagado' WHERE id = ANY(${[a, b]})`
+      await registrarPago({ claseIds: [conPago], fecha: HOY, hoy: HOY }, db)
+
+      const res = await resumenIngresosCiclo('2026-10', { hoy: HOY }, db)
+      const c = res.fuentes.find(x => x.nombre === 'Clases particulares')
+      expect(c).toMatchObject({
+        real: 20000 + 20000 + 20000, real_automatico: 40000, clases_automaticas: 2,
+        por_cobrar: 20000, esperado: 60000 + 20000, estado: 'llego', mes_clases: '2026-09',
+      })
+      expect(res.totales.real).toBe(60000)
+
+      // Sin nada por cobrar y con clases dadas en el mes: el ingreso se asume solo.
+      await db`UPDATE clase SET cobro = 'pagado' WHERE id = ${debe}`
+      const completo = (await resumenIngresosCiclo('2026-10', { hoy: HOY }, db)).fuentes.find(x => x.nombre === 'Clases particulares')
+      expect(completo).toMatchObject({ real: 80000, real_automatico: 60000, por_cobrar: 0, esperado: 80000 })
+      // Otro ciclo no se ve afectado.
+      expect((await resumenIngresosCiclo('2026-09', { hoy: HOY }, db)).fuentes.find(x => x.nombre === 'Clases particulares').real).toBe(0)
+    })
+
     test('un pago de clases por confirmar aparece como por_confirmar y no como real', async () => {
       const { alumno } = await crearAlumno({ nombre: 'Julieta Chinetti', precio_hora_default: 20000 }, db)
       const a = await agendarClase({ alumno_id: alumno.id, fecha: '2026-10-08', hora_inicio: '18:00' }, db)

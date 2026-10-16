@@ -2,7 +2,7 @@ import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:tes
 import postgres from 'postgres'
 import {
   calcularMonto, crearAlumno, editarAlumno, agendarClase, moverClase, marcarDictada, cancelarClase,
-  registrarPago, confirmarPago, deshacerPago, eliminarClase, resumenClases, deudaClasesDelMes, crearFamilia, editarFamilia, eliminarFamilia, listarFamilias, listarAlumnos, buscarClases, ingresosClasesCiclo, listarPagos,
+  registrarPago, confirmarPago, deshacerPago, eliminarClase, resumenClases, deudaClasesDelMes, ingresoAutomaticoClases, crearFamilia, editarFamilia, eliminarFamilia, listarFamilias, listarAlumnos, buscarClases, ingresosClasesCiclo, listarPagos,
   FUENTE_INGRESO_CLASES,
 } from './clases.js'
 import { editarIngreso, eliminarIngreso } from '../ingresos.js'
@@ -232,6 +232,34 @@ describe.skipIf(!usarDb)('clases contra Postgres', () => {
       // Solo clases de $0: nada que cobrar.
       const otra = await claseDictada('Cristóbal Mena', '2026-10-12', { precio_hora: 0 })
       expect((await registrarPago({ claseIds: [otra.id], fecha: HOY, hoy: HOY }, db)).code).toBe('validacion')
+    })
+
+    test('ingreso automático: las clases de un mes ya cobradas sin pago registrado se asumen como ingreso', async () => {
+      await alumno()
+      // Cobradas sin pago registrado (como las importadas de Notion con Status "Pagado").
+      const a = await claseDictada('Cristóbal Mena', '2026-09-03')
+      const b = await claseDictada('Cristóbal Mena', '2026-09-10', { duracion_minutos: 90 })
+      await db`UPDATE clase SET cobro = 'pagado' WHERE id = ANY(${[a.id, b.id]})`
+      // No cuentan: pagada con un pago registrado (ya tiene su ingreso), con pago por confirmar, sin
+      // cobrar, programada y de otro mes.
+      const conPago = await claseDictada('Cristóbal Mena', '2026-09-12')
+      await registrarPago({ claseIds: [conPago.id], fecha: HOY, hoy: HOY }, db)
+      const porConfirmar = await claseDictada('Cristóbal Mena', '2026-09-14')
+      await registrarPago({ claseIds: [porConfirmar.id], fecha: HOY, porConfirmar: true, hoy: HOY }, db)
+      await claseDictada('Cristóbal Mena', '2026-09-16')
+      await agendarClase({ alumno: 'Cristóbal Mena', fecha: '2026-09-18', hora_inicio: '19:00' }, db)
+      const octubre = await claseDictada('Cristóbal Mena', '2026-10-02')
+      await db`UPDATE clase SET cobro = 'pagado' WHERE id = ${octubre.id}`
+
+      expect(await ingresoAutomaticoClases('2026-09', db)).toEqual({ mes: '2026-09', total: 62500, clases: 2 })
+      expect(await ingresoAutomaticoClases('2026-10', db)).toEqual({ mes: '2026-10', total: 25000, clases: 1 })
+      expect(await ingresoAutomaticoClases('2026-08', db)).toMatchObject({ total: 0, clases: 0 })
+      expect((await ingresoAutomaticoClases('mal', db)).code).toBe('validacion')
+
+      // El KPI del ciclo de octubre (clases de septiembre) = pago registrado + automático, sin doble conteo.
+      expect(await ingresosClasesCiclo('2026-10', db)).toMatchObject({
+        total: 25000 + 62500, registrado: 25000, automatico: 62500, cantidad: 1, clases_automaticas: 2,
+      })
     })
 
     test('deudaClasesDelMes: solo las dictadas sin cobrar de ese mes calendario, con lo ya por confirmar', async () => {
