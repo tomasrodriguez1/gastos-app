@@ -10,6 +10,7 @@ import { AgentePage } from './pages/AgentePage'
 import { PresupuestoPage } from './pages/PresupuestoPage'
 import { TarjetaPage } from './pages/TarjetaPage'
 import { FondosPage } from './pages/FondosPage'
+import { ClasesPage } from './pages/ClasesPage'
 import { PasskeysPage } from './pages/PasskeysPage'
 import { AgenteChatProvider } from './contexts/AgenteChatContext'
 import { AgenteFlotante } from './components/Agente/AgenteFlotante'
@@ -215,6 +216,7 @@ export default function App() {
               path="/fondos"
               element={<FondosPage {...sharedProps} gastos={todoLosGastos} reconciliacion={reconciliacion} fgp={fgp} resumenFGP={resumenFGP} />}
             />
+            <Route path="/clases" element={<ClasesPage ciclos={ciclos} />} />
             <Route path="/passkeys" element={<PasskeysPage />} />
           </Routes>
         </div>

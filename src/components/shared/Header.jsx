@@ -66,6 +66,15 @@ function IconTarjeta() {
   )
 }
 
+function IconClases() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 10 12 5 2 10l10 5 10-5z" />
+      <path d="M6 12v5c3 2 9 2 12 0v-5" />
+    </svg>
+  )
+}
+
 function IconFondos() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -147,6 +156,7 @@ const NAVEGACION_DESKTOP = [
       { to: '/presupuesto', icon: IconPresupuesto, label: 'Presupuesto' },
       { to: '/fondos', icon: IconFondos, label: 'Fondos' },
       { to: '/tarjeta', icon: IconTarjeta, label: 'Tarjetas' },
+      { to: '/clases', icon: IconClases, label: 'Clases' },
     ],
   },
   {
@@ -170,6 +180,7 @@ const MOBILE_NAV_MAS = [
   { to: '/analisis', icon: IconAnalisis, label: 'Análisis' },
   { to: '/fondos', icon: IconFondos, label: 'Fondos' },
   { to: '/tarjeta', icon: IconTarjeta, label: 'Tarjetas' },
+  { to: '/clases', icon: IconClases, label: 'Clases' },
   { to: '/passkeys', icon: IconLlave, label: 'Cuenta' },
 ]
 

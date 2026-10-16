@@ -9,6 +9,13 @@ import sql from './db/client.js'
 import { toMonto } from './db/numeric.js'
 import { obtenerCicloFinanciero } from '../src/utils/ciclos.js'
 
+// Un ingreso creado por un pago de clases (server/clases/) no se corrige por acá:
+// se deshace el pago en /clases, que lo borra junto con el vínculo.
+const ERROR_INGRESO_CLASES = {
+  error: 'Este ingreso viene de un pago de clases: se corrige deshaciendo el pago en /clases',
+  status: 409,
+}
+
 export function serializarIngreso(row) {
   return {
     id: row.id,
@@ -53,6 +60,7 @@ export async function editarIngreso(id, cambios = {}, db = sql) {
   const ingresoId = Number(id)
   const [actual] = await db`SELECT * FROM ingreso WHERE id = ${ingresoId}`
   if (!actual) return { error: 'No encontrado', status: 404 }
+  if (actual.origen === 'clases') return ERROR_INGRESO_CLASES
 
   const fecha = cambios.fecha !== undefined ? cambios.fecha : actual.fecha
   const fuente = cambios.fuente !== undefined ? (typeof cambios.fuente === 'string' ? cambios.fuente.trim() : actual.fuente) : actual.fuente
@@ -86,6 +94,9 @@ export async function editarIngreso(id, cambios = {}, db = sql) {
 
 export async function eliminarIngreso(id, db = sql) {
   const ingresoId = Number(id)
+  const [actual] = await db`SELECT * FROM ingreso WHERE id = ${ingresoId}`
+  if (!actual) return { error: 'No encontrado', status: 404 }
+  if (actual.origen === 'clases') return ERROR_INGRESO_CLASES
   const rows = await db`DELETE FROM ingreso WHERE id = ${ingresoId} RETURNING id`
   if (!rows.length) return { error: 'No encontrado', status: 404 }
   return { ok: true }
@@ -100,7 +111,8 @@ export function createIngresoRouter({ db = sql } = {}) {
   })
 
   router.post('/', async (c) => {
-    const resultado = await crearIngreso(await c.req.json(), db)
+    // Desde la UI siempre es manual: 'chat' lo pone el agente y 'clases' un pago de clases.
+    const resultado = await crearIngreso({ ...(await c.req.json()), origen: 'manual' }, db)
     if (resultado.error) return c.json({ error: resultado.error }, resultado.status)
     return c.json(resultado.ingreso, 201)
   })

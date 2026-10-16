@@ -5,8 +5,11 @@ import sql from './client.js'
 // diferencia de reserva_saldo, un ingreso puede repetirse el mismo día/fuente
 // (dos pagos reales) sin que sea un error. Idempotente — corre en cada
 // arranque, igual que migrate-reservas.js.
-export async function migrateIngresos() {
-  await sql.begin(async (tx) => {
+//
+// origen 'clases' = lo creó un pago de clases particulares (server/clases/);
+// ese ingreso no se edita ni borra suelto, se saca deshaciendo el pago.
+export async function migrateIngresos(db = sql) {
+  await db.begin(async (tx) => {
     await tx.unsafe(`
       CREATE TABLE IF NOT EXISTS ingreso (
         id               SERIAL PRIMARY KEY,
@@ -15,12 +18,15 @@ export async function migrateIngresos() {
         fuente           TEXT NOT NULL,
         monto            NUMERIC NOT NULL,
         nota             TEXT,
-        origen           TEXT NOT NULL DEFAULT 'manual' CHECK (origen IN ('manual', 'chat')),
+        origen           TEXT NOT NULL DEFAULT 'manual' CHECK (origen IN ('manual', 'chat', 'clases')),
         created_at       TIMESTAMPTZ DEFAULT NOW(),
         updated_at       TIMESTAMPTZ DEFAULT NOW()
       )
     `)
     await tx.unsafe('CREATE INDEX IF NOT EXISTS idx_ingreso_ciclo ON ingreso(ciclo_financiero)')
+    // Tablas creadas antes de 'clases': se reemplaza el CHECK (nombre por defecto de PG).
+    await tx.unsafe('ALTER TABLE ingreso DROP CONSTRAINT IF EXISTS ingreso_origen_check')
+    await tx.unsafe(`ALTER TABLE ingreso ADD CONSTRAINT ingreso_origen_check CHECK (origen IN ('manual', 'chat', 'clases'))`)
   })
 }
 

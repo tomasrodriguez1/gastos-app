@@ -354,16 +354,115 @@ registro histórico de hechos, el otro una previsión que se reescribe entera en
 ciclo.
 
 ```sql
-ingreso(id, fecha, ciclo_financiero, fuente, monto, nota, origen 'manual'|'chat', created_at, updated_at)
+ingreso(id, fecha, ciclo_financiero, fuente, monto, nota, origen 'manual'|'chat'|'clases', created_at, updated_at)
 ```
+
+`origen='clases'` lo escribe solamente `registrarPago` (`server/clases/clases.js`), con fuente
+`Clases particulares`. Ese ingreso no se edita ni se borra por `PATCH/DELETE /api/ingresos/:id`
+(responde 409) y, además, `pago.ingreso_id` lo referencia con `ON DELETE RESTRICT`. Se corrige
+deshaciendo el pago en `/clases`. `POST /api/ingresos` siempre guarda `origen='manual'`: el cliente
+no puede elegir el origen.
 
 `ciclo_financiero` se calcula con `obtenerCicloFinanciero(fecha)` al crear/editar — mismo criterio
 que `gastos.ciclo_financiero`. Sin `UNIQUE`: a diferencia de `reserva_saldo`, un ingreso puede
 repetirse el mismo día/fuente (dos pagos reales) sin que sea un error. Se puede borrar sin
-restricción (nada lo referencia, a diferencia de un `pago` de `fondo_tarjeta_movimiento`).
+restricción, salvo los de `origen='clases'` (ver arriba).
 
 GAP: sin detección de duplicados (ni en la UI ni en el agente) — un ingreso repetido el mismo
 día/fuente no se avisa.
+
+### Clases particulares (`alumno`, `clase`, `pago`, `pago_clase`)
+
+Módulo aparte para agendar y cobrar clases particulares (reemplaza una base de Notion). No usa
+`gastos` ni `presupuesto_*`. El único contacto con las finanzas es que cada pago registrado en la
+app crea un `ingreso`. Tablas en `server/db/migrate-clases.js`, que corre al arrancar después de
+`migrateIngresos()` (por eso no están en `schema.pg.sql`). Lógica y SQL en
+`server/clases/clases.js`. Ver DEC-019.
+
+```sql
+alumno(id, nombre UNIQUE + UNIQUE lower(nombre), precio_hora_default INTEGER > 0, activo, created_at, updated_at)
+clase(id, alumno_id → alumno, fecha 'YYYY-MM-DD', hora_inicio 'HH:MM', duracion_minutos > 0,
+      modalidad 'presencial'|'online', precio_hora INTEGER, monto INTEGER,
+      estado 'programada'|'dictada'|'cancelada', cobro 'pendiente'|'pagado',
+      notion_id UNIQUE NULL, notion_status NULL, nota, created_at, updated_at,
+      CHECK NOT (estado='cancelada' AND cobro='pagado'))
+pago(id, alumno_id → alumno, fecha, monto INTEGER > 0, ingreso_id UNIQUE → ingreso ON DELETE RESTRICT NULL, created_at)
+pago_clase(pago_id → pago ON DELETE CASCADE, clase_id UNIQUE → clase, PK(pago_id, clase_id))
+clase_import_descartada(notion_id PK, eliminada_at)  -- clases importadas que se eliminaron en la app
+```
+
+- **Precio:** cada clase congela su `precio_hora` y `monto = round(precio_hora × duracion_minutos / 60)`.
+  Si cambia `alumno.precio_hora_default`, no se reescriben las clases: ese valor solo se propone al
+  agendar. En clases importadas `monto` es el Price de Notion y `precio_hora = round(Price / Horas)`,
+  así que pueden no cuadrar exacto.
+- **Alumno:** no se borra; se desactiva (`activo=false`). Uno desactivado no recibe clases nuevas.
+  El alta por nombre es idempotente sin distinguir mayúsculas; no normaliza acentos ni corrige
+  nombres.
+- **Estados de una clase:**
+  - `programada` → `dictada` (marcar dictada; no toca el cobro);
+  - `programada` o `dictada` → `cancelada`, solo con `cobro='pendiente'`; no se borra;
+  - `pendiente` → `pagado`, solo por un pago y solo si la clase está `dictada`;
+  - `pagado` → `pendiente`, solo deshaciendo el pago desde la UI.
+  - Mover (fecha, hora, duración, modalidad o precio) solo con `programada` + `pendiente`.
+  - Eliminar (borrado real, solo desde la UI: `DELETE /api/clases/:id`) cualquier clase con
+    `cobro='pendiente'`. Una pagada no se elimina: primero se deshace el pago. Si la clase vino del
+    import, su `notion_id` queda en `clase_import_descartada` y reimportar no la revive. No hay tool
+    MCP que borre.
+  - Una clase `cancelada` no cuenta en deuda, horas dictadas ni pagos.
+- **Pago:** cubre N clases del mismo alumno, todas `dictada` + `pendiente`, y `monto = Σ clase.monto`.
+  No hay pagos parciales ni por adelantado, y la fecha no puede ser futura. Todo pasa en una sola
+  transacción, con `FOR UPDATE` sobre las clases:
+  1. se inserta el `ingreso` (fuente `Clases particulares`, fecha y monto del pago, `origen='clases'`,
+     nota `"<alumno>: <fechas>"`, `ciclo_financiero = obtenerCicloFinanciero(fecha del pago)`);
+  2. se inserta el `pago`;
+  3. se insertan las filas de `pago_clase`;
+  4. las clases pasan a `cobro='pagado'`.
+  Si algo falla no queda nada escrito. `pago_clase.clase_id UNIQUE` impide pagar una clase dos veces.
+- **Deshacer pago** (`DELETE /api/clases/pagos/:id`, no existe como tool MCP): las clases vuelven a
+  `pendiente` y se borran el pago, sus `pago_clase` y el `ingreso`.
+- **Derivados, no persistidos:**
+  - Deuda por alumno: `Σ monto` con `estado='dictada'` y `cobro='pendiente'`; "desde" es la fecha
+    de la clase impaga más vieja.
+  - El "$ till now" de Notion: `Σ monto` de las dictadas del rango.
+  - Horas y clases dictadas se cuentan por la fecha de la clase. "Cobrado" se cuenta por
+    `pago.fecha`, y el ingreso cae en el ciclo de esa fecha.
+- **Clases importadas ya pagadas** (`Pagado` en Notion): `cobro='pagado'` sin fila en `pago` ni
+  `ingreso`. No suman a "cobrado" ni a los ingresos del ciclo, y no se pueden "deshacer".
+
+#### Import desde Notion
+
+`bun run import:clases <archivo> [--dry-run] [--col-dictada "<columna>"] [--actualizar-precios]`
+(`server/db/importar-clases.js` + `server/clases/importar.js`). Escribe en `DATABASE_URL`, en una
+sola transacción. `--dry-run` hace todo y revierte, así el reporte es exacto.
+
+Formato del archivo: el CSV que exporta Notion (separador `,` o `;`, con BOM o sin él) o un JSON
+que sea un array de objetos con las mismas columnas. Las columnas se reconocen sin distinguir
+mayúsculas:
+
+| Columna | Uso |
+|---------|-----|
+| `Nombre` | Alumno, tal cual (no se normaliza). Uno por nombre distinto |
+| `Fecha` | Solo el día. Acepta `October 6, 2026 [1:00 AM]` (descarta la hora basura y un rango `→`), `2026-10-06`, `6 de octubre de 2026` y `06/10/2026` (D/M/YYYY) |
+| `Hora` | Hora real: `19:00`, `7:00 PM`, `12:30`. Si está vacía → `00:00` con nota "Sin hora en Notion" |
+| `Modalidad` | `Presencial`/`Online`. Vacío u otro valor → presencial, con aviso |
+| `Status` | `Pagado` → `cobro='pagado'`. `No cobrado` o vacío → `pendiente`. Cualquier otro valor → `pendiente` y queda guardado crudo en `notion_status` |
+| `Price` | Monto de la clase (`$25,000`, `$25.000`) → `monto` |
+| `Horas` | `1`, `0,5`, `1.5`, `1:30` (h:mm) → `duracion_minutos`. Se ignora el sufijo `(n)` de opciones repetidas de Notion (`1 (2)` = 1). Si está vacío → 1 h, con aviso |
+| checkbox sin encabezado (en el export real se llama `Property`) | Dictada. Se detecta como la columna de encabezado vacío o la única columna desconocida con valores sí/no; si no, se indica con `--col-dictada` |
+| `id` / `notion_id` / `Page ID` (opcional) | Clave de idempotencia |
+| `$ till now` | Se ignora (es una fórmula) |
+
+Reglas:
+- Checkbox marcado o `Pagado` → `dictada`. Si no → `programada`, aunque la fecha ya haya pasado.
+- `alumno.precio_hora_default` = tarifa de su clase más reciente del archivo. Si el alumno ya
+  existe, solo se actualiza con `--actualizar-precios`.
+- `notion_id` = la columna de id. Si no viene: `csv:<nombre>|<fecha>|<hora>`.
+- `INSERT … ON CONFLICT (notion_id) DO NOTHING`: un reimport no duplica ni pisa lo editado en la
+  app, y salta los `notion_id` de `clase_import_descartada` (eliminadas en la app).
+- Filas sin `Nombre`, sin `Price` legible o con una fecha ilegible no se importan; salen en
+  `errores` con su número de línea. Dos clases del mismo alumno el mismo día a la misma hora sin id cuentan como una sola.
+- El reporte (JSON) lista alumnos creados, clases nuevas/existentes, filas con error (con número
+  de línea), avisos y los Status desconocidos.
 
 ### Autenticación (WebAuthn / Passkeys)
 
@@ -404,13 +503,21 @@ reserva_tarjeta.banco ~ gastos.banco (convención, no FK)
 fondo_tarjeta_movimiento.banco ~ gastos.banco (solo tipo 'pago'; convención, no FK)
 reserva 1──* reserva_saldo
 reserva.vinculado → grupo/subcategoria (JSON, no FK) — mismo shape que presupuesto_fondo.vinculado
-ingreso — sin relaciones (standalone, igual que reserva_saldo)
+ingreso — standalone, salvo los de origen 'clases', referenciados por pago.ingreso_id
+alumno 1──* clase
+alumno 1──* pago
+pago 1──1 ingreso (pago.ingreso_id, RESTRICT; NULL solo en datos importados)
+pago 1──* pago_clase *──1 clase (una clase está en a lo sumo un pago)
 ```
 
 ## Máquinas de estado
 
 La tarjeta usa el estado `pagado`; el registro de pago es atómico y también crea el egreso del fondo
-de tarjetas. Duplicados tienen confianza (alta/media/baja) calculada, no persistida.
+de tarjetas.
+
+Clases particulares: `clase.estado` (`programada` → `dictada`; → `cancelada` si no está pagada) y
+`clase.cobro` (`pendiente` → `pagado` solo vía un pago; vuelve a `pendiente` solo deshaciendo el
+pago desde la UI). Detalle en la sección de clases. Duplicados tienen confianza (alta/media/baja) calculada, no persistida.
 
 ## Permisos / RLS
 
@@ -443,6 +550,8 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | — | `fondo_ahorro_movimiento` (PG-only, `server/db/migrate-fondo-ahorro-movimientos.js`) — libro de aportes/ajustes de fondos de ahorro manuales |
 | — | `fondo_ahorro_movimiento.tipo` (PG-only, `server/db/migrate-fondo-ahorro-tipo.js`) — distingue aporte de ajuste; pasa a ser la fuente del saldo de un fondo manual (antes solo informativo) |
 | — | `reserva_saldo.retiros`/`.crecimiento` (PG-only, `server/db/migrate-reserva-retiros.js`) — desglose persistido de cada lectura de saldo |
+| — | `ingreso.origen` acepta `'clases'` (PG-only, `server/db/migrate-ingresos.js` reemplaza el CHECK `ingreso_origen_check`) |
+| — | `alumno`, `clase`, `pago`, `pago_clase`, `clase_import_descartada` (PG-only, `server/db/migrate-clases.js`, después de `migrateIngresos`) — clases particulares (DEC-019) |
 
 **PG:** schema aplicado vía `initSchema()` leyendo `schema.pg.sql`. GAP: sistema de migraciones versionadas para PG — las tablas nuevas siguen el mismo patrón `CREATE TABLE IF NOT EXISTS` que el resto del archivo.
 
@@ -469,5 +578,9 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
   mecanismo de revisión equivalente. `crear_reserva` no acepta un `grupo`/`subcategoria` fuera
   del catálogo (`validarVinculadoContraCatalogo`). El agente no crea `presupuesto_fondo` ni
   borra reservas (solo `activa=false`).
+- Clases particulares: un pago solo cubre clases `dictada` + `pendiente` de un mismo alumno, por la
+  suma exacta, y crea su `ingreso` en la misma transacción. Las tools MCP de clases no borran
+  alumnos, clases ni pagos, no reabren un pago ni editan el ingreso. El ingreso de `origen='clases'`
+  solo se saca deshaciendo el pago.
 - Integridad referencial presupuesto → `presupuesto_ciclo`.
 - Orden de prioridad en `regla_mapeo`.

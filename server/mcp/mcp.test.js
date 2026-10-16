@@ -21,6 +21,12 @@ const CATALOGOS = {
   grupos: [{ id: 7, nombre: 'COMIDA', subcategorias: [{ id: 70, nombre: 'Restaurantes' }] }],
 }
 
+const CLASE = {
+  id: 10, alumno_id: 1, alumno: 'Cristóbal Mena', fecha: '2026-10-08', hora_inicio: '19:00', duracion_minutos: 60,
+  horas: 1, modalidad: 'presencial', precio_hora: 25000, monto: 25000, estado: 'programada', dictada: false,
+  cobro: 'pendiente', pago_id: null, nota: null, notion_status: null, updated_at: '2026-10-06T15:00:00.000Z',
+}
+
 function resumenFalso(ciclo, gastado, extra = {}) {
   return {
     ciclo,
@@ -49,6 +55,23 @@ const deps = {
   })),
   resumirGastos: mock(async ({ agrupar_por }) => agregarFilas([], { agrupar_por })),
   resumenCiclo: mock(async ({ ciclo }) => resumenFalso(ciclo, 1000)),
+  listarAlumnos: mock(async () => [{ id: 1, nombre: 'Cristóbal Mena', precio_hora_default: 25000, activo: true }]),
+  buscarClases: mock(async ({ limite, offset }) => ({
+    filas: [CLASE],
+    meta: { total: 1, devueltos: 1, offset, limite, truncado: false },
+  })),
+  resumenClases: mock(async ({ desde, hasta }) => ({ rango: { desde, hasta }, horas_dictadas: 9, deuda_total: 50000, deuda_por_alumno: [] })),
+  crearAlumno: mock(async ({ nombre, precio_hora_default }) => ({
+    alumno: { id: 2, nombre, precio_hora_default, activo: true }, existente: false, reactivado: false,
+  })),
+  agendarClase: mock(async () => ({ clase: CLASE })),
+  moverClase: mock(async () => ({ clase: CLASE })),
+  marcarDictada: mock(async () => ({ clase: { ...CLASE, estado: 'dictada', dictada: true } })),
+  cancelarClase: mock(async () => ({ error: 'La clase 10 ya está pagada: no se puede cancelar', code: 'conflicto', status: 409 })),
+  registrarPago: mock(async ({ claseIds, fecha }) => ({
+    pago: { id: 5, alumno_id: 1, fecha, monto: 50000, ingreso_id: 9, ciclo_financiero: '2026-10', clases: claseIds.map(id => ({ id })) },
+    ingreso: { id: 9, fecha, fuente: 'Clases particulares', monto: 50000, origen: 'clases', ciclo_financiero: '2026-10' },
+  })),
   ahora: () => AHORA,
 }
 
@@ -136,16 +159,29 @@ describe('auth /mcp', () => {
 })
 
 describe('descubrimiento', () => {
-  test('expone exactamente las 6 tools, sin escrituras extra', async () => {
+  test('expone exactamente las 15 tools (6 de gastos + 9 de clases), sin escrituras extra', async () => {
     const client = await conectar()
     const { tools } = await client.listTools()
     expect(tools.map(t => t.name).sort()).toEqual([
-      'buscar_gastos', 'comparar_periodos', 'crear_gasto', 'listar_catalogos', 'resumen_presupuesto', 'resumir_gastos',
+      'agendar_clase', 'buscar_clases', 'buscar_gastos', 'cancelar_clase', 'comparar_periodos', 'crear_alumno',
+      'crear_gasto', 'listar_alumnos', 'listar_catalogos', 'marcar_dictada', 'mover_clase', 'registrar_pago',
+      'resumen_clases', 'resumen_presupuesto', 'resumir_gastos',
     ])
+    const escrituras = ['crear_gasto', 'crear_alumno', 'agendar_clase', 'mover_clase', 'marcar_dictada', 'cancelar_clase', 'registrar_pago']
     for (const t of tools) {
       expect(t.inputSchema.type).toBe('object')
       expect(t.description.length).toBeGreaterThan(80)
-      expect(t.annotations.readOnlyHint).toBe(t.name !== 'crear_gasto')
+      expect(t.annotations.readOnlyHint).toBe(!escrituras.includes(t.name))
+      if (!t.annotations.readOnlyHint) expect(t.annotations.destructiveHint).toBe(false)
+    }
+    await client.close()
+  })
+
+  test('ninguna tool borra, deshace, reabre, edita ingresos/gastos ni escribe presupuesto', async () => {
+    const client = await conectar()
+    const { tools } = await client.listTools()
+    for (const t of tools) {
+      expect(t.name).not.toMatch(/borrar|eliminar|deshacer|reabrir|confirmar|descartar|editar|presupuesto_|ingreso/)
     }
     await client.close()
   })
@@ -394,4 +430,144 @@ describe('crear_gasto contra Postgres', () => {
       await client.close()
     }
   }, 30000)
+})
+
+// ─── Clases particulares ─────────────────────────────────────────────────────
+
+describe('tools de clases', () => {
+  test('listar_alumnos y buscar_clases: forma { ok, data, meta } y paginación default', async () => {
+    const client = await conectar()
+    const alumnos = await llamar(client, 'listar_alumnos')
+    expect(alumnos).toMatchObject({ ok: true, data: [{ nombre: 'Cristóbal Mena' }], meta: { total: 1 } })
+    expect(deps.listarAlumnos.mock.calls[0][0]).toEqual({ incluirInactivos: true })
+
+    const clases = await llamar(client, 'buscar_clases', { alumno: 'mena', cobro: 'pendiente', actualizada_desde: '2026-10-01T00:00:00-03:00' })
+    expect(clases).toMatchObject({ ok: true, data: [{ id: 10 }], meta: { limite: 50, offset: 0 } })
+    expect(deps.buscarClases.mock.calls[0][0]).toMatchObject({ alumno: 'mena', cobro: 'pendiente', limite: 50 })
+    expect(await llamar(client, 'buscar_clases', { limite: 101 })).toMatchObject({ code: 'validacion' })
+    expect(await llamar(client, 'buscar_clases', { estado: 'borrada' })).toMatchObject({ code: 'validacion' })
+    await client.close()
+  })
+
+  test('resumen_clases sin rango usa el mes calendario actual', async () => {
+    const client = await conectar()
+    const r = await llamar(client, 'resumen_clases')
+    expect(r).toMatchObject({ ok: true, meta: { rango_default: true } })
+    expect(deps.resumenClases.mock.calls[0][0]).toEqual({ desde: '2026-10-01', hasta: '2026-10-31' })
+    await client.close()
+  })
+
+  test('crear_alumno: precio default 25000; existente se informa en meta', async () => {
+    const client = await conectar()
+    const r = await llamar(client, 'crear_alumno', { nombre: 'Baltazar Martinić' })
+    expect(r).toMatchObject({ ok: true, data: { precio_hora_default: 25000 }, meta: { existente: false } })
+    deps.crearAlumno.mockImplementationOnce(async () => ({
+      alumno: { id: 1, nombre: 'Cristóbal Mena', precio_hora_default: 25000, activo: true }, existente: true, reactivado: false,
+    }))
+    expect(await llamar(client, 'crear_alumno', { nombre: 'cristóbal mena', precio_hora: 30000 }))
+      .toMatchObject({ ok: true, data: { id: 1 }, meta: { existente: true } })
+    await client.close()
+  })
+
+  test('agendar_clase convierte horas a minutos y valida hora/horas/campos extra', async () => {
+    const client = await conectar()
+    const base = { alumno: 'Cristóbal Mena', fecha: '2026-10-20', hora: '19:00' }
+    expect(await llamar(client, 'agendar_clase', { ...base, horas: 1.5, modalidad: 'online' })).toMatchObject({ ok: true, data: { id: 10 } })
+    expect(deps.agendarClase.mock.calls[0][0]).toMatchObject({
+      alumno: 'Cristóbal Mena', hora_inicio: '19:00', duracion_minutos: 90, modalidad: 'online', precio_hora: undefined,
+    })
+    expect(await llamar(client, 'agendar_clase', { ...base, hora: '7pm' })).toMatchObject({ code: 'validacion' })
+    expect(await llamar(client, 'agendar_clase', { ...base, horas: 0 })).toMatchObject({ code: 'validacion' })
+    expect(await llamar(client, 'agendar_clase', { ...base, horas: 1.1 })).toMatchObject({ code: 'validacion' })
+    expect(await llamar(client, 'agendar_clase', { ...base, estado: 'dictada' })).toMatchObject({ code: 'validacion' })
+    expect(await llamar(client, 'agendar_clase', { fecha: '2026-10-20', hora: '19:00' })).toMatchObject({ code: 'validacion' })
+    expect(deps.agendarClase).toHaveBeenCalledTimes(1)
+    await client.close()
+  })
+
+  test('agendar_clase repetida → conflicto con clase_id', async () => {
+    deps.agendarClase.mockImplementationOnce(async () => ({ error: 'Ya hay una clase', code: 'conflicto', status: 409, clase_id: 10 }))
+    const client = await conectar()
+    expect(await llamar(client, 'agendar_clase', { alumno: 'X', fecha: '2026-10-20', hora: '19:00' }))
+      .toEqual({ ok: false, error: 'Ya hay una clase', code: 'conflicto', data: { clase_id: 10 } })
+    await client.close()
+  })
+
+  test('mover_clase exige al menos un cambio; errores de dominio salen con su code', async () => {
+    const client = await conectar()
+    expect(await llamar(client, 'mover_clase', { clase_id: 10 })).toMatchObject({ code: 'validacion' })
+    expect(await llamar(client, 'mover_clase', { clase_id: 10, horas: 2 })).toMatchObject({ ok: true })
+    expect(deps.moverClase.mock.calls[0]).toEqual([10, {
+      fecha: undefined, hora_inicio: undefined, duracion_minutos: 120, modalidad: undefined, precio_hora: undefined,
+    }])
+    deps.moverClase.mockImplementationOnce(async () => ({ error: 'No existe la clase 99', code: 'no_encontrado', status: 404 }))
+    expect(await llamar(client, 'mover_clase', { clase_id: 99, hora: '10:00' })).toMatchObject({ ok: false, code: 'no_encontrado' })
+    await client.close()
+  })
+
+  test('marcar_dictada y cancelar_clase delegan; cancelar una pagada → conflicto', async () => {
+    const client = await conectar()
+    expect(await llamar(client, 'marcar_dictada', { clase_id: 10 })).toMatchObject({ ok: true, data: { estado: 'dictada' } })
+    expect(await llamar(client, 'cancelar_clase', { clase_id: 10 })).toMatchObject({ ok: false, code: 'conflicto' })
+    await client.close()
+  })
+
+  test('registrar_pago pasa ids, fecha y hoy local del servidor', async () => {
+    const client = await conectar()
+    const r = await llamar(client, 'registrar_pago', { clase_ids: [10, 11], fecha: '2026-10-06' })
+    expect(r).toMatchObject({ ok: true, data: { pago: { id: 5, monto: 50000 }, ingreso: { origen: 'clases' } } })
+    expect(deps.registrarPago.mock.calls[0][0]).toEqual({ claseIds: [10, 11], fecha: '2026-10-06', monto: undefined, hoy: '2026-10-06' })
+    expect(await llamar(client, 'registrar_pago', { clase_ids: [], fecha: '2026-10-06' })).toMatchObject({ code: 'validacion' })
+    await client.close()
+  })
+})
+
+// Necesita una base descartable: CLASES_TEST_DATABASE_URL=postgres://… (nunca DATABASE_URL).
+const URL_TEST_CLASES = process.env.CLASES_TEST_DATABASE_URL
+describe.skipIf(!URL_TEST_CLASES || URL_TEST_CLASES === process.env.DATABASE_URL)('clases por MCP contra Postgres', () => {
+  test('crear_alumno → agendar → marcar_dictada → registrar_pago crea el ingreso; deuda en resumen', async () => {
+    const postgres = (await import('postgres')).default
+    const clases = await import('../clases/clases.js')
+    const { migrateIngresos } = await import('../db/migrate-ingresos.js')
+    const { migrateClases } = await import('../db/migrate-clases.js')
+    const db = postgres(URL_TEST_CLASES, { max: 2, onnotice: () => {} })
+    try {
+      await migrateIngresos(db)
+      await migrateClases(db)
+      await db`TRUNCATE pago_clase, pago, clase, alumno, ingreso RESTART IDENTITY CASCADE`
+      const conDb = (fn) => (...args) => fn(...args, db)
+      const depsDb = {
+        ...depsPorDefecto,
+        listarAlumnos: (o) => clases.listarAlumnos(o, db),
+        buscarClases: conDb(clases.buscarClases),
+        resumenClases: conDb(clases.resumenClases),
+        crearAlumno: conDb(clases.crearAlumno),
+        agendarClase: conDb(clases.agendarClase),
+        moverClase: (id, c) => clases.moverClase(id, c, db),
+        marcarDictada: (id) => clases.marcarDictada(id, db),
+        cancelarClase: (id) => clases.cancelarClase(id, db),
+        registrarPago: conDb(clases.registrarPago),
+        ahora: () => AHORA,
+      }
+      const client = await conectar(appCon({ d: depsDb }))
+      await llamar(client, 'crear_alumno', { nombre: 'Julieta Chinetti' })
+      const ids = []
+      for (const fecha of ['2026-10-01', '2026-10-03']) {
+        const r = await llamar(client, 'agendar_clase', { alumno: 'Julieta Chinetti', fecha, hora: '18:00' })
+        ids.push(r.data.id)
+        expect((await llamar(client, 'marcar_dictada', { clase_id: r.data.id })).ok).toBe(true)
+      }
+      const resumen = await llamar(client, 'resumen_clases')
+      expect(resumen.data.deuda_por_alumno).toEqual([{ alumno_id: 1, alumno: 'Julieta Chinetti', deuda: 50000, desde: '2026-10-01', clases: 2 }])
+
+      const pago = await llamar(client, 'registrar_pago', { clase_ids: ids, fecha: '2026-10-06', monto: 50000 })
+      expect(pago).toMatchObject({ ok: true, data: { ingreso: { fuente: 'Clases particulares', ciclo_financiero: '2026-10' } } })
+      const [ing] = await db`SELECT origen, monto::int FROM ingreso`
+      expect(ing).toEqual({ origen: 'clases', monto: 50000 })
+      expect(await llamar(client, 'cancelar_clase', { clase_id: ids[0] })).toMatchObject({ code: 'conflicto' })
+      await client.close()
+    } finally {
+      await db.end({ timeout: 5 })
+    }
+  })
 })

@@ -1,16 +1,21 @@
-// Las 6 tools del servidor MCP. Capa fina: validan el input (antes de tocar la
-// DB) y delegan en funciones que ya usa la app — ejecutarCrearGasto (mismo
-// camino que el chat de /agente), resumenCiclo, cargarCatalogos y el read
-// service de server/consultas/gastos.js. Sin SQL acá.
+// Tools del servidor MCP: 6 de gastos (acá) + 9 de clases particulares
+// (toolsClases.js). Capa fina: validan el input (antes de tocar la DB) y
+// delegan en funciones que ya usa la app — ejecutarCrearGasto (mismo camino que
+// el chat de /agente), resumenCiclo, cargarCatalogos, el read service de
+// server/consultas/gastos.js y server/clases/clases.js. Sin SQL acá.
 //
-// Única escritura: crear_gasto, que deja el gasto en estado 'pendiente' en la
-// bandeja (/bandeja, /log). No hay tools para confirmar, editar ni borrar
-// gastos, ni para escribir presupuesto, fondos, ingresos o catálogos.
+// Gastos: la única escritura es crear_gasto, que deja el gasto en estado
+// 'pendiente' en la bandeja (/bandeja, /log). No hay tools para confirmar,
+// editar ni borrar gastos, ni para escribir presupuesto, fondos o catálogos.
+// Clases: crean alumnos/clases y cambian estados; registrar_pago crea el
+// ingreso de clases. No borran nada ni reabren un pago (ver toolsClases.js).
 //
 // Todas responden { ok: true, data, meta } o { ok: false, error, code } con
-// code ∈ validacion | no_autorizado | duplicado | no_encontrado | interno.
+// code ∈ validacion | no_autorizado | duplicado | no_encontrado | conflicto | interno.
 
 import { z } from 'zod'
+import { ErrorTool } from './errores.js'
+import { TOOLS_CLASES, depsClases } from './toolsClases.js'
 import { cargarCatalogos } from '../catalogos.js'
 import { ejecutarCrearGasto } from '../agente.js'
 import { obtenerGastoPorId } from '../gastos/actualizar.js'
@@ -23,13 +28,7 @@ import {
   obtenerRangoCiclo,
 } from '../../src/utils/ciclos.js'
 
-export class ErrorTool extends Error {
-  constructor(code, message, data) {
-    super(message)
-    this.code = code
-    this.data = data
-  }
-}
+export { ErrorTool }
 
 const validacion = (mensaje) => new ErrorTool('validacion', mensaje)
 
@@ -483,6 +482,7 @@ export const TOOLS = [
   compararPeriodos,
   resumenPresupuesto,
   listarCatalogos,
+  ...TOOLS_CLASES,
 ]
 
 export const depsPorDefecto = {
@@ -492,6 +492,7 @@ export const depsPorDefecto = {
   buscarGastos,
   resumirGastos,
   resumenCiclo,
+  ...depsClases,
   ahora: () => new Date(),
 }
 

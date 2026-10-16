@@ -56,6 +56,7 @@ Principales grupos:
 - Reserva de tarjeta legacy (`GET/PUT /api/reserva-tarjeta`) — LEGACY, ya no usado por la UI; se conserva por el dato histórico
 - Reservas de ahorro F6 (`GET/POST /api/reservas`, `PATCH /api/reservas/:id`, `GET/POST /api/reservas/:id/saldos`) — bolsillos externos (Mercado Pago); UI en `/fondos` además del agente. `POST /:id/saldos` (`{ monto, fecha }`) es el camino manual — registra con `origen='manual'`, usando la misma `registrarSaldo()` que ya usaba el agente con `origen='foto_agente'`. La respuesta (y cada fila de `GET /:id/saldos`) incluye `retiros`/`crecimiento`: el desglose de cuánto de la diferencia fueron gastos de la categoría vinculada vs rendimiento estimado
 - Ingresos reales (`GET /api/ingresos?ciclo=YYYY-MM`, `POST /api/ingresos`, `PATCH/DELETE /api/ingresos/:id`) — registro manual (UI en `/presupuesto`) o por el agente (`origen='chat'`); separado de `presupuesto_ingreso` (previsión, se reescribe cada PUT)
+- Clases particulares (`/api/clases/*`: alumnos, clases, `DELETE /:id` para eliminar una clase sin cobrar, `resumen`, `pagos`, `DELETE /pagos/:id` para deshacer). Es la UI de `/clases`, detrás del gate global. Detalle en `docs/context/context.md` ("API — Clases particulares") y modelo en `data_model_context.md`. `POST /pagos` crea un `ingreso` con `origen='clases'` en la misma transacción. `PATCH/DELETE /api/ingresos/:id` sobre ese ingreso responden 409
 - Aportes a fondos de ahorro sin vincular (`GET/POST /api/fondos-ahorro/:nombre/movimientos`) — log informativo de cada "+ Aportar" manual en el Dashboard/`/fondos`; no reemplaza `presupuesto_fondo.acumulado`, que sigue siendo el saldo autoritativo
 - FGP — Fondo Gastos Previstos (`GET/POST /api/fgp/movimientos`, `DELETE /api/fgp/movimientos/:id`, `POST /api/fgp/traspasos`) — libro de lo no derivable del FGP (DEC-016). `POST /movimientos` (`{ tipo: 'cobertura'|'deficit'|'ajuste', ciclo, monto, fecha?, origen?, fondo_nombre?, nota? }`; `fondo_nombre` solo en cobertura y además inserta un `ajuste` negativo en `fondo_ahorro_movimiento`). `POST /traspasos` (`{ gasto_ids, modo: 'mover'|'marcar' }`): `mover` crea un único aporte CLP en `fondo_tarjeta_movimiento` por el total (`montoDelCiclo` de cada gasto, solo bancos Edwards/BICE) y una fila `traspaso_tc` por gasto; `marcar` solo deja la fila. Omite (y lo informa en `omitidos`) ids inexistentes o ya movidos. `DELETE` de un traspaso real borra su aporte de tarjeta (el lote completo vuelve a pendiente); el de una cobertura desde fondo borra su salida del fondo
 - Catálogos CRUD
@@ -121,7 +122,7 @@ webhook n8n" (que sigue existiendo para `useSyncN8n.js`, sin cambios).
 
 Contrato que n8n debe postear (el workflow en sí — trigger de Gmail, filtros, reintentos — no vive en este repo):
 
-- `POST https://<app>/api/ingesta`
+- `POST https://tomas-gastos-app.venturanalytic.com/api/ingesta`
 - Header `Authorization: Bearer <INGESTA_TOKEN>`
 - Body: mensaje de Gmail con `id`, `snippet`, `From`, `Subject`, `internalDate`, o ese objeto envuelto en `{ json: {...} }`, o un array de varios
 - Filtro de compras: el formato firme es Edwards, asunto `Compra con Tarjeta de Crédito`, remitente con `bancoedwards.cl`
@@ -259,18 +260,23 @@ Un workflow, dos entradas, sin nodo AI Agent ni `lmChatOpenAi`.
 
 ## Servidor MCP remoto (`/mcp`)
 
-Servidor MCP para agentes externos (Claude, ChatGPT, etc.). Corre en el mismo proceso Hono,
-como capa fina sobre funciones que ya usa la app. Solo lee, salvo `crear_gasto`, que deja el
-gasto **pendiente** en la bandeja. Ver DEC-017.
+Servidor MCP para agentes externos (Claude, ChatGPT, el agente que sincroniza el calendario,
+etc.). Corre en el mismo proceso Hono, como capa fina sobre funciones que ya usa la app. Hay dos
+grupos de tools:
+- **Gastos:** solo lectura, salvo `crear_gasto`, que deja el gasto **pendiente** en la bandeja
+  (DEC-017).
+- **Clases particulares:** crean y cambian estados, pero no borran ni deshacen nada (DEC-019).
 
 | Aspecto | Detalle |
 |---------|---------|
+| URL de producción | `https://tomas-gastos-app.venturanalytic.com/mcp` |
 | Path | `POST /mcp`. `GET` y `DELETE` responden `405` porque es stateless, sin SSE ni sesiones |
 | Transporte | MCP Streamable HTTP (`@modelcontextprotocol/sdk`, `WebStandardStreamableHTTPServerTransport`), respuesta JSON |
 | Auth | `Authorization: Bearer <MCP_TOKEN>`, con comparación timing-safe. Es un token propio, distinto de `INGESTA_TOKEN` y `ACCESS_TOKEN`. Sin `MCP_TOKEN` o sin el Bearer correcto responde `401` siempre, también en dev. Se monta antes del gate global y queda exento de él, igual que `/api/ingesta` |
-| Tools | `crear_gasto` (la única escritura), `buscar_gastos`, `resumir_gastos`, `comparar_periodos`, `resumen_presupuesto`, `listar_catalogos` |
-| No hay | Tools para confirmar, editar, descartar o borrar gastos. Tampoco para escribir presupuesto, fondos, FGP, reservas, ingresos, tarjeta, catálogos o reglas, ni SQL libre. No llama a Groq ni a OpenAI |
-| Implementación | `server/mcp/index.js` (transporte y auth), `server/mcp/tools.js` (schemas, descripciones y handlers), `server/consultas/gastos.js` (búsqueda y agregación por fechas) |
+| Tools de gastos (6) | `crear_gasto` (la única escritura de gastos), `buscar_gastos`, `resumir_gastos`, `comparar_periodos`, `resumen_presupuesto`, `listar_catalogos` |
+| Tools de clases (9) | Lectura: `listar_alumnos`, `buscar_clases`, `resumen_clases`. Escritura: `crear_alumno`, `agendar_clase`, `mover_clase`, `marcar_dictada`, `cancelar_clase`, `registrar_pago` (crea el `ingreso` "Clases particulares") |
+| No hay | Tools para confirmar, editar, descartar o borrar gastos. Tampoco para escribir presupuesto, fondos, FGP, reservas, tarjeta, catálogos o reglas, ni SQL libre. Para clases no hay tools que borren alumnos, clases o pagos, deshagan un pago, reabran una clase pagada o editen un ingreso a mano: el único ingreso que se escribe es el de `registrar_pago`. No llama a Groq ni a OpenAI |
+| Implementación | `server/mcp/index.js` (transporte y auth), `server/mcp/tools.js` (schemas, descripciones y handlers de gastos), `server/mcp/toolsClases.js` (tools de clases), `server/mcp/errores.js` (`ErrorTool`), `server/consultas/gastos.js` (búsqueda y agregación por fechas), `server/clases/clases.js` (dominio de clases) |
 
 **`crear_gasto` y la bandeja:** usa el mismo insert que el chat de `/agente`
 (`ejecutarCrearGasto` → `crearGastoPendiente`), con `origen='mcp'`, `estado='pendiente'` y
@@ -284,8 +290,11 @@ encuentra candidatos y `ignorar_duplicado` es false, no inserta y responde `code
 con esos candidatos.
 
 **Respuesta de toda tool**: `{ "ok": true, "data": ..., "meta": ... }` o
-`{ "ok": false, "error": "...", "code": "validacion|no_autorizado|duplicado|no_encontrado|interno" }`.
-La respuesta `duplicado` trae además `data.candidatos`. El input se valida en el servidor antes de
+`{ "ok": false, "error": "...", "code": "validacion|no_autorizado|duplicado|no_encontrado|conflicto|interno" }`.
+La respuesta `duplicado` trae además `data.candidatos`. `conflicto` aparece en las tools de clases
+cuando una transición no está permitida: mover una clase dictada o pagada, cancelar una pagada,
+pagar una no dictada o ya pagada, o agendar dos veces la misma clase (en ese caso trae
+`data.clase_id`). El input se valida en el servidor antes de
 tocar la DB, y los objetos son estrictos: un campo extra como `estado` o `grupo` da `validacion`.
 
 **Montos:** `monto` es el cargo nominal en CLP. `monto_ciclo` es `montoDelCiclo()`, o sea el
@@ -299,6 +308,43 @@ suman en el total con la clave `SIN MAPEO`. `cantidad` cuenta también las filas
 "Este mes" presupuestario es el ciclo YYYY-MM, que va del 29 del mes anterior al 28 del mes
 nominal. El servidor corre en hora de Chile (`America/Santiago`), ver `docs/operations/env-vars.md`.
 
+### Tools de clases particulares
+
+Modelo y reglas en `docs/context/data_model_context.md` (sección "Clases particulares"). Todas
+devuelven las clases con: `id`, `alumno_id`, `alumno`, `fecha`, `hora_inicio`, `duracion_minutos`,
+`horas`, `modalidad`, `precio_hora`, `monto`, `estado`, `dictada`, `cobro`, `pago_id`, `nota`,
+`notion_status` y `updated_at`.
+
+| Tool | Input | Efecto |
+|------|-------|--------|
+| `listar_alumnos` | `incluir_inactivos?` (default true) | Nombre, precio por hora, activo |
+| `buscar_clases` | `alumno?` (parte del nombre), `alumno_id?`, `desde?`, `hasta?`, `estado?`, `cobro?`, `actualizada_desde?` (ISO 8601), `limite` 1–100 (default 50), `offset` | Clases ordenadas por fecha y hora. `meta.truncado`. `actualizada_desde` sirve para sincronizar un calendario: incluye las canceladas |
+| `resumen_clases` | `desde?`, `hasta?` (default: el mes calendario actual) | Horas, clases y monto dictado, y horas programadas (por fecha de la clase); `cobrado` (por fecha del pago); `deuda_total` y `deuda_por_alumno` (`deuda`, `desde` = clase impaga más vieja, `clases`). La deuda es la actual, no depende del rango |
+| `crear_alumno` | `nombre`, `precio_hora?` (default 25000) | Si el nombre existe (sin distinguir mayúsculas) devuelve ese alumno con `meta.existente=true`, sin cambiar su precio; si estaba inactivo, lo reactiva |
+| `agendar_clase` | `alumno` o `alumno_id`, `fecha`, `hora` (HH:MM), `horas?` (múltiplo de 0,25; default 1), `modalidad?` (default presencial), `precio_hora?`, `nota?` | Crea la clase `programada`/`pendiente`. Sin precio usa el del alumno. Si ya hay una clase de ese alumno ese día a esa hora → `conflicto` |
+| `mover_clase` | `clase_id` y al menos uno de `fecha`, `hora`, `horas`, `modalidad`, `precio_hora` | Solo si sigue `programada` + `pendiente`. Recalcula `monto` |
+| `marcar_dictada` | `clase_id` | `programada` → `dictada`. No cobra |
+| `cancelar_clase` | `clase_id` | → `cancelada` (no se borra), solo si `cobro='pendiente'` |
+| `registrar_pago` | `clase_ids` (1–50), `fecha` (no futura), `monto?` (verificación) | En una transacción: las clases (mismo alumno, todas `dictada` + `pendiente`) pasan a `pagado` y se crea el `ingreso` con fuente "Clases particulares", la fecha del pago y `origen='clases'`, en el ciclo de esa fecha. Si `monto` no coincide con la suma → `validacion` y no escribe nada |
+
+**`registrar_pago`** `{ "clase_ids": [12, 15], "fecha": "2026-10-16", "monto": 50000 }`
+
+```json
+{ "ok": true, "data": {
+  "pago": { "id": 4, "alumno_id": 1, "alumno": "Cristóbal Mena", "fecha": "2026-10-16", "monto": 50000,
+            "ingreso_id": 31, "ciclo_financiero": "2026-10",
+            "clases": [{ "id": 12, "fecha": "2026-10-01", "monto": 25000 }, { "id": 15, "fecha": "2026-10-08", "monto": 25000 }] },
+  "ingreso": { "id": 31, "fecha": "2026-10-16", "ciclo_financiero": "2026-10", "fuente": "Clases particulares",
+               "monto": 50000, "nota": "Cristóbal Mena: 2026-10-01, 2026-10-08", "origen": "clases" }
+}, "meta": {} }
+```
+
+**`cancelar_clase`** sobre una clase pagada:
+
+```json
+{ "ok": false, "error": "La clase 12 ya está pagada: no se puede cancelar", "code": "conflicto" }
+```
+
 ### Ejemplos
 
 Cada `tools/call` es un `POST /mcp` con
@@ -308,7 +354,7 @@ Cada `tools/call` es un `POST /mcp` con
 son ilustrativos.
 
 ```bash
-curl -s -X POST https://<app>/mcp \
+curl -s -X POST https://tomas-gastos-app.venturanalytic.com/mcp \
   -H "Authorization: Bearer $MCP_TOKEN" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
@@ -458,7 +504,6 @@ Los datos bancarios llegan indirectamente vía n8n. GAP: detalle de conexiones b
 
 - GAP: instancia n8n exacta y credenciales de workflows.
 - GAP: monitoreo de salud del webhook n8n.
-- GAP: dominio real de producción para `PASSKEY_RP_ID`/`PASSKEY_ORIGIN`.
 - GAP: `/mcp` no tiene rate limiting. Solo lo protege el Bearer, igual que `/api/ingesta`.
 - GAP: el workflow de Telegram en n8n no está versionado; su forma está documentada arriba y se
   valida a mano con el bot real.

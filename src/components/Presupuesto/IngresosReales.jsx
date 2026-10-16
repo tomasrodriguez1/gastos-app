@@ -112,7 +112,12 @@ export function IngresosReales({ ciclo, fuentesSugeridas = [] }) {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <span className="font-mono-numbers text-emerald-400">{formatCLP(i.monto)}</span>
-                <button type="button" onClick={() => eliminar(i.id)} className="text-slate-600 hover:text-red-400" title="Eliminar">×</button>
+                {i.origen === 'clases' ? (
+                  // Viene de un pago de clases: se corrige deshaciendo el pago en /clases.
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500" title="Se corrige deshaciendo el pago en Clases">Clases</span>
+                ) : (
+                  <button type="button" onClick={() => eliminar(i.id)} className="text-slate-600 hover:text-red-400" title="Eliminar">×</button>
+                )}
               </div>
             </div>
           ))}

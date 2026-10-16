@@ -345,3 +345,7 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires
   ON auth_sessions(expires_at) WHERE revoked_at IS NULL;
+
+-- Clases particulares (alumno, clase, pago, pago_clase) e ingreso: NO están acá. Las crean
+-- server/db/migrate-ingresos.js y server/db/migrate-clases.js al arrancar (pago.ingreso_id
+-- referencia a ingreso, que tampoco vive en este archivo). Ver DEC-019.

@@ -10,6 +10,7 @@
     "migrate": "bun run server/migrate.js",
     "migrate:pg": "bun run server/migrate-to-pg.js",
     "migrate:ciclos": "bun run server/db/migrate-financial-cycles.js",
+    "import:clases": "bun run server/db/importar-clases.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",

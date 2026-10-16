@@ -25,6 +25,8 @@ import { migrateReservaRetiros } from './db/migrate-reserva-retiros.js'
 import { reservaRouter } from './reservas.js'
 import { migrateIngresos } from './db/migrate-ingresos.js'
 import { ingresoRouter } from './ingresos.js'
+import { migrateClases } from './db/migrate-clases.js'
+import { clasesRouter } from './clases/router.js'
 import { migrateFondoAhorroMovimientos } from './db/migrate-fondo-ahorro-movimientos.js'
 import { migrateFondoAhorroTipo } from './db/migrate-fondo-ahorro-tipo.js'
 import { fondoAhorroRouter } from './fondosAhorro.js'
@@ -51,6 +53,7 @@ await migrateFondoUso()
 await migrateReservas()
 await migrateReservaRetiros()
 await migrateIngresos()
+await migrateClases()
 await migrateFondoAhorroMovimientos()
 await migrateFondoAhorroTipo()
 await migrateFGP()
@@ -101,6 +104,7 @@ app.route('/api/agente', agenteRouter)
 app.route('/api/tarjeta', tarjetaRouter)
 app.route('/api/reservas', reservaRouter)
 app.route('/api/ingresos', ingresoRouter)
+app.route('/api/clases', clasesRouter)
 app.route('/api/fondos-ahorro', fondoAhorroRouter)
 app.route('/api/fgp', fgpRouter)
 

@@ -314,6 +314,8 @@ editan la bandeja y están pensadas para un humano en el loop).
 Consequences: confirmar un gasto sigue siendo un acto humano en `/bandeja` o `/log`. Un cliente
 con el token puede crear gastos pendientes, pero no confirmarlos, editarlos ni borrarlos. Se
 agrega una dependencia (`@modelcontextprotocol/sdk`). No hay rate limiting en `/mcp`.
+Update 2026-10-16: DEC-019 agrega 9 tools de clases particulares, con escrituras propias (alumnos,
+clases y pagos que crean un ingreso). Para gastos, `crear_gasto` sigue siendo la única escritura.
 
 ## DEC-018 - Agente por Telegram con n8n como tubo y avisos de gastos flacos
 
@@ -340,6 +342,39 @@ aviso con plantilla fija (se eligió el modelo, con la plantilla como respaldo).
 Consequences: una llamada a OpenAI por gasto flaco. Un aviso perdido no se reintenta solo
 (`POST /api/agente/telegram/aviso` lo reenvía). El token se comparte en las dos direcciones.
 Confirmar sigue siendo un acto humano en `/bandeja`.
+
+## DEC-019 - Módulo de clases particulares separado; el pago crea el ingreso en una transacción
+
+Date: 2026-10-16
+Context: las clases particulares se agendaban y cobraban en una base de Notion (una fila = una
+clase, sin ficha de alumno). Se quiere dejar Notion y que el agente externo que sincroniza el
+calendario lea y escriba las clases por MCP.
+Decision:
+- Módulo propio: tablas `alumno`, `clase`, `pago` y `pago_clase` (`server/db/migrate-clases.js`),
+  dominio en `server/clases/`, pantalla `/clases` y 9 tools MCP (`server/mcp/toolsClases.js`). No
+  reutiliza `gastos` ni `presupuesto_*`, ni es una categoría de gastos.
+- Cada clase congela su `precio_hora` y su `monto`. El precio del alumno es solo un default. La
+  deuda no se persiste: es Σ monto de las dictadas sin cobrar.
+- Un pago cubre N clases dictadas y pendientes del mismo alumno, por su suma exacta, sin pagos
+  parciales ni por adelantado. En una transacción inserta el `ingreso` (fuente "Clases
+  particulares", `origen='clases'` nuevo, ciclo de la fecha del pago), el `pago` y `pago_clase`,
+  y marca las clases como pagadas.
+- El ingreso de clases solo se corrige deshaciendo el pago desde la UI. `/api/ingresos` responde
+  409 a editarlo o borrarlo, y la FK `pago.ingreso_id ON DELETE RESTRICT` lo protege en la DB.
+- Mismo servidor MCP y mismo `MCP_TOKEN` (amplía DEC-017). Las tools de clases crean y cambian
+  estados; no borran, no deshacen pagos ni reabren clases pagadas, y no tocan gastos ni
+  presupuesto. El agente interno de `/agente` no recibe estas tools.
+- Las clases ya pagadas en Notion se importan cobradas, sin `pago` ni `ingreso`. El ingreso
+  automático arranca con los pagos registrados en la app. El import es idempotente por
+  `notion_id`, con una clave sintética si el CSV no trae id.
+Alternatives considered: modelar las clases como categoría de gastos o de presupuesto
+(descartada: mezcla agenda con finanzas y rompe el cálculo del ciclo); sincronizar con Google
+Calendar o con n8n desde la app (descartada: lo hace otro agente por MCP); dejar el ingreso de
+clases editable como cualquier otro (descartada: el pago y el ingreso se desincronizarían).
+Consequences: la tarjeta Ingresos del Dashboard sigue usando la previsión (`presupuesto_ingreso`);
+los ingresos de clases solo aparecen como ingreso real. El MCP ahora tiene escrituras fuera de la
+bandeja de gastos; un cliente con `MCP_TOKEN` puede crear clases y registrar pagos, pero no
+borrarlos. Se agrega el code de error `conflicto`.
 
 ## GAP: decisions to document
 
