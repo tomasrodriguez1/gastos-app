@@ -6,7 +6,7 @@ import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 import { calcularGastosPorGrupo } from '../../utils/calculos'
 import { COLOR_GRUPO } from '../../utils/categorias'
 import { formatCLP, formatMes, privacyFormat } from '../../utils/formatters'
-import { formatCiclo, obtenerDiaDelCiclo } from '../../utils/ciclos'
+import { formatCiclo, obtenerCicloActual, obtenerDiaDelCiclo } from '../../utils/ciclos'
 
 const DESDE_MES = '2026-01'
 
@@ -172,8 +172,11 @@ export function GraficoEvolucionPresupuesto({ gastos }) {
       ? gastos.filter(g => obtenerDiaDelCiclo(g.fecha) <= diaCorte)
       : gastos
 
+    // Un gasto con fecha futura no puede estirar el eje ni dejar el total en $0:
+    // la serie llega hasta el ciclo de hoy.
+    const cicloTope = obtenerCicloActual(fechaCorte)
     const ultimoMes = [...new Set(gastosBase.map(gasto => gasto.ciclo_financiero).filter(Boolean))]
-      .filter(mes => mes >= DESDE_MES)
+      .filter(mes => mes >= DESDE_MES && mes <= cicloTope)
       .sort()
       .at(-1)
 
