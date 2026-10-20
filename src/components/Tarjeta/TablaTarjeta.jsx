@@ -53,7 +53,7 @@ function Toggle({ activo, onClick, activoLabel, inactivoLabel, title }) {
 
 function Segmento({ opciones, valor, onChange, ariaLabel }) {
   return (
-    <div className="flex rounded-lg border border-slate-700 bg-slate-900/70 p-0.5" role="group" aria-label={ariaLabel}>
+    <div className="flex rounded-lg border border-slate-700 bg-slate-900/70 p-1" role="group" aria-label={ariaLabel}>
       {opciones.map(opcion => {
         const value = typeof opcion === 'string' ? opcion : opcion.value
         const label = typeof opcion === 'string' ? opcion : opcion.label
@@ -62,7 +62,7 @@ function Segmento({ opciones, valor, onChange, ariaLabel }) {
             type="button"
             key={value}
             onClick={() => onChange(value)}
-            className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors active:translate-y-px ${valor === value ? 'bg-sky-500/15 text-sky-300' : 'text-slate-500 hover:text-slate-300'}`}
+            className={`rounded-md px-3.5 py-2 text-sm font-medium transition-colors active:translate-y-px ${valor === value ? 'bg-sky-500/15 text-sky-300' : 'text-slate-400 hover:text-slate-200'}`}
           >
             {label}
           </button>
@@ -211,72 +211,75 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
 
   return (
     <section className="min-w-0 overflow-hidden rounded-xl border border-slate-700/50 bg-slate-800/50" aria-labelledby="movimientos-tarjeta-title">
-      <div className="border-b border-slate-700/50 bg-slate-900/30 p-4">
-        <div className="mb-4">
-          <h2 id="movimientos-tarjeta-title" className="text-sm font-semibold text-slate-200">Todos los movimientos pendientes</h2>
-          <p className="mt-1 text-xs text-slate-500">Los filtros afectan solamente esta tabla. Los resúmenes superiores siempre muestran la deuda completa.</p>
+      <div className="border-b border-slate-700/50 bg-slate-900/30 p-5">
+        <div className="mb-5">
+          <h2 id="movimientos-tarjeta-title" className="text-base font-semibold text-slate-100">Todos los movimientos pendientes</h2>
+          <p className="mt-1 text-sm text-slate-500">Los filtros afectan solamente esta tabla. Los resúmenes superiores siempre muestran la deuda completa.</p>
         </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1">
-            <div className="text-[10px] uppercase tracking-wider text-slate-600">Banco</div>
+        <div className="flex flex-wrap items-end gap-x-5 gap-y-4">
+          <div className="space-y-2">
+            <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Banco</div>
             <Segmento opciones={['Todos', ...BANCOS]} valor={filtroBanco} onChange={valor => cambiarFiltro(setFiltroBanco, valor)} ariaLabel="Filtrar por banco" />
           </div>
-          <div className="space-y-1">
-            <div className="text-[10px] uppercase tracking-wider text-slate-600">Moneda</div>
+          <div className="space-y-2">
+            <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Moneda</div>
             <Segmento opciones={['Todas', ...MONEDAS]} valor={filtroMoneda} onChange={valor => cambiarFiltro(setFiltroMoneda, valor)} ariaLabel="Filtrar por moneda" />
           </div>
-          <div className="space-y-1">
-            <div className="text-[10px] uppercase tracking-wider text-slate-600">Estado</div>
+          <div className="space-y-2">
+            <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Estado</div>
             <Segmento opciones={ESTADOS} valor={filtroFacturado} onChange={valor => cambiarFiltro(setFiltroFacturado, valor)} ariaLabel="Filtrar por facturación" />
           </div>
-          <div className="ml-auto text-right text-xs text-slate-500">
-            <div>Resultado</div>
-            <div className="font-mono-numbers font-semibold text-slate-300">{filasFiltradas.length} movimientos</div>
+          <div className="ml-auto flex min-h-11 items-center gap-3 rounded-lg border border-slate-700/60 bg-slate-950/40 px-4 py-2">
+            <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Resultado</div>
+            <div className="font-mono-numbers text-xl font-semibold leading-none text-slate-100">{filasFiltradas.length}</div>
+            <div className="text-sm text-slate-400">movimientos</div>
           </div>
         </div>
       </div>
 
-      <div className="border-b border-slate-700/50 bg-slate-950/15 px-4 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="mr-1">
-            <div className="text-[10px] uppercase tracking-wider text-slate-600">Seleccionar facturados</div>
-            <div className="mt-0.5 text-[11px] text-slate-600">El total queda listo para registrar</div>
+      <div className="border-b border-slate-700/50 bg-slate-950/15 px-5 py-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="mr-1 min-w-44">
+            <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Seleccionar facturados</div>
+            <div className="mt-1 text-sm text-slate-500">El total queda listo para registrar</div>
           </div>
           {gruposFacturados.map(grupo => (
             <button
               type="button"
               key={`${grupo.banco}-${grupo.moneda}`}
               onClick={() => seleccionarGrupoFacturado(grupo)}
-              className="rounded-lg border border-slate-700/60 bg-slate-900/70 px-3 py-1.5 text-left transition-colors hover:border-sky-500/40 hover:bg-sky-500/10 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/50"
+              className="rounded-lg border border-slate-700/60 bg-slate-900/70 px-3.5 py-2 text-left transition-colors hover:border-sky-500/40 hover:bg-sky-500/10 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/50"
               title={`Seleccionar los ${grupo.ids.length} movimientos facturados de ${grupo.banco} en ${grupo.moneda}`}
             >
-              <span className="block text-[11px] font-medium text-slate-300">{grupo.banco} · {grupo.moneda}</span>
-              <span className="mt-0.5 block font-mono-numbers text-[10px] text-slate-600">{grupo.ids.length} mov · {formatMonto(grupo.total, grupo.moneda)}</span>
+              <span className="block text-sm font-medium text-slate-200">{grupo.banco} · {grupo.moneda}</span>
+              <span className="mt-0.5 block font-mono-numbers text-xs text-slate-500">{grupo.ids.length} mov · {formatMonto(grupo.total, grupo.moneda)}</span>
             </button>
           ))}
-          {gruposFacturados.length === 0 && <span className="text-xs text-slate-600">No hay movimientos facturados.</span>}
-          {seleccion.length > 0 && <button type="button" onClick={() => aplicarSeleccion([])} className="ml-auto text-[11px] text-slate-500 transition-colors hover:text-slate-300">Limpiar selección</button>}
+          {gruposFacturados.length === 0 && <span className="text-sm text-slate-400">No hay movimientos facturados.</span>}
+          {seleccion.length > 0 && <button type="button" onClick={() => aplicarSeleccion([])} className="ml-auto text-sm text-slate-400 transition-colors hover:text-slate-200">Limpiar selección</button>}
         </div>
       </div>
 
-      <div className="border-b border-slate-700/50 p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="mb-1 block text-[10px] uppercase tracking-wider text-slate-500">Total pagado</label>
-            <input
-              type="number"
-              step={monedaUnica === 'USD' ? '0.01' : '1'}
-              value={totalOperacion}
-              onChange={event => setTotalOperacion(event.target.value)}
-              placeholder={String(totalSeleccionado)}
-              disabled={!monedaUnica}
-              className="w-44 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-right font-mono-numbers text-sm text-slate-200 outline-none focus:border-sky-500 disabled:opacity-40"
-            />
+      <div className="border-b border-slate-700/50 p-5">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-500">Total pagado</label>
+              <input
+                type="number"
+                step={monedaUnica === 'USD' ? '0.01' : '1'}
+                value={totalOperacion}
+                onChange={event => setTotalOperacion(event.target.value)}
+                placeholder={String(totalSeleccionado)}
+                disabled={!monedaUnica}
+                className="w-52 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-right font-mono-numbers text-base text-slate-100 outline-none focus:border-sky-500 disabled:opacity-40"
+              />
+            </div>
+            <button disabled={seleccion.length === 0 || seleccionInvalida || procesando} onClick={registrarPago} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-30">Registrar pago</button>
           </div>
-          <button disabled={seleccion.length === 0 || seleccionInvalida || procesando} onClick={registrarPago} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-30">Registrar pago</button>
-          <div className="ml-auto text-right text-xs text-slate-500">
-            <div>{seleccion.length} seleccionados</div>
-            <div className="font-mono-numbers text-slate-300">{monedaUnica ? formatMonto(totalSeleccionado, monedaUnica) : seleccion.length ? 'Banco y moneda únicos' : formatCLP(0)}</div>
+          <div className="flex min-h-11 items-center gap-3 rounded-lg border border-slate-700/60 bg-slate-950/40 px-4 py-2">
+            <div className="text-sm text-slate-400">{seleccion.length} seleccionados</div>
+            <div className="font-mono-numbers text-lg font-semibold text-slate-100">{monedaUnica ? formatMonto(totalSeleccionado, monedaUnica) : seleccion.length ? 'Banco y moneda únicos' : formatCLP(0)}</div>
           </div>
         </div>
         {seleccionInvalida && <p className="mt-3 text-xs text-amber-400">Seleccioná movimientos de un solo banco y una sola moneda para registrar el pago.</p>}

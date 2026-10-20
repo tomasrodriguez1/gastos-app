@@ -40,15 +40,15 @@ function ControlesFondoClp({ saldo, onAportar, onAjustarSaldo }) {
   }
 
   return (
-    <div className="rounded-lg border border-slate-700/50 bg-slate-950/25 p-3.5">
+    <div className="rounded-xl border border-slate-700/50 bg-slate-950/25 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-slate-600">Administrar fondo</div>
-          <p className="mt-1 text-[11px] text-slate-600">Aportes y correcciones se registran siempre en CLP.</p>
+          <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Administrar fondo</div>
+          <p className="mt-1 text-sm text-slate-500">Aportes y correcciones se registran siempre en CLP.</p>
         </div>
-        <div className="flex gap-1">
-          <button type="button" onClick={() => abrir('aporte')} className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 active:translate-y-px">+ Aportar</button>
-          <button type="button" onClick={() => abrir('saldo')} title="Corregir saldo CLP" className="rounded-md border border-slate-600/50 px-2 py-1 text-[11px] text-slate-400 hover:text-slate-200">✎</button>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => abrir('aporte')} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 active:translate-y-px">+ Aportar</button>
+          <button type="button" onClick={() => abrir('saldo')} title="Corregir saldo CLP" className="rounded-lg border border-slate-600/50 px-3 py-2 text-sm text-slate-400 hover:text-slate-200">✎</button>
         </div>
       </div>
       {modo && (
@@ -122,6 +122,9 @@ export function ResumenGlobalTarjeta({ deuda, totales, porBanco, tipoCambio, onT
   const baseBarra = Math.max(fondoDisponible, deuda.total || 0, 1)
   const anchoClp = Math.min(100, Math.max(0, (deudaClp / baseBarra) * 100))
   const anchoUsd = Math.min(100 - anchoClp, Math.max(0, (deudaUsdClp / baseBarra) * 100))
+  const totalDeuda = deuda.total || 0
+  const parteClp = totalDeuda > 0 ? Math.round((deudaClp / totalDeuda) * 100) : 0
+  const parteUsd = totalDeuda > 0 && !deuda.parcial ? Math.max(0, 100 - parteClp) : null
 
   let estadoCobertura
   if (deuda.parcial) estadoCobertura = <span className="text-amber-400">El total es parcial: faltan movimientos USD por convertir.</span>
@@ -131,76 +134,98 @@ export function ResumenGlobalTarjeta({ deuda, totales, porBanco, tipoCambio, onT
 
   return (
     <div className="space-y-3">
-      <section className="grid overflow-hidden rounded-xl border border-slate-700/50 bg-slate-800/50 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,.85fr)]" aria-labelledby="deuda-global-title">
-        <div className="p-4 sm:p-5">
-          <div id="deuda-global-title" className="text-xs uppercase tracking-wider text-slate-500">Deuda global estimada</div>
-          <div className="mt-1 font-mono-numbers text-3xl font-bold tracking-tight text-slate-100 sm:text-4xl">{oculto(formatCLP(deuda.total || 0))}</div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-            <strong className="font-mono-numbers text-sky-300">{oculto(formatMontoTarjeta(clp.por_pagar || 0, 'CLP'))}</strong>
-            <span>+</span>
-            <strong className="font-mono-numbers text-violet-300">{oculto(formatMontoTarjeta(usd.por_pagar || 0, 'USD'))}</strong>
+      <section className="grid overflow-hidden rounded-xl border border-slate-700/50 bg-slate-800/50 lg:grid-cols-2" aria-labelledby="deuda-global-title">
+        <div className="flex h-full flex-col p-5 sm:p-6">
+          <div id="deuda-global-title" className="text-xs font-medium uppercase tracking-wider text-slate-500">Deuda global estimada</div>
+          <div className="mt-2 font-mono-numbers text-4xl font-bold tracking-tight text-slate-100">{oculto(formatCLP(totalDeuda))}</div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-400">
+            <strong className="font-mono-numbers text-base text-sky-300">{oculto(formatMontoTarjeta(clp.por_pagar || 0, 'CLP'))}</strong>
+            <span className="text-slate-600">+</span>
+            <strong className="font-mono-numbers text-base text-violet-300">{oculto(formatMontoTarjeta(usd.por_pagar || 0, 'USD'))}</strong>
             <span>convertidos para planificar</span>
           </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border border-slate-700/40 bg-slate-950/25 p-3">
-              <div className="text-[10px] uppercase tracking-wider text-slate-600">Deuda en CLP</div>
-              <div className="mt-1 font-mono-numbers text-lg font-bold text-sky-300">{oculto(formatMontoTarjeta(clp.por_pagar || 0, 'CLP'))}</div>
-              <div className="mt-1 text-xs text-slate-500">{clp.movimientos || 0} movimientos</div>
+          <div className="mt-6 grid flex-1 gap-3 sm:grid-cols-2">
+            <div className="flex h-full flex-col justify-between rounded-xl border border-slate-700/50 bg-slate-950/30 p-4">
+              <div>
+                <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Deuda en CLP</div>
+                <div className="mt-2 font-mono-numbers text-2xl font-bold text-sky-300">{oculto(formatMontoTarjeta(clp.por_pagar || 0, 'CLP'))}</div>
+                <div className="mt-1 text-sm text-slate-500">En pesos</div>
+              </div>
+              <div className="mt-5">
+                <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
+                  <div className="h-full bg-sky-400" style={{ width: `${parteClp}%` }} />
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2 text-sm text-slate-400">
+                  <span>{clp.movimientos || 0} movimientos</span>
+                  <span className="font-mono-numbers text-slate-500">{parteClp}%</span>
+                </div>
+              </div>
             </div>
-            <div className="rounded-lg border border-slate-700/40 bg-slate-950/25 p-3">
-              <div className="text-[10px] uppercase tracking-wider text-slate-600">Deuda en USD</div>
-              <div className="mt-1 font-mono-numbers text-lg font-bold text-violet-300">{oculto(formatMontoTarjeta(usd.por_pagar || 0, 'USD'))}</div>
-              <div className="mt-1 text-xs text-slate-500">{usd.movimientos || 0} movimientos</div>
+            <div className="flex h-full flex-col justify-between rounded-xl border border-slate-700/50 bg-slate-950/30 p-4">
+              <div>
+                <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Deuda en USD</div>
+                <div className="mt-2 font-mono-numbers text-2xl font-bold text-violet-300">{oculto(formatMontoTarjeta(usd.por_pagar || 0, 'USD'))}</div>
+                <div className="mt-1 font-mono-numbers text-sm text-slate-500">{deuda.parcial ? 'Conversión pendiente' : `≈ ${oculto(formatCLP(deudaUsdClp))}`}</div>
+              </div>
+              <div className="mt-5">
+                <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
+                  <div className="h-full bg-violet-400" style={{ width: `${parteUsd ?? 0}%` }} />
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2 text-sm text-slate-400">
+                  <span>{usd.movimientos || 0} movimientos</span>
+                  <span className="font-mono-numbers text-slate-500">{parteUsd == null ? '—' : `${parteUsd}%`}</span>
+                </div>
+              </div>
             </div>
           </div>
-          {deuda.parcial && <p className="mt-3 text-xs text-amber-400">{deuda.sinConvertir} movimientos ({oculto(formatMontoTarjeta(deuda.sinConvertirUsd, 'USD'))}) todavía no tienen tipo de cambio.</p>}
+          {deuda.parcial && <p className="mt-3 text-sm text-amber-400">{deuda.sinConvertir} movimientos ({oculto(formatMontoTarjeta(deuda.sinConvertirUsd, 'USD'))}) todavía no tienen tipo de cambio.</p>}
         </div>
 
-        <div className="border-t border-slate-700/50 bg-slate-900/20 p-4 sm:p-5 lg:border-t-0 lg:border-l">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="text-xs uppercase tracking-wider text-slate-500">Fondo disponible</div>
-              <div className="mt-1 font-mono-numbers text-2xl font-bold text-emerald-400">{oculto(formatCLP(fondoDisponible))}</div>
-              <p className="mt-1 text-[11px] text-slate-600">Un único saldo CLP para ambas monedas</p>
-            </div>
-            {mostrarTasa && (
-              <label className="grid gap-1 text-[10px] uppercase tracking-wider text-slate-600">
-                CLP por USD
-                <input type="number" min="0" step="0.01" inputMode="decimal" value={isPrivacyModeEnabled ? '' : tipoCambio} onChange={event => onTipoCambio(event.target.value)} placeholder={isPrivacyModeEnabled ? '••••' : '950'} className="w-28 rounded-lg border border-slate-600 bg-slate-900 px-2 py-1.5 text-right font-mono-numbers text-sm normal-case tracking-normal text-slate-200 outline-none focus:border-sky-500" />
-              </label>
-            )}
+        <div className="flex h-full flex-col border-t border-slate-700/50 bg-slate-900/20 p-5 sm:p-6 lg:border-t-0 lg:border-l">
+          <div>
+            <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Fondo disponible</div>
+            <div className="mt-2 font-mono-numbers text-4xl font-bold tracking-tight text-emerald-400">{oculto(formatCLP(fondoDisponible))}</div>
+            <p className="mt-3 text-sm text-slate-400">Un único saldo CLP para ambas monedas</p>
           </div>
-          <div className="mt-3 text-xs">{estadoCobertura}</div>
+          <div className="mt-3 text-sm">{estadoCobertura}</div>
 
-          <div className="mt-4 rounded-lg border border-slate-700/50 bg-slate-950/25 p-3.5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-[10px] uppercase tracking-wider text-slate-600">Destino del fondo</div>
-              <div className="text-[10px] text-slate-600">Deuda total {oculto(formatCLP(deuda.total || 0))}</div>
+          <div className="mt-6 flex flex-1 flex-col rounded-xl border border-slate-700/50 bg-slate-950/30 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Destino del fondo</div>
+              {mostrarTasa ? (
+                <label className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-slate-500">
+                  CLP por USD
+                  <input type="number" min="0" step="0.01" inputMode="decimal" value={isPrivacyModeEnabled ? '' : tipoCambio} onChange={event => onTipoCambio(event.target.value)} placeholder={isPrivacyModeEnabled ? '••••' : '950'} className="w-24 rounded-lg border border-slate-600 bg-slate-900 px-2.5 py-1.5 text-right font-mono-numbers text-sm normal-case tracking-normal text-slate-100 outline-none focus:border-sky-500" />
+                </label>
+              ) : (
+                <div className="text-sm text-slate-500">Deuda total {oculto(formatCLP(totalDeuda))}</div>
+              )}
             </div>
-            <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
+            {mostrarTasa && <div className="mt-1 text-sm text-slate-500">Deuda total {oculto(formatCLP(totalDeuda))}</div>}
+            <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
               <span className="bg-sky-400/80" style={{ width: `${anchoClp}%` }} />
               <span className="bg-violet-400/80" style={{ width: `${anchoUsd}%` }} />
             </div>
-            <div className="mt-3 space-y-2.5 text-xs">
+            <div className="mt-4 flex flex-1 flex-col justify-end space-y-3 text-sm">
               <div className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-2 text-slate-500"><span className="h-2 w-2 rounded-full bg-sky-400" />Deuda en CLP</span>
-                <strong className="font-mono-numbers font-medium text-slate-300">{oculto(formatCLP(deudaClp))}</strong>
+                <span className="flex items-center gap-2 text-slate-400"><span className="h-2 w-2 rounded-full bg-sky-400" />Deuda en CLP</span>
+                <strong className="font-mono-numbers font-medium text-slate-200">{oculto(formatCLP(deudaClp))}</strong>
               </div>
               <div className="flex items-start justify-between gap-3">
-                <span className="flex items-center gap-2 text-slate-500"><span className="mt-1 h-2 w-2 rounded-full bg-violet-400" />USD por comprar</span>
+                <span className="flex items-center gap-2 text-slate-400"><span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-violet-400" />USD por comprar</span>
                 <div className="text-right">
                   <strong className="block font-mono-numbers font-medium text-violet-300">{oculto(formatMontoTarjeta(usd.por_pagar || 0, 'USD'))}</strong>
-                  <span className="font-mono-numbers text-[11px] text-slate-600">{deuda.parcial ? 'Conversión pendiente' : `≈ ${oculto(formatCLP(deudaUsdClp))}`}</span>
+                  <span className="font-mono-numbers text-xs text-slate-500">{deuda.parcial ? 'Conversión pendiente' : `≈ ${oculto(formatCLP(deudaUsdClp))}`}</span>
                 </div>
               </div>
-              <div className="flex items-center justify-between gap-3 border-t border-slate-700/50 pt-2.5">
-                <span className="font-medium text-slate-400">Saldo después de pagar</span>
-                <strong className={`font-mono-numbers text-sm ${saldoDespues < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{deuda.parcial ? 'Por definir' : oculto(formatCLP(saldoDespues))}</strong>
+              <div className="flex items-center justify-between gap-3 border-t border-slate-700/50 pt-3">
+                <span className="font-medium text-slate-300">Saldo después de pagar</span>
+                <strong className={`font-mono-numbers text-lg ${saldoDespues < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{deuda.parcial ? 'Por definir' : oculto(formatCLP(saldoDespues))}</strong>
               </div>
             </div>
           </div>
 
-          <div className="mt-2">
+          <div className="mt-3">
             <ControlesFondoClp saldo={fondoDisponible} onAportar={onAportar} onAjustarSaldo={onAjustarSaldo} />
           </div>
         </div>
