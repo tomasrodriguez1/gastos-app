@@ -5,21 +5,25 @@ import { usePrivacyMode } from '../contexts/PrivacyModeContext'
 import { useReservas } from '../hooks/useReservas'
 import { useResumenIngresos } from '../hooks/useIngresos'
 import {
+  SIN_CLASIFICAR,
   calcularAcumuladoFondo,
+  calcularGastosPorGrupo,
+  calcularPrevistoPorGrupo,
   calcularRitmoCiclo,
   calcularSaldoFondoManual,
   calcularSaldosCiclo,
   calcularTotalMes,
   calcularTotalPrevisto,
-  montoDelCiclo,
   calcularUsadoFondo,
-  categoriasAdelantadas,
+  esGastoUsdPuro,
   gastosSinClasificar,
+  montoDelCiclo,
   semaforo,
 } from '../utils/calculos'
 import { COLOR_GRUPO } from '../utils/categorias'
+import { getSubcategoriaPresupuesto } from '../utils/mapeo'
 import { formatCiclo, formatRangoCiclo, obtenerCicloActual } from '../utils/ciclos'
-import { formatCLP, privacyFormat } from '../utils/formatters'
+import { formatCLP, formatFecha, privacyFormat } from '../utils/formatters'
 import { formatearFechaCorta } from '../utils/vencimientosTarjeta'
 
 const TONO_FILA = {
@@ -34,6 +38,21 @@ const TONO_ESTADO = {
   naranja: 'text-orange-400',
   verde: 'text-emerald-400',
   gris: 'text-slate-500',
+}
+
+const RELLENO_ESTADO = {
+  rojo: 'bg-rose-400',
+  amarillo: 'bg-amber-400',
+  naranja: 'bg-orange-400',
+  verde: 'bg-emerald-400',
+  gris: 'bg-slate-500',
+}
+
+const ESTADO_INGRESO = {
+  llego: { texto: 'Llegó', estilo: 'text-emerald-400' },
+  por_aprobar: { texto: 'Por aprobar', estilo: 'text-amber-300' },
+  pendiente: { texto: 'Pendiente', estilo: 'text-slate-400' },
+  atrasado: { texto: 'Atrasado', estilo: 'text-rose-400' },
 }
 
 function MetricMini({ label, value, detail, tone = 'text-slate-200' }) {
@@ -78,7 +97,8 @@ export function DashboardPage({ gastos, obtenerPresupuesto, resumenFGP, vencimie
   const real = calcularTotalMes(gastos, ciclo)
   const saldos = calcularSaldosCiclo(resumenIngresos, real)
   const ritmo = calcularRitmoCiclo(gastos, ciclo, previsto)
-  const adelantadas = categoriasAdelantadas(gastos, ciclo, presupuestoMes, ritmo.diaCorte, ritmo.duracionCiclo)
+  const categorias = categoriasDelCiclo(gastos, ciclo, presupuestoMes, ritmo.diaCorte, ritmo.duracionCiclo)
+  const topGastos = topGastosDelCiclo(gastos, ciclo)
   const sinClasificar = gastosSinClasificar(gastos, ciclo)
   const dinero = (n) => (n == null ? '…' : privacyFormat(n, isPrivacyModeEnabled))
   const avance = previsto > 0 ? Math.round((real / previsto) * 100) : 0
@@ -120,7 +140,16 @@ export function DashboardPage({ gastos, obtenerPresupuesto, resumenFGP, vencimie
   }, [reservas])
 
   const reservasActivas = reservas.filter(reserva => reserva.activa)
-  const fondosActivos = Object.entries(presupuestoMes?.fondos || {}).filter(([, fondo]) => fondo.estado !== 'cerrado')
+  const fondosActivos = Object.entries(presupuestoMes?.fondos || {})
+    .filter(([, fondo]) => fondo.estado !== 'cerrado')
+    .map(([nombre, fondo]) => ({
+      nombre,
+      fondo,
+      saldo: movimientosPorFondo == null ? null : saldoFondoAhorro(nombre, fondo, gastos, movimientosPorFondo[nombre]),
+    }))
+    .filter(item => item.saldo == null || item.saldo !== 0)
+  const mostrarFGP = resumenFGP == null || resumenFGP.saldo !== 0 || resumenFGP.totalPendienteTC > 0
+  const fuentesIngreso = (resumenIngresos?.fuentes || []).filter(fuente => fuente.tipo !== 'fondos')
   const contextoListo = resumenIngresos != null && vencimientos != null && resumenFGP != null
   const acciones = armarAcciones({
     gastos,
@@ -139,7 +168,19 @@ export function DashboardPage({ gastos, obtenerPresupuesto, resumenFGP, vencimie
     : ritmo.ritmoDiario < 0
       ? 'text-rose-400'
       : 'text-emerald-400'
-  const frase = fraseDelCiclo({ ritmo, previsto, dinero, isPrivacyModeEnabled })
+  const frase = fraseContraAnterior({ ritmo, dinero, isPrivacyModeEnabled })
+  const cierreTone = sinPresupuesto
+    ? 'text-slate-400'
+    : ritmo.desviacionProyectada > 0
+      ? 'text-rose-400'
+      : 'text-emerald-400'
+  const detalleCierre = sinPresupuesto
+    ? 'Cargá un presupuesto para proyectar el cierre'
+    : ritmo.desviacionProyectada > 0
+      ? `${dinero(ritmo.desviacionProyectada)} sobre el presupuesto`
+      : ritmo.desviacionProyectada < 0
+        ? `${dinero(Math.abs(ritmo.desviacionProyectada))} bajo el presupuesto`
+        : 'Justo en el presupuesto'
 
   return (
     <main className="max-w-7xl mx-auto px-3 py-4 sm:px-6 sm:py-6 space-y-5">
@@ -160,16 +201,22 @@ export function DashboardPage({ gastos, obtenerPresupuesto, resumenFGP, vencimie
           <div>
             <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Saldo real</div>
             <div className={`mt-1 font-mono-numbers text-3xl sm:text-4xl font-bold ${saldoTone}`}>{dinero(saldos?.saldoReal)}</div>
-            <p className="mt-2 max-w-xl text-sm text-slate-400">{frase}</p>
+            {frase && <p className="mt-2 max-w-xl text-sm text-slate-400">{frase}</p>}
           </div>
           <div className="text-left sm:text-right">
-            <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Por día, lo que queda</div>
-            <div className={`mt-1 font-mono-numbers text-2xl font-bold ${ritmoTone}`}>
-              {sinPresupuesto ? 'Sin presupuesto' : dinero(ritmo.ritmoDiario)}
+            <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Cierre proyectado</div>
+            <div className={`mt-1 font-mono-numbers text-3xl sm:text-4xl font-bold ${cierreTone}`}>
+              {sinPresupuesto ? '—' : dinero(ritmo.proyeccionCierre)}
             </div>
-            <div className="mt-1 text-xs text-slate-500">{ritmo.diasRestantes} días restantes, incluido hoy</div>
+            <div className={`mt-1 text-xs ${cierreTone}`}>{detalleCierre}</div>
+            <div className={`mt-0.5 text-xs ${ritmoTone}`}>
+              {sinPresupuesto ? `${ritmo.diasRestantes} días restantes` : `${dinero(ritmo.ritmoDiario)} por día · ${ritmo.diasRestantes} días`}
+            </div>
           </div>
         </div>
+        {ritmo.pctPresupuesto != null && (
+          <BarraRitmo pctCiclo={ritmo.pctMes} pctGasto={ritmo.pctPresupuesto} />
+        )}
         <div className="mt-5 grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
           <MetricMini
             label="Ingresos"
@@ -203,31 +250,79 @@ export function DashboardPage({ gastos, obtenerPresupuesto, resumenFGP, vencimie
         )}
       </section>
 
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="rounded-xl border border-slate-800/80 bg-slate-900/40">
+          <div className="flex items-center justify-between gap-4 border-b border-slate-800 px-5 py-4">
+            <h2 className="text-sm font-semibold text-slate-200">Ingresos del ciclo</h2>
+            <Link to="/ingresos" className="text-sm text-sky-300 hover:text-sky-200">Ver ingresos</Link>
+          </div>
+          <div className="divide-y divide-slate-800/80 px-5">
+            {resumenIngresos == null ? (
+              <p className="py-4 text-sm text-slate-500">Cargando…</p>
+            ) : fuentesIngreso.length === 0 ? (
+              <p className="py-4 text-sm text-slate-500">Sin fuentes en este ciclo.</p>
+            ) : fuentesIngreso.map(fuente => {
+              const estado = ESTADO_INGRESO[fuente.estado] || ESTADO_INGRESO.pendiente
+              return (
+                <div key={fuente.nombre} className="flex items-baseline justify-between gap-3 py-2.5">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm text-slate-200">{fuente.nombre}</div>
+                    <div className={`text-[11px] ${estado.estilo}`}>
+                      {estado.texto}{fuente.estado === 'atrasado' && fuente.dia_esperado ? ` · día ${fuente.dia_esperado}` : ''}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-mono-numbers text-sm text-slate-100">{fuente.real ? dinero(fuente.real) : '—'}</div>
+                    {fuente.previsto > 0 && <div className="font-mono-numbers text-[11px] text-slate-500">de {dinero(fuente.previsto)}</div>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-800/80 bg-slate-900/40">
+          <div className="flex items-center justify-between gap-4 border-b border-slate-800 px-5 py-4">
+            <h2 className="text-sm font-semibold text-slate-200">Gastos grandes del ciclo</h2>
+            <Link to="/gastos" className="text-sm text-sky-300 hover:text-sky-200">Ver gastos</Link>
+          </div>
+          <div className="divide-y divide-slate-800/80">
+            {topGastos.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-slate-500">Sin gastos en este ciclo.</p>
+            ) : topGastos.map(gasto => (
+              <div key={gasto.id || `${gasto.fecha}-${gasto.motivo}`} className="flex items-center justify-between gap-3 px-5 py-2.5">
+                <div className="min-w-0">
+                  <div className="truncate text-sm text-slate-200">{gasto.motivo || 'Sin descripción'}</div>
+                  <div className="mt-0.5 truncate text-[11px] text-slate-500">{formatFecha(gasto.fecha)} · {gasto.categoria}</div>
+                </div>
+                <div className="shrink-0 font-mono-numbers text-sm font-semibold text-slate-200">
+                  {privacyFormat(gasto.montoCalculado, isPrivacyModeEnabled)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="rounded-xl border border-slate-800/80 bg-slate-900/40">
         <div className="flex items-center justify-between gap-4 border-b border-slate-800 px-5 py-4">
-          <h2 className="text-sm font-semibold text-slate-200">Por dónde se está yendo</h2>
+          <div>
+            <h2 className="text-sm font-semibold text-slate-200">Por dónde se está yendo</h2>
+            <p className="mt-0.5 text-[11px] text-slate-500">La marca es el día del ciclo, {ritmo.pctMes}%.</p>
+          </div>
           <Link to="/cashflow" className="text-sm text-sky-300 hover:text-sky-200">Ver categorías</Link>
         </div>
         <div className="space-y-3 p-5">
-          {adelantadas.length === 0 ? (
-            <p className="text-sm text-slate-500">Ninguna categoría va más rápido que el día del ciclo.</p>
-          ) : adelantadas.map(item => {
-            const pct = Math.min(Math.round(item.ratio * 100), 200)
-            const estado = semaforo(item.real, item.previsto)
-            return (
-              <div key={item.grupo} className="flex items-center gap-3">
-                <span className="w-3 text-xs" style={{ color: COLOR_GRUPO[item.grupo] || '#94a3b8' }}>●</span>
-                <span className="w-36 shrink-0 truncate text-sm text-slate-300">{item.grupo}</span>
-                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-800">
-                  <div className="h-full rounded-full bg-slate-400" style={{ width: `${Math.min(pct, 100)}%` }} />
-                </div>
-                <span className={`w-28 text-right font-mono-numbers text-xs ${TONO_ESTADO[estado]}`}>
-                  {privacyFormat(item.real, isPrivacyModeEnabled)}
-                  <span className="text-slate-600"> / {privacyFormat(item.previsto, isPrivacyModeEnabled)}</span>
-                </span>
-              </div>
-            )
-          })}
+          {categorias.length === 0 ? (
+            <p className="text-sm text-slate-500">Sin categorías con presupuesto o gasto en este ciclo.</p>
+          ) : categorias.map(item => (
+            <FilaCategoria
+              key={item.grupo}
+              item={item}
+              pctCiclo={ritmo.pctMes}
+              isPrivacyModeEnabled={isPrivacyModeEnabled}
+            />
+          ))}
           {sinClasificar.length > 0 && (
             <Link to="/bandeja" className="block text-sm text-amber-300 hover:text-amber-200">
               {sinClasificar.length} gasto{sinClasificar.length === 1 ? '' : 's'} del ciclo sin clasificar
@@ -249,32 +344,33 @@ export function DashboardPage({ gastos, obtenerPresupuesto, resumenFGP, vencimie
             value={saldoFondoTarjeta == null ? '…' : privacyFormat(saldoFondoTarjeta, isPrivacyModeEnabled)}
             detail={detalleFondoTarjeta(vencimientos, dinero)}
           />
-          <Bolsillo
-            to="/fondos#fgp"
-            label="Gastos previstos"
-            value={resumenFGP == null ? '…' : privacyFormat(resumenFGP.saldo, isPrivacyModeEnabled)}
-            tone={resumenFGP && resumenFGP.saldo < 0 ? 'text-rose-400' : 'text-slate-200'}
-            detail={resumenFGP?.totalPendienteTC > 0 ? `${dinero(resumenFGP.totalPendienteTC)} por mover a la tarjeta` : 'Saldo acumulado'}
-          />
-          {fondosActivos.map(([nombre, fondo]) => (
+          {mostrarFGP && (
+            <Bolsillo
+              to="/fondos#fgp"
+              label="Gastos previstos"
+              value={resumenFGP == null ? '…' : privacyFormat(resumenFGP.saldo, isPrivacyModeEnabled)}
+              tone={resumenFGP && resumenFGP.saldo < 0 ? 'text-rose-400' : 'text-slate-200'}
+              detail={resumenFGP?.totalPendienteTC > 0 ? `${dinero(resumenFGP.totalPendienteTC)} por mover a la tarjeta` : 'Saldo acumulado'}
+            />
+          )}
+          {fondosActivos.map(({ nombre, fondo, saldo }) => (
             <Bolsillo
               key={nombre}
               to="/fondos"
               label={nombre}
-              value={movimientosPorFondo == null
-                ? '…'
-                : privacyFormat(saldoFondoAhorro(nombre, fondo, gastos, movimientosPorFondo[nombre]), isPrivacyModeEnabled)}
+              value={saldo == null ? '…' : privacyFormat(saldo, isPrivacyModeEnabled)}
               detail={fondo.vinculado ? 'Vinculado a una categoría' : 'Fondo manual'}
             />
           ))}
           {reservasActivas.map(reserva => {
             const saldo = saldosReserva[reserva.id]
+            if (saldo === null || saldo?.monto === 0) return null
             return (
               <Bolsillo
                 key={reserva.id}
                 to="/fondos"
                 label={`${reserva.emoji || ''} ${reserva.nombre}`.trim()}
-                value={saldo === undefined ? '…' : saldo == null ? 'Sin saldo' : privacyFormat(saldo.monto, isPrivacyModeEnabled)}
+                value={saldo === undefined ? '…' : privacyFormat(saldo.monto, isPrivacyModeEnabled)}
                 detail={saldo?.fecha ? `Leído el ${saldo.fecha.slice(8, 10)}/${saldo.fecha.slice(5, 7)}` : 'Reserva externa'}
               />
             )
@@ -295,20 +391,92 @@ function Bolsillo({ to, label, value, detail, tone = 'text-slate-200' }) {
   )
 }
 
-function fraseDelCiclo({ ritmo, previsto, dinero, isPrivacyModeEnabled }) {
-  if (previsto <= 0) return 'Cargá un presupuesto para ver si el ciclo cierra adentro.'
-  const desvio = ritmo.desviacionProyectada
-  const cierre = desvio > 0
-    ? `A este ritmo el ciclo cierra ${isPrivacyModeEnabled ? 'sobre' : `${dinero(desvio)} sobre`} el presupuesto.`
-    : desvio < 0
-      ? `A este ritmo el ciclo cierra ${isPrivacyModeEnabled ? 'bajo' : `${dinero(Math.abs(desvio))} bajo`} el presupuesto.`
-      : 'A este ritmo el ciclo cierra justo en el presupuesto.'
-  if (!ritmo.hayDatosPrevio || isPrivacyModeEnabled) return cierre
+function fraseContraAnterior({ ritmo, dinero, isPrivacyModeEnabled }) {
+  if (!ritmo.hayDatosPrevio || isPrivacyModeEnabled) return null
   const delta = ritmo.deltaMesPrevio
-  const contra = delta === 0
-    ? ' Vas igual que el ciclo anterior a esta altura.'
-    : ` Vas ${dinero(Math.abs(delta))} ${delta > 0 ? 'arriba' : 'abajo'} del ciclo anterior a esta altura.`
-  return cierre + contra
+  if (delta === 0) return 'Vas igual que el ciclo anterior a esta altura.'
+  return `Vas ${dinero(Math.abs(delta))} ${delta > 0 ? 'arriba' : 'abajo'} del ciclo anterior a esta altura.`
+}
+
+function BarraRitmo({ pctCiclo, pctGasto }) {
+  const marca = Math.min(Math.max(pctCiclo, 0), 100)
+  const lleno = Math.min(Math.max(pctGasto, 0), 100)
+  const pasado = pctGasto > pctCiclo
+  return (
+    <div className="mt-5">
+      <div className="mb-1.5 flex justify-between gap-3 text-[11px]">
+        <span className="text-slate-400">Día del ciclo {pctCiclo}%</span>
+        <span className={pasado ? 'text-rose-400' : 'text-emerald-400'}>Presupuesto usado {pctGasto}%</span>
+      </div>
+      <div className="relative h-2 rounded-full bg-slate-800">
+        <div className={`h-full rounded-full ${pasado ? 'bg-rose-400' : 'bg-emerald-400'}`} style={{ width: `${lleno}%` }} />
+        <div className="absolute -top-1 h-4 w-0.5 bg-white" style={{ left: `calc(${marca}% - 1px)` }} title={`Vas en el ${pctCiclo}% del ciclo`} />
+      </div>
+    </div>
+  )
+}
+
+function FilaCategoria({ item, pctCiclo, isPrivacyModeEnabled }) {
+  const lleno = Math.min(Math.max(item.ratio, 0), 1) * 100
+  const marca = Math.min(Math.max(pctCiclo, 0), 100)
+  const pct = item.previsto > 0 ? Math.round(item.ratio * 100) : null
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-3 text-xs" style={{ color: COLOR_GRUPO[item.grupo] || '#94a3b8' }}>●</span>
+      <span className="w-36 shrink-0 truncate text-sm text-slate-300">{item.grupo}</span>
+      <div className="relative h-2 flex-1 rounded-full bg-slate-800">
+        <div className={`h-full rounded-full ${RELLENO_ESTADO[item.estado] || 'bg-slate-400'}`} style={{ width: `${lleno}%` }} />
+        <div className="absolute -top-1 h-4 w-0.5 bg-white/80" style={{ left: `calc(${marca}% - 1px)` }} />
+      </div>
+      <span className={`w-36 text-right font-mono-numbers text-xs ${TONO_ESTADO[item.estado]}`}>
+        {privacyFormat(item.real, isPrivacyModeEnabled)}
+        <span className="text-slate-500"> / {privacyFormat(item.previsto, isPrivacyModeEnabled)}</span>
+        {pct != null && <span className="text-slate-400"> · {pct}%</span>}
+      </span>
+    </div>
+  )
+}
+
+function categoriasDelCiclo(gastos, ciclo, presupuestoMes, dia, duracion) {
+  const realPorGrupo = calcularGastosPorGrupo(gastos, ciclo)
+  const previstoPorGrupo = calcularPrevistoPorGrupo(presupuestoMes)
+  const avance = duracion > 0 && dia > 0 ? dia / duracion : 0
+  return Object.keys({ ...realPorGrupo, ...previstoPorGrupo })
+    .filter(grupo => grupo !== SIN_CLASIFICAR)
+    .map(grupo => {
+      const real = realPorGrupo[grupo] || 0
+      const previsto = previstoPorGrupo[grupo] || 0
+      const ratio = previsto > 0 ? real / previsto : 0
+      return {
+        grupo,
+        real,
+        previsto,
+        ratio,
+        estado: semaforo(real, previsto),
+        adelanto: previsto > 0 ? ratio - avance : 0,
+      }
+    })
+    .filter(item => item.real > 0 || item.previsto > 0)
+    .sort((a, b) => b.adelanto - a.adelanto || b.real - a.real)
+}
+
+function topGastosDelCiclo(gastos, ciclo) {
+  return gastos
+    .filter(gasto => gasto.ciclo_financiero === ciclo && !esGastoUsdPuro(gasto))
+    .map(gasto => ({ ...gasto, montoCalculado: montoDelCiclo(gasto) || 0, categoria: categoriaDe(gasto) }))
+    .filter(gasto => gasto.montoCalculado > 0)
+    .sort((a, b) => b.montoCalculado - a.montoCalculado)
+    .slice(0, 5)
+}
+
+function categoriaDe(gasto) {
+  const asignacion = gasto.presupuesto_manual || getSubcategoriaPresupuesto(
+    gasto.tipos || [],
+    gasto.contexto_override || gasto.contexto || '',
+    gasto.banco || '',
+  )
+  if (!asignacion?.grupo) return 'Sin categoría'
+  return asignacion.subcategoria ? `${asignacion.grupo} / ${asignacion.subcategoria}` : asignacion.grupo
 }
 
 function detalleFondoTarjeta(vencimientos, dinero) {

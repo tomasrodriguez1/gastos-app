@@ -18,9 +18,9 @@ Uso personal/familiar. Un operador principal gestiona presupuesto, sincronizaci�
 
 | Ruta | Propósito |
 |------|-----------|
-| `/` | Inicio ("Ahora"): situación de hoy del ciclo — saldo real, ritmo diario y proyección de cierre —, lo que hay que atender (bandeja, ingresos atrasados o por aprobar, clases por cobrar, vencimiento de tarjeta, FGP) y saldos de los bolsillos (fondos de ahorro, reservas, fondo de tarjeta, FGP). Sin gráficos ni formularios de fondos |
+| `/` | Inicio ("Ahora"): saldo real junto al cierre proyectado y una barra de ritmo (día del ciclo vs presupuesto usado), ingresos por fuente, los cinco gastos más grandes, categorías con la marca del día, lo que hay que atender (bandeja, ingresos atrasados o por aprobar, clases por cobrar, vencimiento de tarjeta, FGP) y saldos de los bolsillos con plata (un bolsillo en $0 no se muestra). Sin gráficos históricos ni formularios de fondos |
 | `/cashflow` | Detalle del ciclo en curso: resumen, barras, ritmo, top gastos, FGP, alertas, fondos de ahorro (aportar / usar / archivar) y semáforo por categoría. La sincronización n8n vive acá. La evolución entre ciclos está en `/analisis` |
-| `/analisis` | Análisis histórico: evolución del gasto por grupo, tendencia de los últimos 6 ciclos, comparador por ciclos, tendencias por categoría y gastos recurrentes |
+| `/analisis` | Análisis histórico: evolución del gasto por grupo, tendencia de los últimos 6 ciclos cerrados, comparador por ciclos, tendencia por categoría (total o una categoría, con el cambio en pesos y los picos de un solo ciclo) y gastos recurrentes |
 | `/gastos` | Tabla de gastos por ciclo (sync + manuales), filtro secundario por mes calendario, asignación presupuestaria y duplicados |
 | `/log` | Log de últimos gastos ingresados (todos los meses), ordenado por `created_at`, resalta lo nuevo desde la última visita, edición inline. También es la bandeja de revisión de gastos `pendiente`/`error_parseo` llegados por `/api/ingesta` (filtro por estado, confirmar individual o en bloque) |
 | `/bandeja` | Bandeja dedicada de gastos `pendiente`/`error_parseo` (filtros por banco/tipo/contexto/búsqueda, confirmar individual o en bloque) — acceso vía `BotonBandeja` |
