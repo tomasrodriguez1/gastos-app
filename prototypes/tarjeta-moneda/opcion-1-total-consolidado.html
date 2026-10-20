@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opción 1: total consolidado</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .hero { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(340px,.85fr); gap:1px; overflow:hidden; }
+    .hero-main, .hero-side { padding:24px; background:var(--panel); }
+    .hero-side { background:#101923; }
+    .equation { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:14px; color:var(--muted); }
+    .equation strong { font:650 16px var(--mono); }
+    .symbol { color:var(--muted-2); }
+    .coverage-box { margin-top:20px; padding-top:18px; border-top:1px solid var(--line-soft); }
+    .coverage-line { display:flex; justify-content:space-between; gap:12px; margin-bottom:8px; }
+    .kpi-grid { display:grid; grid-template-columns:1.25fr .75fr .9fr; gap:12px; margin:12px 0; }
+    .kpi { padding:18px; }
+    .kpi p { margin:7px 0 0; color:var(--muted); font-size:12px; }
+    .currency-breakdown { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+    .currency-card { padding:18px; }
+    .currency-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+    .tag { padding:4px 7px; border-radius:7px; background:#1c2b3a; color:var(--muted); font:650 10px var(--mono); }
+    @media (max-width:850px) { .hero, .kpi-grid, .currency-breakdown { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="prototype-bar" aria-label="Navegación de prototipos">
+      <strong>Opción 1: total consolidado</strong>
+      <div class="prototype-links">
+        <a href="index.html">Índice</a>
+        <a aria-current="page" href="opcion-1-total-consolidado.html">1. Consolidado</a>
+        <a href="opcion-2-dos-bolsillos.html">2. Dos bolsillos</a>
+        <a href="opcion-3-calendario-pagos.html">3. Vencimientos</a>
+      </div>
+    </nav>
+
+    <header class="page-head">
+      <h1>Tarjetas de crédito</h1>
+      <p>Una sola respuesta a “cuánto debo”, con el detalle de monedas siempre a la vista.</p>
+      <div class="toolbar">
+        <div class="segmented" aria-label="Tarjetas seleccionadas">
+          <button class="active">Edwards</button><button class="active">BICE</button>
+        </div>
+        <div class="segmented" aria-label="Estado de facturación">
+          <button class="active">Todo</button><button>Facturado</button><button>No facturado</button>
+        </div>
+        <span class="push muted">Edwards paga 5 nov &nbsp; BICE paga 12 nov</span>
+      </div>
+    </header>
+
+    <p class="option-note"><strong>Idea:</strong> desaparece el selector CLP/USD de la cabecera. La vista siempre muestra la deuda completa y permite bajar al detalle de cada moneda.</p>
+
+    <section class="hero card" aria-labelledby="total-title">
+      <div class="hero-main">
+        <span class="label" id="total-title">Deuda total estimada en pesos</span>
+        <div class="amount-xl">$1.056.288</div>
+        <div class="equation" aria-label="Composición de la deuda">
+          <strong class="clp">$611.461 CLP</strong>
+          <span class="symbol">+</span>
+          <strong class="usd">US$453,67</strong>
+          <span class="symbol">=</span>
+          <span>$444.827 equivalentes</span>
+        </div>
+        <p class="muted">El USD se convierte solo para planificación. La deuda real sigue separada por moneda.</p>
+      </div>
+      <div class="hero-side">
+        <div class="rate-field">
+          <label for="rate">Tipo de cambio para esta vista</label>
+          <input id="rate" value="980,508" inputmode="decimal" aria-describedby="rate-help">
+          <small class="muted-2" id="rate-help">No modifica los movimientos guardados</small>
+        </div>
+        <div class="coverage-box">
+          <span class="label">Cobertura total convertida</span>
+          <div class="coverage-line"><strong class="good">Cubierta</strong><strong class="mono">100%</strong></div>
+          <div class="progress"><span style="width:100%;background:var(--good)"></span></div>
+          <p class="good">El fondo CLP cubre toda la deuda estimada.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="kpi-grid" aria-label="Resumen financiero">
+      <article class="kpi card">
+        <span class="label">Fondo disponible</span>
+        <div class="amount-lg good">$1.120.034</div>
+        <p>Fondo común para ambas tarjetas</p>
+      </article>
+      <article class="kpi card">
+        <span class="label">Ya facturado</span>
+        <div class="amount-lg">$0</div>
+        <p>Todo corresponde al próximo estado</p>
+      </article>
+      <article class="kpi card">
+        <span class="label">Saldo después de cubrir</span>
+        <div class="amount-lg good">+$63.746</div>
+        <p>Considerando deuda CLP y USD convertida</p>
+      </article>
+    </section>
+
+    <section class="currency-breakdown" aria-label="Detalle por moneda">
+      <article class="currency-card card">
+        <div class="currency-head"><div><span class="label">Deuda en pesos</span><div class="amount-md clp">$611.461</div></div><span class="tag">CLP</span></div>
+        <div style="margin-top:18px" class="progress"><span style="width:58%;background:var(--clp)"></span></div>
+        <p class="muted">30 movimientos entre Edwards y BICE</p>
+      </article>
+      <article class="currency-card card">
+        <div class="currency-head"><div><span class="label">Deuda en dólares</span><div class="amount-md usd">US$453,67</div></div><span class="tag">USD</span></div>
+        <div style="margin-top:18px" class="progress"><span style="width:42%;background:var(--usd)"></span></div>
+        <p class="muted">Equivale a $444.827 para este cálculo</p>
+      </article>
+    </section>
+
+    <section class="card table-wrap" style="margin-top:12px" aria-labelledby="cards-title">
+      <h2 id="cards-title" class="card-title" style="padding:18px 14px 6px">Detalle por tarjeta</h2>
+      <table>
+        <thead><tr><th>Tarjeta</th><th>CLP</th><th>USD</th><th>Equivalente total</th><th>Próximo pago</th></tr></thead>
+        <tbody>
+          <tr><td>Edwards</td><td class="mono">$457.726</td><td class="mono usd">US$318,20</td><td class="mono">$769.736</td><td>5 nov</td></tr>
+          <tr><td>BICE</td><td class="mono">$153.735</td><td class="mono usd">US$135,47</td><td class="mono">$286.552</td><td>12 nov</td></tr>
+        </tbody>
+        <tfoot><tr><td>Total</td><td class="mono">$611.461</td><td class="mono usd">US$453,67</td><td class="mono">$1.056.288</td><td>2 pagos</td></tr></tfoot>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

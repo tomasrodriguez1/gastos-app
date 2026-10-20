@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opción 3: próximos pagos</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .status { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:20px; padding:20px 22px; border-color:#315e53; background:#10251f; }
+    .status h2 { margin:0 0 4px; font-size:18px; }
+    .status p { margin:0; color:#9cc6b8; }
+    .status strong { font:700 23px var(--mono); color:var(--good); }
+    .payment-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+    .payment-card { overflow:hidden; }
+    .payment-head { display:grid; grid-template-columns:auto 1fr auto; gap:14px; align-items:start; padding:20px; border-bottom:1px solid var(--line-soft); }
+    .date { display:grid; place-items:center; width:58px; height:58px; border:1px solid var(--line); border-radius:12px; background:#0e1620; text-align:center; }
+    .date strong { display:block; font:700 22px/1 var(--mono); }
+    .date span { color:var(--muted); font-size:10px; text-transform:uppercase; }
+    .payment-head h3 { margin:1px 0 4px; font-size:18px; }
+    .payment-head p { margin:0; color:var(--muted); font-size:12px; }
+    .payment-body { padding:18px 20px 20px; }
+    .currency-row { display:grid; grid-template-columns:1fr auto; align-items:center; gap:16px; padding:13px 0; border-top:1px solid var(--line-soft); }
+    .currency-row:first-child { padding-top:0; border-top:0; }
+    .currency-row span { display:block; color:var(--muted); font-size:12px; }
+    .currency-row strong { font:650 18px var(--mono); }
+    .reserve { display:flex; justify-content:space-between; gap:14px; margin-top:14px; padding:12px 14px; border-radius:10px; background:#0e161f; }
+    .reserve span { color:var(--muted); }
+    .secondary-zone { display:grid; grid-template-columns:1.05fr .95fr; gap:14px; margin-top:14px; }
+    .exposure { padding:20px; }
+    .exposure-main { display:flex; align-items:end; justify-content:space-between; gap:18px; }
+    .exposure-lines { display:grid; gap:9px; margin-top:18px; }
+    .exposure-line { display:grid; grid-template-columns:140px 1fr auto; align-items:center; gap:12px; }
+    .exposure-line .progress { height:6px; }
+    .plan { padding:20px; }
+    .plan h2 { margin:0 0 14px; font-size:16px; }
+    .plan-step { display:grid; grid-template-columns:30px 1fr auto; gap:10px; align-items:start; padding:11px 0; border-top:1px solid var(--line-soft); }
+    .plan-step b { display:grid; place-items:center; width:24px; height:24px; border-radius:7px; background:var(--accent-soft); color:#bfe7fd; font:650 11px var(--mono); }
+    .plan-step p { margin:0; color:var(--muted); font-size:12px; }
+    .plan-step strong { font-family:var(--mono); }
+    @media (max-width:900px) { .payment-grid, .secondary-zone { grid-template-columns:1fr; } }
+    @media (max-width:600px) { .status { grid-template-columns:1fr; } .payment-head { grid-template-columns:auto 1fr; } .payment-head .button { grid-column:1 / -1; } .exposure-main { align-items:start; flex-direction:column; } .exposure-line { grid-template-columns:100px 1fr; } .exposure-line strong { grid-column:2; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="prototype-bar" aria-label="Navegación de prototipos">
+      <strong>Opción 3: próximos pagos</strong>
+      <div class="prototype-links">
+        <a href="index.html">Índice</a>
+        <a href="opcion-1-total-consolidado.html">1. Consolidado</a>
+        <a href="opcion-2-dos-bolsillos.html">2. Dos bolsillos</a>
+        <a aria-current="page" href="opcion-3-calendario-pagos.html">3. Vencimientos</a>
+      </div>
+    </nav>
+
+    <header class="page-head">
+      <h1>Próximos pagos de tarjetas</h1>
+      <p>Primero muestra qué debes pagar, cuándo y en qué moneda. El total convertido queda como contexto secundario.</p>
+      <div class="toolbar">
+        <div class="segmented" aria-label="Tarjetas seleccionadas"><button class="active">Todas</button><button>Edwards</button><button>BICE</button></div>
+        <div class="segmented" aria-label="Vista"><button class="active">Próximos pagos</button><button>Todos los movimientos</button></div>
+        <button class="button secondary push">Configurar cierres</button>
+      </div>
+    </header>
+
+    <p class="option-note"><strong>Idea:</strong> la página deja de partir por “deuda” y parte por “obligaciones”. Así nunca parece que una moneda pequeña significa poca deuda total.</p>
+
+    <section class="status card" aria-label="Estado de cobertura">
+      <div><h2>Tus próximos vencimientos están cubiertos</h2><p>El fondo CLP alcanza para el pago en pesos. Falta definir cómo cubrir el saldo en USD.</p></div>
+      <strong>16 días</strong>
+    </section>
+
+    <section class="payment-grid" aria-label="Calendario de pagos">
+      <article class="payment-card card">
+        <div class="payment-head">
+          <div class="date"><strong>05</strong><span>nov</span></div>
+          <div><h3>Edwards</h3><p>Cierra el 22 oct. Pago más próximo.</p></div>
+          <button class="button">Ver movimientos</button>
+        </div>
+        <div class="payment-body">
+          <div class="currency-row"><div><span>Pago en pesos</span><strong class="clp">$457.726</strong></div><small class="good">cubierto</small></div>
+          <div class="currency-row"><div><span>Pago en dólares</span><strong class="usd">US$318,20</strong></div><small class="danger">sin fondo USD</small></div>
+          <div class="reserve"><span>Reserva equivalente necesaria</span><strong class="mono">$769.736</strong></div>
+        </div>
+      </article>
+
+      <article class="payment-card card">
+        <div class="payment-head">
+          <div class="date"><strong>12</strong><span>nov</span></div>
+          <div><h3>BICE</h3><p>Cierra el 24 oct. Segundo pago.</p></div>
+          <button class="button">Ver movimientos</button>
+        </div>
+        <div class="payment-body">
+          <div class="currency-row"><div><span>Pago en pesos</span><strong class="clp">$153.735</strong></div><small class="good">cubierto</small></div>
+          <div class="currency-row"><div><span>Pago en dólares</span><strong class="usd">US$135,47</strong></div><small class="danger">sin fondo USD</small></div>
+          <div class="reserve"><span>Reserva equivalente necesaria</span><strong class="mono">$286.552</strong></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="secondary-zone" aria-label="Exposición total y plan">
+      <article class="exposure card">
+        <div class="exposure-main">
+          <div><span class="label">Exposición total estimada</span><div class="amount-lg">$1.056.288</div></div>
+          <div class="rate-field"><label for="rate3">CLP por USD</label><input id="rate3" value="980,508" inputmode="decimal"></div>
+        </div>
+        <div class="exposure-lines">
+          <div class="exposure-line"><span>Pesos chilenos</span><div class="progress"><span style="width:58%;background:var(--clp)"></span></div><strong class="mono clp">$611.461</strong></div>
+          <div class="exposure-line"><span>Dólares</span><div class="progress"><span style="width:42%;background:var(--usd)"></span></div><strong class="mono usd">US$453,67</strong></div>
+        </div>
+        <p class="muted">La equivalencia ayuda a planificar. Cada banco puede cobrar CLP y USD por separado.</p>
+      </article>
+
+      <article class="plan card">
+        <h2>Plan para llegar al pago</h2>
+        <div class="plan-step"><b>1</b><div><strong>Reservar los CLP</strong><p>Ya están disponibles en el fondo común.</p></div><strong class="good">Listo</strong></div>
+        <div class="plan-step"><b>2</b><div><strong>Decidir cómo pagar USD</strong><p>Usar dólares o convertir parte del fondo CLP.</p></div><strong class="danger">Pendiente</strong></div>
+        <div class="plan-step"><b>3</b><div><strong>Registrar cada pago</strong><p>Uno por tarjeta y moneda cuando salga.</p></div><strong class="muted">5 y 12 nov</strong></div>
+      </article>
+    </section>
+
+    <section class="card table-wrap" style="margin-top:14px" aria-labelledby="pending-title">
+      <h2 id="pending-title" class="card-title" style="padding:18px 14px 6px">Movimientos incluidos en estos pagos</h2>
+      <table>
+        <thead><tr><th>Fecha</th><th>Tarjeta</th><th>Moneda</th><th>Estado</th><th>Monto</th></tr></thead>
+        <tbody>
+          <tr><td>19 oct</td><td>Edwards</td><td class="clp">CLP</td><td>No facturado</td><td class="mono">$128.990</td></tr>
+          <tr><td>18 oct</td><td>Edwards</td><td class="usd">USD</td><td>No facturado</td><td class="mono usd">US$192,40</td></tr>
+          <tr><td>17 oct</td><td>BICE</td><td class="clp">CLP</td><td>No facturado</td><td class="mono">$84.610</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

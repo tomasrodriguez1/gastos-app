@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opciones para Tarjetas</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .chooser { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:24px; }
+    .choice { display:flex; min-height:310px; flex-direction:column; padding:22px; text-decoration:none; transition:border-color .16s ease, transform .16s ease; }
+    .choice:hover { border-color:#47708c; transform:translateY(-2px); }
+    .choice h2 { margin:22px 0 8px; font-size:22px; letter-spacing:-.025em; }
+    .choice p { margin:0; color:var(--muted); }
+    .choice .mini { display:grid; gap:8px; margin-top:22px; }
+    .choice .mini span { display:block; height:35px; border:1px solid var(--line-soft); border-radius:9px; background:#0f1721; }
+    .choice .mini span:first-child { height:64px; background:#162432; }
+    .choice .go { margin-top:auto; padding-top:22px; color:#bfe7fd; }
+    @media (max-width:850px) { .chooser { grid-template-columns:1fr; } .choice { min-height:250px; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="prototype-bar">
+      <strong>Prototipos independientes, sin cambios en la app</strong>
+    </div>
+    <header class="page-head">
+      <h1>Tres formas de entender la deuda</h1>
+      <p>Las tres propuestas usan los mismos datos de ejemplo. Cambia la jerarquía: total consolidado, dos monedas en paralelo o próximos pagos.</p>
+    </header>
+    <section class="chooser" aria-label="Opciones de diseño">
+      <a class="choice card" href="opcion-1-total-consolidado.html">
+        <span class="label">Opción 1</span>
+        <h2>Total consolidado</h2>
+        <p>Una cifra principal en pesos y el origen CLP + USD siempre visible debajo.</p>
+        <div class="mini" aria-hidden="true"><span></span><span></span><span></span></div>
+        <span class="go">Abrir propuesta</span>
+      </a>
+      <a class="choice card" href="opcion-2-dos-bolsillos.html">
+        <span class="label">Opción 2</span>
+        <h2>Dos bolsillos</h2>
+        <p>CLP y USD conservan su independencia, con un resumen convertido como apoyo.</p>
+        <div class="mini" aria-hidden="true"><span></span><span></span><span></span></div>
+        <span class="go">Abrir propuesta</span>
+      </a>
+      <a class="choice card" href="opcion-3-calendario-pagos.html">
+        <span class="label">Opción 3</span>
+        <h2>Qué tengo que pagar</h2>
+        <p>Ordena la página por vencimiento y muestra cada obligación en su moneda real.</p>
+        <div class="mini" aria-hidden="true"><span></span><span></span><span></span></div>
+        <span class="go">Abrir propuesta</span>
+      </a>
+    </section>
+  </main>
+</body>
+</html>
+

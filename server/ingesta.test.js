@@ -77,7 +77,7 @@ describe('POST /api/ingesta', () => {
   })
 
   test.skipIf(!TOKEN)('mail conocido de Edwards parsea por regex -> pendiente, clasificado', async () => {
-    clasificarGastoMock.mockResolvedValueOnce({ tipos: ['Suscripcion'], contexto: 'Personal' })
+    clasificarGastoMock.mockResolvedValueOnce({ tipos: ['Suscripcion'], contexto: 'Trabajo' })
     const fuenteId = `test-edwards-${crypto.randomUUID()}`
     fuenteIdsCreados.push(fuenteId)
 
@@ -99,7 +99,7 @@ describe('POST /api/ingesta', () => {
     expect(gasto.banco).toBe('Edwards')
     expect(gasto.origen).toBe('mail')
     expect(gasto.tipos).toEqual(['Suscripcion'])
-    expect(gasto.contexto).toBe('Personal')
+    expect(gasto.contexto).toBe('Trabajo')
   })
 
   test.skipIf(!TOKEN)('comercio nuevo: si el agente clasifica, Groq no se llama', async () => {

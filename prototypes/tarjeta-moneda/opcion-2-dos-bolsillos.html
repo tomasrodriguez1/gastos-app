@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opción 2: dos bolsillos</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .ledger-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .ledger { overflow:hidden; }
+    .ledger.clp-ledger { border-top:3px solid var(--clp); }
+    .ledger.usd-ledger { border-top:3px solid var(--usd); }
+    .ledger-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; padding:22px; border-bottom:1px solid var(--line-soft); }
+    .currency-name { margin:0 0 6px; font-size:18px; }
+    .ledger-body { padding:20px 22px 22px; }
+    .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; margin:18px -22px 0; background:var(--line-soft); border-top:1px solid var(--line-soft); border-bottom:1px solid var(--line-soft); }
+    .stat { padding:14px 18px; background:var(--panel); }
+    .stat strong { display:block; font-family:var(--mono); font-size:16px; }
+    .coverage { margin-top:20px; }
+    .coverage-top { display:flex; justify-content:space-between; gap:12px; margin-bottom:8px; }
+    .conversion { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:20px; margin:14px 0; padding:17px 20px; }
+    .conversion .total { text-align:right; }
+    .conversion .total strong { display:block; font:700 26px var(--mono); }
+    .movements { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .movement-list { padding:18px 20px; }
+    .movement { display:grid; grid-template-columns:1fr auto; gap:14px; padding:12px 0; border-top:1px solid var(--line-soft); }
+    .movement:first-of-type { margin-top:12px; }
+    .movement small { display:block; color:var(--muted); }
+    @media (max-width:900px) { .ledger-grid, .movements { grid-template-columns:1fr; } .conversion { grid-template-columns:1fr; } .conversion .total { text-align:left; } }
+    @media (max-width:520px) { .stats { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="prototype-bar" aria-label="Navegación de prototipos">
+      <strong>Opción 2: dos bolsillos</strong>
+      <div class="prototype-links">
+        <a href="index.html">Índice</a>
+        <a href="opcion-1-total-consolidado.html">1. Consolidado</a>
+        <a aria-current="page" href="opcion-2-dos-bolsillos.html">2. Dos bolsillos</a>
+        <a href="opcion-3-calendario-pagos.html">3. Vencimientos</a>
+      </div>
+    </nav>
+
+    <header class="page-head">
+      <h1>Tarjetas de crédito</h1>
+      <p>Dos contabilidades visibles al mismo tiempo. Cada moneda mantiene su deuda, su fondo y su cobertura.</p>
+      <div class="toolbar">
+        <div class="segmented" aria-label="Tarjetas seleccionadas"><button class="active">Edwards</button><button class="active">BICE</button></div>
+        <div class="segmented" aria-label="Estado de facturación"><button class="active">Todo</button><button>Facturado</button><button>No facturado</button></div>
+        <button class="button secondary push">Registrar pago</button>
+      </div>
+    </header>
+
+    <p class="option-note"><strong>Idea:</strong> no existe una pestaña que esconda la otra moneda. La comparación principal es deuda contra fondo dentro de cada moneda.</p>
+
+    <section class="ledger-grid" aria-label="Deuda por moneda">
+      <article class="ledger clp-ledger card">
+        <div class="ledger-head">
+          <div><h2 class="currency-name">Pesos chilenos</h2><span class="muted">30 movimientos pendientes</span></div>
+          <span class="tag mono clp">CLP</span>
+        </div>
+        <div class="ledger-body">
+          <span class="label">Deuda pendiente</span>
+          <div class="amount-lg clp">$611.461</div>
+          <div class="stats">
+            <div class="stat"><span class="label">Facturado</span><strong>$0</strong></div>
+            <div class="stat"><span class="label">No facturado</span><strong>$611.461</strong></div>
+            <div class="stat"><span class="label">Fondo CLP</span><strong class="good">$1.120.034</strong></div>
+          </div>
+          <div class="coverage">
+            <div class="coverage-top"><strong class="good">Cubierto por completo</strong><span class="mono good">+$508.573</span></div>
+            <div class="progress"><span style="width:100%;background:var(--good)"></span></div>
+            <p class="muted">Sobran $508.573 en el fondo CLP después de cubrir esta deuda.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="ledger usd-ledger card">
+        <div class="ledger-head">
+          <div><h2 class="currency-name">Dólares</h2><span class="muted">Movimientos internacionales pendientes</span></div>
+          <span class="tag mono usd">USD</span>
+        </div>
+        <div class="ledger-body">
+          <span class="label">Deuda pendiente</span>
+          <div class="amount-lg usd">US$453,67</div>
+          <div class="stats">
+            <div class="stat"><span class="label">Facturado</span><strong>US$0</strong></div>
+            <div class="stat"><span class="label">No facturado</span><strong>US$453,67</strong></div>
+            <div class="stat"><span class="label">Fondo USD</span><strong class="warn">US$0</strong></div>
+          </div>
+          <div class="coverage">
+            <div class="coverage-top"><strong class="danger">Falta reservar</strong><span class="mono danger">US$453,67</span></div>
+            <div class="progress"><span style="width:0%;background:var(--good)"></span></div>
+            <p class="muted">El excedente CLP no se asume como fondo USD hasta convertirlo.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="conversion card" aria-label="Equivalencia referencial">
+      <div>
+        <strong>Vista referencial en CLP</strong>
+        <p class="muted" style="margin:4px 0 0">Sirve para dimensionar. No mezcla los fondos ni cambia la moneda de pago.</p>
+      </div>
+      <div class="rate-field"><label for="rate2">CLP por USD</label><input id="rate2" value="980,508" inputmode="decimal"></div>
+      <div class="total"><span class="label">Deuda equivalente</span><strong>$1.056.288</strong></div>
+    </section>
+
+    <div class="note">Atención: estás cubierto en CLP, pero todavía tienes US$453,67 sin fondo en dólares.</div>
+
+    <section class="movements" style="margin-top:14px" aria-label="Movimientos recientes por moneda">
+      <article class="movement-list card">
+        <h2 class="card-title">Últimos movimientos CLP</h2>
+        <div class="movement"><div><strong>Compra nacional</strong><small>Edwards, 19 oct</small></div><strong class="mono">$128.990</strong></div>
+        <div class="movement"><div><strong>Supermercado</strong><small>BICE, 17 oct</small></div><strong class="mono">$84.610</strong></div>
+        <div class="movement"><div><strong>Servicios</strong><small>Edwards, 15 oct</small></div><strong class="mono">$47.726</strong></div>
+      </article>
+      <article class="movement-list card">
+        <h2 class="card-title">Últimos movimientos USD</h2>
+        <div class="movement"><div><strong>Suscripción internacional</strong><small>Edwards, 18 oct</small></div><strong class="mono usd">US$192,40</strong></div>
+        <div class="movement"><div><strong>Compra online</strong><small>BICE, 12 oct</small></div><strong class="mono usd">US$135,47</strong></div>
+        <div class="movement"><div><strong>Servicio digital</strong><small>Edwards, 8 oct</small></div><strong class="mono usd">US$125,80</strong></div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

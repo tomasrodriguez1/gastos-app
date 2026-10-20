@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nuevas opciones para Tarjetas</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .chooser { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:24px; }
+    .choice { display:flex; min-height:300px; flex-direction:column; padding:22px; text-decoration:none; transition:border-color .16s ease, transform .16s ease; }
+    .choice:hover { border-color:#47708c; transform:translateY(-2px); }
+    .choice h2 { margin:22px 0 8px; font-size:22px; letter-spacing:-.025em; }
+    .choice p { margin:0; color:var(--muted); }
+    .choice dl { display:grid; grid-template-columns:1fr auto; gap:8px 12px; margin:22px 0 0; font-size:12px; }
+    .choice dt { color:var(--muted); }
+    .choice dd { margin:0; font-family:var(--mono); }
+    .choice .go { margin-top:auto; padding-top:22px; color:#bfe7fd; }
+    @media (max-width:850px) { .chooser { grid-template-columns:1fr; } .choice { min-height:250px; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="prototype-bar">
+      <strong>Segunda ronda: siempre Edwards + BICE</strong>
+      <div class="prototype-links"><a href="index.html">Ver primera ronda</a></div>
+    </div>
+    <header class="page-head">
+      <h1>Tres nuevas formas de comparar</h1>
+      <p>Todas eliminan el selector de banco, muestran la deuda global por moneda y dedican una sección estable a Edwards y otra a BICE.</p>
+    </header>
+    <section class="chooser" aria-label="Nuevas opciones de diseño">
+      <a class="choice card" href="opcion-4-global-bancos.html">
+        <span class="label">Opción 4</span>
+        <h2>Global primero</h2>
+        <p>Un total protagonista y, debajo, dos paneles bancarios completos.</p>
+        <dl><dt>CLP global</dt><dd class="clp">$611.461</dd><dt>USD global</dt><dd class="usd">US$453,67</dd></dl>
+        <span class="go">Abrir propuesta</span>
+      </a>
+      <a class="choice card" href="opcion-5-matriz-bancaria.html">
+        <span class="label">Opción 5</span>
+        <h2>Matriz bancaria</h2>
+        <p>CLP y USD dominan el encabezado; cada banco funciona como una fila comparable.</p>
+        <dl><dt>Edwards</dt><dd>CLP + USD</dd><dt>BICE</dt><dd>CLP + USD</dd></dl>
+        <span class="go">Abrir propuesta</span>
+      </a>
+      <a class="choice card" href="opcion-6-comparador.html">
+        <span class="label">Opción 6</span>
+        <h2>Comparador</h2>
+        <p>Dos columnas permanentes para entender rápidamente qué banco concentra cada deuda.</p>
+        <dl><dt>Mayor deuda CLP</dt><dd>Edwards</dd><dt>Próximo pago</dt><dd>5 nov</dd></dl>
+        <span class="go">Abrir propuesta</span>
+      </a>
+    </section>
+  </main>
+</body>
+</html>

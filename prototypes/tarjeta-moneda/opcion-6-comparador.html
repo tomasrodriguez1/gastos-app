@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opción 6: comparador de bancos</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .overview { display:grid; grid-template-columns:1fr auto; gap:22px; align-items:center; padding:22px; }
+    .debt-pair { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+    .debt-pair > div + div { padding-left:24px; border-left:1px solid var(--line); }
+    .debt-pair strong { display:block; font:700 28px var(--mono); }
+    .overview-total { min-width:230px; padding-left:22px; border-left:1px solid var(--line); text-align:right; }
+    .overview-total strong { display:block; font:700 30px var(--mono); }
+    .compare { display:grid; grid-template-columns:170px 1fr 1fr; margin-top:14px; overflow:hidden; }
+    .compare > * { border-top:1px solid var(--line-soft); }
+    .compare > :nth-child(-n+3) { border-top:0; }
+    .corner { padding:20px; background:#0f1721; }
+    .bank-title { padding:20px 22px; border-left:1px solid var(--line-soft); background:#101923; }
+    .bank-title h2 { margin:0 0 4px; font-size:21px; }
+    .bank-title p { margin:0; color:var(--muted); font-size:12px; }
+    .metric-label { display:flex; align-items:center; padding:18px 20px; color:var(--muted); font-weight:650; background:#0f1721; }
+    .metric { padding:18px 22px; border-left:1px solid var(--line-soft); }
+    .metric strong { display:block; font:700 23px var(--mono); }
+    .metric small { display:block; margin-top:4px; color:var(--muted); }
+    .next { display:inline-flex; margin-top:8px; padding:5px 8px; border-radius:7px; background:var(--accent-soft); color:#c8ebfe; font-size:11px; }
+    .footer-strip { display:grid; grid-template-columns:1fr 1fr auto; align-items:center; gap:18px; margin-top:14px; padding:17px 20px; }
+    .footer-strip strong { display:block; font-family:var(--mono); }
+    @media (max-width:760px) { .overview { grid-template-columns:1fr; } .overview-total { padding-top:18px; padding-left:0; border-top:1px solid var(--line); border-left:0; text-align:left; } .compare { grid-template-columns:110px 1fr 1fr; } .corner, .bank-title, .metric-label, .metric { padding:14px 12px; } .metric strong { font-size:18px; } .footer-strip { grid-template-columns:1fr; } }
+    @media (max-width:520px) { .debt-pair { grid-template-columns:1fr; gap:14px; } .debt-pair > div + div { padding-top:14px; padding-left:0; border-top:1px solid var(--line); border-left:0; } .compare { grid-template-columns:94px minmax(150px,1fr) minmax(150px,1fr); overflow-x:auto; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="prototype-bar" aria-label="Navegación de prototipos">
+      <strong>Opción 6: comparador</strong>
+      <div class="prototype-links"><a href="index-v2.html">Índice</a><a href="opcion-4-global-bancos.html">4. Global</a><a href="opcion-5-matriz-bancaria.html">5. Matriz</a><a aria-current="page" href="opcion-6-comparador.html">6. Comparador</a></div>
+    </nav>
+
+    <header class="page-head">
+      <h1>Tarjetas de crédito</h1>
+      <p>Una lectura comparativa: qué parte de cada moneda está en Edwards y qué parte está en BICE.</p>
+      <div class="toolbar">
+        <div class="segmented" aria-label="Estado de facturación"><button class="active">Todo</button><button>Facturado</button><button>No facturado</button></div>
+      </div>
+    </header>
+
+    <section class="overview card" aria-label="Resumen de deuda global">
+      <div class="debt-pair">
+        <div><span class="label">Deuda global CLP</span><strong class="clp">$611.461</strong><small class="muted">30 movimientos pendientes</small></div>
+        <div><span class="label">Deuda global USD</span><strong class="usd">US$453,67</strong><small class="muted">Equivale a $444.827</small></div>
+      </div>
+      <div class="overview-total"><span class="label">Total para planificar</span><strong>$1.056.288</strong><small class="good">Fondo común: $1.120.034</small></div>
+    </section>
+
+    <section class="compare card" aria-label="Comparación Edwards y BICE">
+      <div class="corner"><span class="label">Comparar</span></div>
+      <header class="bank-title"><h2>Edwards</h2><p>19 movimientos CLP</p><span class="next">Paga 5 nov</span></header>
+      <header class="bank-title"><h2>BICE</h2><p>11 movimientos CLP</p><span class="next">Paga 12 nov</span></header>
+
+      <div class="metric-label">Deuda CLP</div>
+      <div class="metric"><strong class="clp">$457.726</strong><small>75% del total CLP</small></div>
+      <div class="metric"><strong class="clp">$153.735</strong><small>25% del total CLP</small></div>
+
+      <div class="metric-label">Deuda USD</div>
+      <div class="metric"><strong class="usd">US$318,20</strong><small>70% del total USD</small></div>
+      <div class="metric"><strong class="usd">US$135,47</strong><small>30% del total USD</small></div>
+
+      <div class="metric-label">Equivalente</div>
+      <div class="metric"><strong>$769.736</strong><small>73% de la exposición</small></div>
+      <div class="metric"><strong>$286.552</strong><small>27% de la exposición</small></div>
+
+      <div class="metric-label">Estado</div>
+      <div class="metric"><strong class="warn">No facturado</strong><small>Próximo corte: 22 oct</small></div>
+      <div class="metric"><strong class="warn">No facturado</strong><small>Próximo corte: 24 oct</small></div>
+    </section>
+
+    <section class="footer-strip card">
+      <div><span class="label">Fondo común disponible</span><strong class="good">$1.120.034</strong></div>
+      <div><span class="label">Saldo estimado al cubrir todo</span><strong class="good">+$63.746</strong></div>
+      <div class="rate-field"><label for="rate6">CLP por USD</label><input id="rate6" value="980,508" inputmode="decimal"></div>
+    </section>
+  </main>
+</body>
+</html>

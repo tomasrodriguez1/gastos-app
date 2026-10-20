@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opción 5: matriz bancaria</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .global-grid { display:grid; grid-template-columns:1fr 1fr .75fr; gap:12px; }
+    .global-kpi { min-height:150px; padding:20px; }
+    .global-kpi .amount-lg { margin-top:5px; }
+    .global-kpi p { margin:10px 0 0; color:var(--muted); font-size:12px; }
+    .fund { background:#10241f; border-color:#2c554a; }
+    .bank-section { margin-top:14px; overflow:hidden; }
+    .bank-row { display:grid; grid-template-columns:210px 1fr 1fr 1fr 120px; align-items:stretch; }
+    .bank-row + .bank-row { border-top:1px solid var(--line); }
+    .bank-identity { padding:20px; background:#101923; }
+    .bank-identity h2 { margin:0 0 5px; font-size:20px; }
+    .bank-identity p { margin:0; color:var(--muted); font-size:12px; }
+    .cell { display:flex; flex-direction:column; justify-content:center; min-height:112px; padding:17px 20px; border-left:1px solid var(--line-soft); }
+    .cell strong { font:700 21px var(--mono); }
+    .cell small { margin-top:5px; color:var(--muted); }
+    .share { justify-content:center; text-align:center; background:#0f1721; }
+    .share strong { font-size:24px; }
+    .matrix-head { display:grid; grid-template-columns:210px 1fr 1fr 1fr 120px; padding:0 0 8px; color:var(--muted-2); font-size:10px; font-weight:650; letter-spacing:.07em; text-transform:uppercase; }
+    .matrix-head span { padding:0 20px; }
+    .actions { display:flex; justify-content:space-between; align-items:center; gap:14px; margin-top:14px; padding:16px 18px; }
+    @media (max-width:900px) { .global-grid { grid-template-columns:1fr 1fr; } .fund { grid-column:1 / -1; } .matrix-head { display:none; } .bank-row { grid-template-columns:1fr 1fr; } .bank-identity { grid-column:1 / -1; } .cell { border-top:1px solid var(--line-soft); border-left:0; } .cell:nth-child(even) { border-right:1px solid var(--line-soft); } }
+    @media (max-width:560px) { .global-grid, .bank-row { grid-template-columns:1fr; } .fund { grid-column:auto; } .bank-identity { grid-column:auto; } .cell:nth-child(even) { border-right:0; } .actions { align-items:flex-start; flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="prototype-bar" aria-label="Navegación de prototipos">
+      <strong>Opción 5: matriz bancaria</strong>
+      <div class="prototype-links"><a href="index-v2.html">Índice</a><a href="opcion-4-global-bancos.html">4. Global</a><a aria-current="page" href="opcion-5-matriz-bancaria.html">5. Matriz</a><a href="opcion-6-comparador.html">6. Comparador</a></div>
+    </nav>
+
+    <header class="page-head">
+      <h1>Tarjetas de crédito</h1>
+      <p>La lectura empieza por moneda y luego permite comparar los bancos usando siempre las mismas columnas.</p>
+      <div class="toolbar">
+        <div class="segmented" aria-label="Estado de facturación"><button class="active">Todo</button><button>Facturado</button><button>No facturado</button></div>
+        <button class="button secondary push">Registrar pago</button>
+      </div>
+    </header>
+
+    <section class="global-grid" aria-label="Totales globales">
+      <article class="global-kpi card">
+        <span class="label">Deuda total en pesos</span>
+        <div class="amount-lg clp">$611.461</div>
+        <div class="progress" style="margin-top:16px"><span style="width:58%;background:var(--clp)"></span></div>
+        <p>Edwards $457.726, BICE $153.735</p>
+      </article>
+      <article class="global-kpi card">
+        <span class="label">Deuda total en dólares</span>
+        <div class="amount-lg usd">US$453,67</div>
+        <div class="progress" style="margin-top:16px"><span style="width:42%;background:var(--usd)"></span></div>
+        <p>Edwards US$318,20, BICE US$135,47</p>
+      </article>
+      <article class="global-kpi fund card">
+        <span class="label">Fondo común</span>
+        <div class="amount-lg good">$1.120.034</div>
+        <p>Cubre $1.056.288 de deuda equivalente</p>
+      </article>
+    </section>
+
+    <section class="bank-section" aria-labelledby="matrix-title">
+      <h2 id="matrix-title" class="card-title" style="margin:24px 0 12px">Deuda por banco</h2>
+      <div class="matrix-head" aria-hidden="true"><span>Banco</span><span>CLP</span><span>USD</span><span>Total estimado</span><span>Peso</span></div>
+      <div class="card">
+        <article class="bank-row">
+          <div class="bank-identity"><h2>Edwards</h2><p>19 movimientos CLP. Paga 5 nov.</p></div>
+          <div class="cell"><span class="label">Deuda CLP</span><strong class="clp">$457.726</strong><small>Todo no facturado</small></div>
+          <div class="cell"><span class="label">Deuda USD</span><strong class="usd">US$318,20</strong><small>70% del USD global</small></div>
+          <div class="cell"><span class="label">Equivalente</span><strong>$769.736</strong><small>CLP + USD convertido</small></div>
+          <div class="cell share"><span class="label">Del total</span><strong>73%</strong></div>
+        </article>
+        <article class="bank-row">
+          <div class="bank-identity"><h2>BICE</h2><p>11 movimientos CLP. Paga 12 nov.</p></div>
+          <div class="cell"><span class="label">Deuda CLP</span><strong class="clp">$153.735</strong><small>Todo no facturado</small></div>
+          <div class="cell"><span class="label">Deuda USD</span><strong class="usd">US$135,47</strong><small>30% del USD global</small></div>
+          <div class="cell"><span class="label">Equivalente</span><strong>$286.552</strong><small>CLP + USD convertido</small></div>
+          <div class="cell share"><span class="label">Del total</span><strong>27%</strong></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="actions card">
+      <div><strong>Deuda global estimada: <span class="mono">$1.056.288</span></strong><div class="muted">Calculada con un tipo de cambio referencial de $980,508.</div></div>
+      <div class="rate-field"><label for="rate5">CLP por USD</label><input id="rate5" value="980,508" inputmode="decimal"></div>
+    </section>
+  </main>
+</body>
+</html>

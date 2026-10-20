@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opción 4: global primero</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .global { display:grid; grid-template-columns:1.1fr .9fr; overflow:hidden; }
+    .global-main { padding:26px; }
+    .global-side { padding:22px; border-left:1px solid var(--line); background:#101923; }
+    .global-sum { display:flex; align-items:center; flex-wrap:wrap; gap:9px; margin-top:13px; color:var(--muted); }
+    .global-sum strong { font:650 16px var(--mono); }
+    .currency-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:20px; }
+    .currency-kpi { padding:15px; border:1px solid var(--line-soft); border-radius:11px; background:#0e1620; }
+    .currency-kpi strong { display:block; font:700 21px var(--mono); }
+    .coverage-row { display:flex; justify-content:space-between; gap:12px; margin:12px 0 7px; }
+    .banks { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+    .bank { overflow:hidden; }
+    .bank-head { display:flex; justify-content:space-between; gap:14px; padding:18px 20px; border-bottom:1px solid var(--line-soft); }
+    .bank-head h2 { margin:0 0 3px; font-size:19px; }
+    .bank-head p { margin:0; color:var(--muted); font-size:12px; }
+    .bank-total { text-align:right; }
+    .bank-total strong { display:block; font:700 20px var(--mono); }
+    .bank-body { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--line-soft); }
+    .bank-kpi { padding:18px 20px; background:var(--panel); }
+    .bank-kpi strong { display:block; font:700 23px var(--mono); }
+    .bank-meta { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; padding:16px 20px; }
+    .bank-meta strong { display:block; margin-top:3px; font-family:var(--mono); }
+    .data-section { margin-top:22px; }
+    .section-head { display:flex; align-items:end; justify-content:space-between; gap:18px; margin-bottom:12px; }
+    .section-head h2 { margin:0 0 3px; font-size:19px; }
+    .section-head p { margin:0; color:var(--muted); font-size:12px; }
+    .filter-bar { display:flex; align-items:end; flex-wrap:wrap; gap:12px; padding:14px 16px; border-bottom:1px solid var(--line); background:#101923; }
+    .filter-group { display:grid; gap:5px; }
+    .filter-group > span { color:var(--muted-2); font-size:10px; font-weight:650; letter-spacing:.07em; text-transform:uppercase; }
+    .filter-summary { margin-left:auto; text-align:right; }
+    .filter-summary strong { display:block; font-family:var(--mono); }
+    .wide-table { min-width:1040px; }
+    .wide-table th, .wide-table td { white-space:nowrap; }
+    .wide-table .reason { min-width:240px; white-space:normal; text-align:left; }
+    .table-note { padding:10px 14px; border-top:1px solid var(--line-soft); color:var(--muted-2); font-size:11px; }
+    .state { display:inline-flex; padding:4px 7px; border-radius:7px; background:var(--warn-soft); color:var(--warn); font-size:11px; }
+    .currency-badge { display:inline-flex; min-width:42px; justify-content:center; padding:4px 6px; border-radius:7px; background:#1c2b3a; font:650 10px var(--mono); }
+    .fund-summary { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:18px; }
+    .fund-summary > div { text-align:right; }
+    .fund-summary strong { display:block; font-family:var(--mono); }
+    .fund-table { min-width:820px; }
+    .type-aporte { color:var(--good); }
+    @media (max-width:850px) { .global, .banks { grid-template-columns:1fr; } .global-side { border-top:1px solid var(--line); border-left:0; } }
+    @media (max-width:720px) { .section-head { align-items:flex-start; flex-direction:column; } .fund-summary { justify-content:flex-start; } .fund-summary > div { text-align:left; } .filter-summary { width:100%; margin-left:0; text-align:left; } }
+    @media (max-width:520px) { .currency-grid, .bank-body, .bank-meta { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="prototype-bar" aria-label="Navegación de prototipos">
+      <strong>Opción 4: global primero</strong>
+      <div class="prototype-links"><a href="index-v2.html">Índice</a><a aria-current="page" href="opcion-4-global-bancos.html">4. Global</a><a href="opcion-5-matriz-bancaria.html">5. Matriz</a><a href="opcion-6-comparador.html">6. Comparador</a></div>
+    </nav>
+
+    <header class="page-head">
+      <h1>Tarjetas de crédito</h1>
+      <p>La vista incluye siempre Edwards y BICE. Los filtros viven únicamente en la tabla de movimientos.</p>
+      <div class="toolbar"><span class="muted">Edwards y BICE incluidas siempre</span><span class="push muted">Actualizado hoy</span></div>
+    </header>
+
+    <section class="global card" aria-label="Resumen global de deuda">
+      <div class="global-main">
+        <span class="label">Deuda global estimada</span>
+        <div class="amount-xl">$1.056.288</div>
+        <div class="global-sum"><strong class="clp">$611.461 CLP</strong><span>+</span><strong class="usd">US$453,67</strong><span>convertidos a $444.827</span></div>
+        <div class="currency-grid">
+          <div class="currency-kpi"><span class="label">Deuda en CLP</span><strong class="clp">$611.461</strong><small class="muted">58% del total estimado</small></div>
+          <div class="currency-kpi"><span class="label">Deuda en USD</span><strong class="usd">US$453,67</strong><small class="muted">42% del total estimado</small></div>
+        </div>
+      </div>
+      <div class="global-side">
+        <span class="label">Fondo común de tarjetas</span>
+        <div class="amount-lg good">$1.120.034</div>
+        <div class="coverage-row"><strong class="good">Cubre el total estimado</strong><strong class="mono">106%</strong></div>
+        <div class="progress"><span style="width:100%;background:var(--good)"></span></div>
+        <p class="muted">Saldo estimado después de cubrir ambas monedas: <strong class="good mono">+$63.746</strong></p>
+        <div class="rate-field" style="margin-top:16px"><label for="rate4">Tipo de cambio referencial</label><input id="rate4" value="980,508" inputmode="decimal"></div>
+      </div>
+    </section>
+
+    <section class="banks" aria-label="Resumen por banco">
+      <article class="bank card">
+        <div class="bank-head"><div><h2>Edwards</h2><p>Cierra 22 oct. Paga 5 nov.</p></div><div class="bank-total"><span class="label">Total estimado</span><strong>$769.736</strong></div></div>
+        <div class="bank-body">
+          <div class="bank-kpi"><span class="label">Deuda CLP</span><strong class="clp">$457.726</strong><small class="muted">75% de la deuda CLP</small></div>
+          <div class="bank-kpi"><span class="label">Deuda USD</span><strong class="usd">US$318,20</strong><small class="muted">70% de la deuda USD</small></div>
+        </div>
+        <div class="bank-meta"><div><span class="label">Facturado</span><strong>$0</strong></div><div><span class="label">No facturado</span><strong>$769.736</strong></div><div><span class="label">Movimientos CLP</span><strong>19</strong></div></div>
+      </article>
+
+      <article class="bank card">
+        <div class="bank-head"><div><h2>BICE</h2><p>Cierra 24 oct. Paga 12 nov.</p></div><div class="bank-total"><span class="label">Total estimado</span><strong>$286.552</strong></div></div>
+        <div class="bank-body">
+          <div class="bank-kpi"><span class="label">Deuda CLP</span><strong class="clp">$153.735</strong><small class="muted">25% de la deuda CLP</small></div>
+          <div class="bank-kpi"><span class="label">Deuda USD</span><strong class="usd">US$135,47</strong><small class="muted">30% de la deuda USD</small></div>
+        </div>
+        <div class="bank-meta"><div><span class="label">Facturado</span><strong>$0</strong></div><div><span class="label">No facturado</span><strong>$286.552</strong></div><div><span class="label">Movimientos CLP</span><strong>11</strong></div></div>
+      </article>
+    </section>
+
+    <section class="data-section" aria-labelledby="movements-title">
+      <div class="section-head">
+        <div><h2 id="movements-title">Todos los movimientos pendientes</h2><p>Los filtros afectan solamente esta tabla. Los totales superiores siempre muestran la deuda completa.</p></div>
+      </div>
+      <div class="card">
+        <div class="filter-bar" aria-label="Filtros de movimientos">
+          <div class="filter-group">
+            <span>Banco</span>
+            <div class="segmented"><button class="active">Todos</button><button>Edwards</button><button>BICE</button></div>
+          </div>
+          <div class="filter-group">
+            <span>Moneda</span>
+            <div class="segmented"><button class="active">Todas</button><button>CLP</button><button>USD</button></div>
+          </div>
+          <div class="filter-group">
+            <span>Estado</span>
+            <div class="segmented"><button class="active">Todos</button><button>Facturado</button><button>No facturado</button></div>
+          </div>
+          <div class="filter-summary"><span class="label">Resultado</span><strong>34 movimientos</strong></div>
+        </div>
+        <div class="table-wrap">
+          <table class="wide-table">
+            <thead><tr><th>Fecha</th><th>Banco</th><th>Moneda</th><th class="reason">Motivo</th><th>Estado</th><th>Monto original</th><th>Equivalente CLP</th><th>Por cobrar</th><th>Budget</th></tr></thead>
+            <tbody>
+              <tr><td class="mono muted">19 oct</td><td>Edwards</td><td><span class="currency-badge clp">CLP</span></td><td class="reason">Compra nacional</td><td><span class="state">No facturado</span></td><td class="mono">$128.990</td><td class="mono">$128.990</td><td class="mono clp">$0</td><td>Incluido</td></tr>
+              <tr><td class="mono muted">18 oct</td><td>Edwards</td><td><span class="currency-badge usd">USD</span></td><td class="reason">Suscripción internacional</td><td><span class="state">No facturado</span></td><td class="mono usd">US$192,40</td><td class="mono">$188.650</td><td class="muted">No aplica</td><td>Incluido</td></tr>
+              <tr><td class="mono muted">17 oct</td><td>BICE</td><td><span class="currency-badge clp">CLP</span></td><td class="reason">Supermercado</td><td><span class="state">No facturado</span></td><td class="mono">$84.610</td><td class="mono">$84.610</td><td class="mono clp">$0</td><td>Incluido</td></tr>
+              <tr><td class="mono muted">12 oct</td><td>BICE</td><td><span class="currency-badge usd">USD</span></td><td class="reason">Compra online</td><td><span class="state">No facturado</span></td><td class="mono usd">US$135,47</td><td class="mono">$132.817</td><td class="muted">No aplica</td><td>Incluido</td></tr>
+              <tr><td class="mono muted">08 oct</td><td>Edwards</td><td><span class="currency-badge usd">USD</span></td><td class="reason">Servicio digital</td><td><span class="state">No facturado</span></td><td class="mono usd">US$125,80</td><td class="mono">$123.360</td><td class="muted">No aplica</td><td>Fuera</td></tr>
+              <tr><td class="mono muted">05 oct</td><td>BICE</td><td><span class="currency-badge clp">CLP</span></td><td class="reason">Compras del hogar</td><td><span class="state">No facturado</span></td><td class="mono">$69.125</td><td class="mono">$69.125</td><td class="mono clp">$18.000</td><td>Incluido</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-note">Prototipo: se muestran 6 filas representativas de un resultado de 34 movimientos.</div>
+      </div>
+    </section>
+
+    <section class="data-section" aria-labelledby="fund-title">
+      <div class="section-head">
+        <div><h2 id="fund-title">Aportes al fondo de tarjetas</h2><p>Historial del fondo común. No se reparte artificialmente entre Edwards y BICE.</p></div>
+        <div class="fund-summary">
+          <div><span class="label">Saldo CLP</span><strong class="good">$1.120.034</strong></div>
+          <div><span class="label">Saldo USD</span><strong class="usd">US$0</strong></div>
+          <button class="button">+ Aportar</button>
+        </div>
+      </div>
+      <div class="card table-wrap">
+        <table class="fund-table">
+          <thead><tr><th>Fecha</th><th>Tipo</th><th>Moneda</th><th>Origen o nota</th><th>Monto</th></tr></thead>
+          <tbody>
+            <tr><td class="mono muted">20 oct</td><td class="type-aporte">Aporte</td><td><span class="currency-badge clp">CLP</span></td><td>Ajuste con ingresos del ciclo</td><td class="mono good">+$929.745</td></tr>
+            <tr><td class="mono muted">13 oct</td><td class="type-aporte">Aporte</td><td><span class="currency-badge clp">CLP</span></td><td>Ajuste con ingresos</td><td class="mono good">+$86.160</td></tr>
+            <tr><td class="mono muted">08 oct</td><td class="type-aporte">Aporte</td><td><span class="currency-badge clp">CLP</span></td><td>Traspaso desde FGP</td><td class="mono good">+$19.900</td></tr>
+            <tr><td class="mono muted">08 oct</td><td class="type-aporte">Aporte</td><td><span class="currency-badge clp">CLP</span></td><td>Traspaso desde FGP</td><td class="mono good">+$14.050</td></tr>
+            <tr><td class="mono muted">05 oct</td><td class="type-aporte">Aporte</td><td><span class="currency-badge clp">CLP</span></td><td>Últimos gastos previstos</td><td class="mono good">+$33.950</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
