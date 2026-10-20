@@ -8,6 +8,7 @@ import {
   calcularSaldoFondo,
   calcularTotalMes,
   calcularVelocidadDiaria,
+  calcularTendenciasCategorias,
   montoDelCiclo,
   montoPresupuestable,
   SIN_CLASIFICAR,
@@ -173,5 +174,48 @@ describe('ingresos reales y saldos del Dashboard (DEC-020)', () => {
   test('sin resumen todavía devuelve null; fondos ausentes cuentan 0', () => {
     expect(calcularSaldosCiclo(null, 5)).toBeNull()
     expect(calcularSaldosCiclo({ totales: { previsto: 0, real: 10, esperado: 10, por_aprobar: 0 } }, 4)).toMatchObject({ fondos: 0, saldoReal: 6, saldoEsperado: 6 })
+  })
+})
+
+describe('tendencias por categoría', () => {
+  const meses = ['2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09']
+  const serie = (grupo, montos) => meses.flatMap((ciclo, i) => (
+    montos[i] > 0
+      ? [gasto(`${ciclo}-10`, ciclo, montos[i], { presupuesto_manual: { grupo, subcategoria: 'Otros' } })]
+      : []
+  ))
+
+  test('un ciclo que explica el salto queda marcado como pico', () => {
+    const salud = calcularTendenciasCategorias(
+      serie('SALUD', [5000, 10000, 8000, 20000, 200000, 15000]),
+      '2026-09',
+      6,
+    ).find(fila => fila.grupo === 'SALUD')
+    expect(salud.pico).toBe(true)
+    expect(salud.picoMes).toBe('2026-08')
+    expect(salud.direccion).toBe('alza')
+    expect(salud.delta).toBeGreaterThan(10000)
+  })
+
+  test('un viaje puntual en la mitad vieja es un pico a la baja', () => {
+    const viajes = calcularTendenciasCategorias(
+      serie('VIAJES', [0, 400000, 0, 0, 0, 0]),
+      '2026-09',
+      6,
+    ).find(fila => fila.grupo === 'VIAJES')
+    expect(viajes.pico).toBe(true)
+    expect(viajes.picoMes).toBe('2026-05')
+    expect(viajes.direccion).toBe('baja')
+  })
+
+  test('una baja repartida en los tres ciclos recientes no es pico', () => {
+    const comida = calcularTendenciasCategorias(
+      serie('COMIDA', [200000, 180000, 190000, 40000, 30000, 35000]),
+      '2026-09',
+      6,
+    ).find(fila => fila.grupo === 'COMIDA')
+    expect(comida.pico).toBe(false)
+    expect(comida.direccion).toBe('baja')
+    expect(Math.round(comida.delta)).toBe(-155000)
   })
 })

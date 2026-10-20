@@ -5,6 +5,20 @@ export function formatCLP(amount) {
   return amount < 0 ? `-$${formatted}` : `$${formatted}`
 }
 
+export function formatEjeCLP(amount) {
+  const valor = amount || 0
+  const abs = Math.abs(valor)
+  if (abs >= 1_000_000) {
+    const millones = valor / 1_000_000
+    const texto = Number.isInteger(millones)
+      ? String(millones)
+      : millones.toFixed(1).replace('.', ',')
+    return `$${texto}M`
+  }
+  if (abs >= 10_000) return `$${Math.round(valor / 1000)}k`
+  return formatCLP(valor)
+}
+
 export function privacyFormat(monto, isPrivate) {
   return isPrivate ? '••••••' : formatCLP(monto)
 }

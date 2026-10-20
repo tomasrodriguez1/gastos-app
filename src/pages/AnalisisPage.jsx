@@ -6,7 +6,6 @@ import { TendenciasCategorias } from '../components/Analisis/TendenciasCategoria
 import { GastosRecurrentes } from '../components/Analisis/GastosRecurrentes'
 import { GraficoEvolucionPresupuesto } from '../components/Dashboard/GraficoEvolucionPresupuesto'
 import { GraficoTendencia } from '../components/Dashboard/GraficoTendencia'
-import { GraficoTendenciaCategoria } from '../components/Dashboard/GraficoTendenciaCategoria'
 import { obtenerCicloActual } from '../utils/ciclos'
 
 export function AnalisisPage({ gastos, ciclos }) {
@@ -31,8 +30,6 @@ export function AnalisisPage({ gastos, ciclos }) {
       <ComparadorMensual gastos={gastos} mes={ciclo} />
 
       <TendenciasCategorias gastos={gastos} mes={ciclo} />
-
-      <GraficoTendenciaCategoria gastos={gastos} mesActual={ciclo} />
 
       <GastosRecurrentes gastos={gastos} />
     </main>

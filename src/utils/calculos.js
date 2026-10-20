@@ -368,6 +368,32 @@ function promedioArr(valores) {
   return valores.length ? valores.reduce((a, b) => a + b, 0) / valores.length : 0
 }
 
+// Un solo ciclo explica el salto entre mitades cuando, al reemplazarlo por el
+// promedio del resto de su mitad, el delta se reduce al menos un 60%.
+function indicePico(valores, mitad) {
+  const anterior = valores.slice(0, mitad)
+  const reciente = valores.slice(mitad)
+  const promAnterior = promedioArr(anterior)
+  const promReciente = promedioArr(reciente)
+  const delta = promReciente - promAnterior
+  if (Math.abs(delta) < 10000 || mitad < 1 || reciente.length < 1) return -1
+
+  const subio = delta > 0
+  const lado = subio ? reciente : anterior
+  const offset = subio ? mitad : 0
+  let maxI = 0
+  for (let i = 1; i < lado.length; i++) {
+    if (lado[i] > lado[maxI]) maxI = i
+  }
+  const otros = lado.filter((_, i) => i !== maxI)
+  const ladoSin = lado.map((valor, i) => (i === maxI ? promedioArr(otros) : valor))
+  const deltaSin = subio
+    ? promedioArr(ladoSin) - promAnterior
+    : promReciente - promedioArr(ladoSin)
+  const reduccion = 1 - Math.abs(deltaSin) / Math.abs(delta)
+  return reduccion >= 0.6 ? offset + maxI : -1
+}
+
 // Compara un mes contra el anterior y contra el promedio de los `ventana` meses previos (solo meses con datos).
 export function calcularComparadorMensual(gastos, mes, ventana = 6) {
   const mesAnterior = obtenerMesAnterior(mes)
@@ -416,9 +442,11 @@ export function calcularComparadorMensual(gastos, mes, ventana = 6) {
 }
 
 // Dirección de cada categoría: promedio de la mitad reciente de la serie vs la mitad anterior.
+// `pico` marca cuando un solo ciclo explica la mayor parte de ese salto.
 export function calcularTendenciasCategorias(gastos, mesHasta, cantidad = 6) {
   const { meses, grupos } = calcularTendenciaPorGrupo(gastos, mesHasta, cantidad)
   const mitad = Math.floor(meses.length / 2)
+  const etiquetas = meses.map(row => row.mes)
   return grupos
     .map(grupo => {
       const valores = meses.map(row => row[grupo] || 0)
@@ -430,7 +458,20 @@ export function calcularTendenciasCategorias(gastos, mesHasta, cantidad = 6) {
       let direccion = 'estable'
       if (pct >= 15 && delta >= 10000) direccion = 'alza'
       else if (pct <= -15 && delta <= -10000) direccion = 'baja'
-      return { grupo, valores, promedio, promReciente, promAnterior, delta, pct, direccion }
+      const picoIdx = indicePico(valores, mitad)
+      return {
+        grupo,
+        valores,
+        meses: etiquetas,
+        promedio,
+        promReciente,
+        promAnterior,
+        delta,
+        pct,
+        direccion,
+        pico: picoIdx >= 0,
+        picoMes: picoIdx >= 0 ? etiquetas[picoIdx] : null,
+      }
     })
     .sort((a, b) => b.promedio - a.promedio)
 }

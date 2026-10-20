@@ -1,8 +1,9 @@
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
-import { calcularUltimosMeses } from '../../utils/calculos'
-import { formatCLP, formatMes } from '../../utils/formatters'
+import { calcularUltimosMeses, obtenerMesAnterior } from '../../utils/calculos'
+import { formatCLP, formatEjeCLP, formatMes } from '../../utils/formatters'
+import { obtenerCicloActual } from '../../utils/ciclos'
 
 function TooltipCustom({ active, payload, label }) {
   if (!active || !payload?.length) return null
@@ -17,7 +18,9 @@ function TooltipCustom({ active, payload, label }) {
 }
 
 export function GraficoTendencia({ gastos, mesActual }) {
-  const datos = calcularUltimosMeses(gastos, mesActual, 6)
+  const cicloAbierto = mesActual === obtenerCicloActual()
+  const mesHasta = cicloAbierto ? obtenerMesAnterior(mesActual) : mesActual
+  const datos = calcularUltimosMeses(gastos, mesHasta, 6)
   const data = datos.map(d => ({
     mes: formatMes(d.mes),
     total: d.total,
@@ -25,9 +28,12 @@ export function GraficoTendencia({ gastos, mesActual }) {
 
   return (
     <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-      <h3 className="text-sm font-medium text-slate-400 mb-4 uppercase tracking-wider">
+      <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">
         Tendencia últimos 6 ciclos
       </h3>
+      <p className="mt-1 mb-4 text-xs text-slate-500">
+        Hasta {formatMes(mesHasta)}{cicloAbierto ? ', sin el ciclo en curso' : ''}
+      </p>
       <ResponsiveContainer width="100%" height={200}>
         <LineChart data={data} margin={{ left: 8, right: 16, top: 8, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
@@ -39,10 +45,10 @@ export function GraficoTendencia({ gastos, mesActual }) {
           />
           <YAxis
             tick={{ fill: '#64748b', fontSize: 11 }}
-            tickFormatter={v => `$${(v / 1000).toFixed(0)}k`}
+            tickFormatter={formatEjeCLP}
             axisLine={false}
             tickLine={false}
-            width={55}
+            width={58}
           />
           <Tooltip content={<TooltipCustom />} cursor={{ stroke: '#334155' }} />
           <Line
