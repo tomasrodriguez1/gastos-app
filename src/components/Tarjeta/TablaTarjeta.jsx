@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { getGastoId } from '../../utils/gastosIds'
 import { formatCLP, formatFecha } from '../../utils/formatters'
 import { EditarAsignacion } from '../Gastos/EditarAsignacion'
@@ -18,6 +18,11 @@ function monedaGasto(gasto) {
 
 function montoGasto(gasto) {
   return monedaGasto(gasto) === 'USD' ? Number(gasto.usd) || 0 : Number(gasto.monto) || 0
+}
+
+function sumarMontos(gastos) {
+  const total = gastos.reduce((suma, gasto) => suma + montoGasto(gasto), 0)
+  return monedaGasto(gastos[0] || {}) === 'USD' ? Math.round(total * 100) / 100 : Math.round(total)
 }
 
 function equivalenteClp(gasto, tipoCambio) {
@@ -78,51 +83,84 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
   const [valorSplit, setValorSplit] = useState('')
   const [procesando, setProcesando] = useState(false)
   const [error, setError] = useState('')
+  const ultimaSeleccionRef = useRef(null)
 
-  const gastosFiltrados = useMemo(() => gastos.filter(gasto => {
+  const filas = useMemo(() => gastos.map((gasto, indice) => ({ gasto, id: getGastoId(gasto, indice) })), [gastos])
+  const filasFiltradas = useMemo(() => filas.filter(({ gasto }) => {
     if (filtroBanco !== 'Todos' && gasto.banco !== filtroBanco) return false
     if (filtroMoneda !== 'Todas' && monedaGasto(gasto) !== filtroMoneda) return false
     if (filtroFacturado === 'facturado' && gasto.facturado !== true) return false
     if (filtroFacturado === 'no_facturado' && gasto.facturado !== false) return false
     return true
-  }), [gastos, filtroBanco, filtroMoneda, filtroFacturado])
+  }), [filas, filtroBanco, filtroMoneda, filtroFacturado])
 
-  const seleccion = useMemo(() => gastos.filter((gasto, indice) => seleccionados.has(getGastoId(gasto, indice))), [gastos, seleccionados])
+  const seleccion = useMemo(() => filas.filter(({ id }) => seleccionados.has(id)).map(({ gasto }) => gasto), [filas, seleccionados])
   const idsSeleccionados = seleccion.map(gasto => gasto.id)
   const bancosSeleccion = [...new Set(seleccion.map(gasto => gasto.banco))]
   const monedasSeleccion = [...new Set(seleccion.map(monedaGasto))]
   const bancoUnico = bancosSeleccion.length === 1 ? bancosSeleccion[0] : null
   const monedaUnica = monedasSeleccion.length === 1 ? monedasSeleccion[0] : null
-  const totalSeleccionado = seleccion.reduce((suma, gasto) => suma + montoGasto(gasto), 0)
-  const idsFiltrados = gastosFiltrados.map((gasto, indice) => getGastoId(gasto, indice))
+  const totalSeleccionado = sumarMontos(seleccion)
+  const idsFiltrados = filasFiltradas.map(({ id }) => id)
   const todosMarcados = idsFiltrados.length > 0 && idsFiltrados.every(id => seleccionados.has(id))
   const puedeSeleccionarTodos = filtroBanco !== 'Todos' && filtroMoneda !== 'Todas'
+  const gruposFacturados = useMemo(() => BANCOS.flatMap(banco => MONEDAS.map(moneda => {
+    const grupo = filas.filter(({ gasto }) => gasto.facturado === true && gasto.banco === banco && monedaGasto(gasto) === moneda)
+    return {
+      banco,
+      moneda,
+      ids: grupo.map(({ id }) => id),
+      total: sumarMontos(grupo.map(({ gasto }) => gasto)),
+    }
+  })).filter(grupo => grupo.ids.length > 0), [filas])
+
+  function aplicarSeleccion(ids, ultimoId = null) {
+    const next = new Set(ids)
+    const seleccionadosAhora = filas.filter(({ id }) => next.has(id)).map(({ gasto }) => gasto)
+    setSeleccionados(next)
+    setTotalOperacion(seleccionadosAhora.length > 0 ? String(sumarMontos(seleccionadosAhora)) : '')
+    ultimaSeleccionRef.current = ultimoId
+    setError('')
+  }
 
   function cambiarFiltro(setter, valor) {
     setter(valor)
-    setSeleccionados(new Set())
-    setTotalOperacion('')
-    setError('')
+    aplicarSeleccion([])
   }
 
-  function toggleSeleccion(id) {
-    setSeleccionados(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-    setError('')
+  function toggleSeleccion(id, conRango = false) {
+    const filaObjetivo = filasFiltradas.find(fila => fila.id === id)
+    if (!filaObjetivo) return
+    const monedaObjetivo = monedaGasto(filaObjetivo.gasto)
+    const seleccionMismoGrupo = seleccion.every(gasto => gasto.banco === filaObjetivo.gasto.banco && monedaGasto(gasto) === monedaObjetivo)
+    const next = seleccionMismoGrupo ? new Set(seleccionados) : new Set()
+    const marcar = !next.has(id)
+    let idsObjetivo = [id]
+
+    if (conRango && ultimaSeleccionRef.current) {
+      const desde = filasFiltradas.findIndex(fila => fila.id === ultimaSeleccionRef.current)
+      const hasta = filasFiltradas.findIndex(fila => fila.id === id)
+      if (desde >= 0 && hasta >= 0) {
+        idsObjetivo = filasFiltradas
+          .slice(Math.min(desde, hasta), Math.max(desde, hasta) + 1)
+          .filter(({ gasto }) => gasto.banco === filaObjetivo.gasto.banco && monedaGasto(gasto) === monedaObjetivo)
+          .map(({ id: filaId }) => filaId)
+      }
+    }
+
+    idsObjetivo.forEach(filaId => marcar ? next.add(filaId) : next.delete(filaId))
+    aplicarSeleccion(next, id)
   }
 
   function toggleTodos() {
-    setSeleccionados(prev => {
-      const next = new Set(prev)
-      if (todosMarcados) idsFiltrados.forEach(id => next.delete(id))
-      else idsFiltrados.forEach(id => next.add(id))
-      return next
-    })
-    setError('')
+    aplicarSeleccion(todosMarcados ? [] : idsFiltrados, idsFiltrados.at(-1) || null)
+  }
+
+  function seleccionarGrupoFacturado(grupo) {
+    setFiltroBanco(grupo.banco)
+    setFiltroMoneda(grupo.moneda)
+    setFiltroFacturado('facturado')
+    aplicarSeleccion(grupo.ids, grupo.ids.at(-1) || null)
   }
 
   async function registrarPago() {
@@ -134,8 +172,7 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
     setError('')
     try {
       await onPagar(bancoUnico, monedaUnica, idsSeleccionados, Number(totalOperacion))
-      setSeleccionados(new Set())
-      setTotalOperacion('')
+      aplicarSeleccion([])
     } catch (e) {
       const detalle = e.detalle
       const diferencia = detalle?.diferencia != null ? ` Diferencia: ${formatMonto(detalle.diferencia, monedaUnica)}.` : ''
@@ -194,8 +231,31 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
           </div>
           <div className="ml-auto text-right text-xs text-slate-500">
             <div>Resultado</div>
-            <div className="font-mono-numbers font-semibold text-slate-300">{gastosFiltrados.length} movimientos</div>
+            <div className="font-mono-numbers font-semibold text-slate-300">{filasFiltradas.length} movimientos</div>
           </div>
+        </div>
+      </div>
+
+      <div className="border-b border-slate-700/50 bg-slate-950/15 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="mr-1">
+            <div className="text-[10px] uppercase tracking-wider text-slate-600">Seleccionar facturados</div>
+            <div className="mt-0.5 text-[11px] text-slate-600">El total queda listo para registrar</div>
+          </div>
+          {gruposFacturados.map(grupo => (
+            <button
+              type="button"
+              key={`${grupo.banco}-${grupo.moneda}`}
+              onClick={() => seleccionarGrupoFacturado(grupo)}
+              className="rounded-lg border border-slate-700/60 bg-slate-900/70 px-3 py-1.5 text-left transition-colors hover:border-sky-500/40 hover:bg-sky-500/10 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/50"
+              title={`Seleccionar los ${grupo.ids.length} movimientos facturados de ${grupo.banco} en ${grupo.moneda}`}
+            >
+              <span className="block text-[11px] font-medium text-slate-300">{grupo.banco} · {grupo.moneda}</span>
+              <span className="mt-0.5 block font-mono-numbers text-[10px] text-slate-600">{grupo.ids.length} mov · {formatMonto(grupo.total, grupo.moneda)}</span>
+            </button>
+          ))}
+          {gruposFacturados.length === 0 && <span className="text-xs text-slate-600">No hay movimientos facturados.</span>}
+          {seleccion.length > 0 && <button type="button" onClick={() => aplicarSeleccion([])} className="ml-auto text-[11px] text-slate-500 transition-colors hover:text-slate-300">Limpiar selección</button>}
         </div>
       </div>
 
@@ -240,13 +300,12 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-700/30">
-            {gastosFiltrados.map((gasto, indice) => {
-              const id = getGastoId(gasto, indice)
+            {filasFiltradas.map(({ gasto, id }) => {
               const moneda = monedaGasto(gasto)
               const equivalente = equivalenteClp(gasto, tipoCambio)
               return (
                 <tr key={id} onClick={event => abrirEdicion(gasto, event)} className={`cursor-pointer ${seleccionados.has(id) ? 'bg-sky-500/[0.04]' : 'hover:bg-white/[0.02]'}`}>
-                  <td data-accion className="px-3 py-2.5 text-center"><input type="checkbox" checked={seleccionados.has(id)} onChange={() => toggleSeleccion(id)} aria-label={`Seleccionar ${gasto.motivo}`} /></td>
+                  <td data-accion className="px-3 py-2.5 text-center"><input type="checkbox" checked={seleccionados.has(id)} onChange={event => toggleSeleccion(id, event.nativeEvent.shiftKey)} title="Shift + clic para seleccionar un rango" aria-label={`Seleccionar ${gasto.motivo}`} /></td>
                   <td className="px-3 py-2.5 font-mono-numbers text-xs text-slate-500">{formatFecha(gasto.fecha)}</td>
                   <td className="px-3 py-2.5 text-xs text-slate-400">{gasto.banco}</td>
                   <td className="px-3 py-2.5 text-center"><span className={`rounded-md bg-slate-700/40 px-2 py-1 font-mono-numbers text-[10px] font-semibold ${moneda === 'USD' ? 'text-violet-300' : 'text-sky-300'}`}>{moneda}</span></td>
@@ -271,7 +330,7 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
             })}
           </tbody>
         </table>
-        {gastosFiltrados.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No hay movimientos para estos filtros.</div>}
+        {filasFiltradas.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No hay movimientos para estos filtros.</div>}
       </div>
 
       {editando && <EditarAsignacion gasto={editando} onGuardar={guardarEdicion} onCerrar={() => setEditando(null)} catalogos={catalogos} nombresFondos={nombresFondos} />}
