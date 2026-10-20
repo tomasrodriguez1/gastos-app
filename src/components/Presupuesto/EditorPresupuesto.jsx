@@ -100,7 +100,7 @@ const COLOR_TEXT = {
 }
 
 
-export function EditorPresupuesto({ mes, presupuestoMes, gastos, onGuardar, onNuevaSubcategoria, fuentesIngreso = [] }) {
+export function EditorPresupuesto({ mes, presupuestoMes, gastos, onGuardar, onNuevaSubcategoria, fuentesIngreso = [], resumenIngresos = null }) {
   const [datos, setDatos] = useState(presupuestoMes)
   const [guardado, setGuardado] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -203,6 +203,16 @@ export function EditorPresupuesto({ mes, presupuestoMes, gastos, onGuardar, onNu
   }
 
   const totalIngresos = calcularTotalIngresos(datos)
+  const ingresosRealesPorFuente = new Map(
+    (resumenIngresos?.fuentes || [])
+      .filter(f => f.tipo !== 'fondos')
+      .map(f => [f.nombre.toLocaleLowerCase(), f])
+  )
+  const fuentesVisibles = [...new Set([
+    ...fuentesIngreso,
+    ...Object.keys(datos?.ingresos || {}),
+    ...(resumenIngresos?.fuentes || []).filter(f => f.tipo !== 'fondos').map(f => f.nombre),
+  ])]
   const totalPrevisto = calcularTotalPrevisto(datos)
   const totalReal = Object.entries(datos?.categorias || {}).reduce((sum, [grupo, gData]) => {
     return sum + calcularRealGrupoDesdeSubcategorias(grupo, gData)
@@ -212,20 +222,52 @@ export function EditorPresupuesto({ mes, presupuestoMes, gastos, onGuardar, onNu
     <div className="space-y-6">
       {/* Ingresos + Resumen — fila superior */}
       <div className="flex flex-col lg:flex-row gap-4 items-stretch">
-        {/* Ingresos — 30% en desktop, full en mobile */}
-        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 lg:w-[30%] lg:shrink-0">
-          <h3 className="text-sm font-medium text-slate-400 mb-4 uppercase tracking-wider">Ingresos previstos</h3>
+        {/* Ingresos planificados y reales — ambos conceptos se muestran juntos, sin sobrescribir el plan. */}
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 lg:w-[38%] lg:shrink-0">
+          <div className="flex items-end justify-between gap-3 mb-3">
+            <div>
+              <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">Ingresos del ciclo</h3>
+              <p className="text-[11px] text-slate-600 mt-1">El real se actualiza al registrar o aprobar un ingreso.</p>
+            </div>
+            <div className="hidden sm:grid grid-cols-2 gap-3 text-[10px] text-slate-600 uppercase tracking-wider text-right shrink-0">
+              <span className="w-24 sm:w-32">Previsto</span>
+              <span className="w-24">Real</span>
+            </div>
+          </div>
           <div className="space-y-2">
-            {/* Las fuentes del catálogo aparecen siempre (aunque el ciclo no tenga monto) para poder planificarlas. */}
-            {[...new Set([...fuentesIngreso, ...Object.keys(datos?.ingresos || {})])].map((fuente) => (
-              <div key={fuente} className="flex items-center justify-between gap-4">
-                <span className="text-sm text-slate-300 w-40">{fuente}</span>
-                <InputMonto value={datos?.ingresos?.[fuente] ?? 0} onChange={val => setIngreso(fuente, val)} />
-              </div>
-            ))}
-            <div className="flex items-center justify-between gap-4 pt-2 border-t border-slate-700/50">
+            {/* Catálogo, filas planificadas y fuentes con ingresos reales aparecen aunque alguno de los lados sea cero. */}
+            {fuentesVisibles.map((fuente) => {
+              const real = ingresosRealesPorFuente.get(fuente.toLocaleLowerCase())
+              return (
+                <div key={fuente} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3">
+                  <span className="text-sm text-slate-300 truncate" title={fuente}>{fuente}</span>
+                  <InputMonto value={datos?.ingresos?.[fuente] ?? 0} onChange={val => setIngreso(fuente, val)} />
+                  <div className="w-24 text-right">
+                    <span className={`font-mono-numbers text-sm ${real?.real ? 'text-emerald-400' : 'text-slate-600'}`}>
+                      {real?.real ? formatCLP(real.real) : '—'}
+                    </span>
+                    {real?.por_aprobar > 0 && (
+                      <p className="font-mono-numbers text-[10px] text-amber-300" title="Todavía no cuenta como ingreso real">
+                        +{formatCLP(real.por_aprobar)} por aprobar
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 pt-2 border-t border-slate-700/50">
               <span className="text-sm font-medium text-slate-300">Total ingresos</span>
-              <span className="font-mono-numbers font-bold text-emerald-400">{formatCLP(totalIngresos)}</span>
+              <span className="font-mono-numbers font-bold text-slate-300 w-24 sm:w-32 text-right">{formatCLP(totalIngresos)}</span>
+              <div className="w-24 text-right">
+                <span className="font-mono-numbers font-bold text-emerald-400">
+                  {resumenIngresos ? formatCLP(resumenIngresos.totales.real) : '…'}
+                </span>
+                {resumenIngresos?.totales.por_aprobar > 0 && (
+                  <p className="font-mono-numbers text-[10px] text-amber-300">
+                    +{formatCLP(resumenIngresos.totales.por_aprobar)} por aprobar
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </div>
