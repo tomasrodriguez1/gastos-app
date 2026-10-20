@@ -222,8 +222,10 @@ CREATE TABLE IF NOT EXISTS tarjeta_ciclo (
 );
 
 -- ─── FONDO DE TARJETAS ──────────────────────────────────────────────────────
--- Fondo común con el que se pagan las tarjetas (Edwards + BICE), por moneda.
--- Libro de movimientos con signo: aporte (+, manual), pago (−, automático al
+-- Fondo común con el que se pagan las tarjetas (Edwards + BICE). La operación
+-- actual usa CLP como saldo principal; incluso los pagos USD nuevos descuentan
+-- su equivalente CLP. Se conserva moneda por compatibilidad con movimientos
+-- USD históricos. Libro con signo: aporte (+, manual), pago (−, automático al
 -- registrar un pago en /tarjeta), ajuste (±, al corregir el saldo a mano).
 -- Saldo = SUM(monto) por moneda, derivado. Reemplaza en la UI a
 -- reserva_tarjeta (legacy, no participaba en cálculos). Ver data_model_context.md.

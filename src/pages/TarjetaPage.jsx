@@ -76,7 +76,7 @@ export function TarjetaPage({ gastos, reconciliacion, vencimientos, onActualizar
   }
 
   async function registrarPago(banco, moneda, gastoIds, total) {
-    const resultado = await reconciliacion.pagar({ banco, moneda, gasto_ids: gastoIds, total_pagado: total })
+    const resultado = await reconciliacion.pagar({ banco, moneda, gasto_ids: gastoIds, total_pagado: total, tipo_cambio: tasaValida })
     await onRefetchGastos()
     return resultado
   }

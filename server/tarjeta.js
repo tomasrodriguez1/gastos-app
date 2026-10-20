@@ -179,7 +179,17 @@ function validarPago(body) {
   if (ids.length === 0) return { error: 'Seleccioná al menos un movimiento' }
   const totalUnidades = unidadesDesdeTotal(body?.total_pagado, moneda)
   if (totalUnidades == null) return { error: 'Total inválido' }
-  return { banco, moneda, ids, totalUnidades }
+  const tipoCambio = body?.tipo_cambio == null || body.tipo_cambio === '' ? null : Number(body.tipo_cambio)
+  if (tipoCambio != null && (!Number.isFinite(tipoCambio) || tipoCambio <= 0)) return { error: 'Tipo de cambio inválido' }
+  return { banco, moneda, ids, totalUnidades, tipoCambio }
+}
+
+function importePagoFondoClp(row, tipoCambio) {
+  if (monedaGasto(row) === 'CLP') return Math.round(toMonto(row.monto) || 0)
+  const equivalenteGuardado = toMonto(row.monto_clp_manual)
+  if (equivalenteGuardado > 0) return Math.round(equivalenteGuardado)
+  if (tipoCambio) return Math.round((toMonto(row.usd) || 0) * tipoCambio)
+  return null
 }
 
 function validarFilas(rows, base) {
@@ -342,14 +352,23 @@ export function createTarjetaRouter({ db = sql } = {}) {
             diferencia: desdeUnidades(base.totalUnidades - calculado, base.moneda),
           }
         }
+        const importesFondo = rows.map(row => importePagoFondoClp(row, base.tipoCambio))
+        if (importesFondo.some(importe => importe == null)) {
+          return {
+            error: 'Ingresá un tipo de cambio para descontar este pago USD del fondo en pesos',
+            status: 409,
+          }
+        }
+        const totalFondoClp = importesFondo.reduce((suma, importe) => suma + importe, 0)
         await tx`UPDATE gastos SET pagado = TRUE, updated_at = NOW() WHERE id = ANY(${base.ids})`
         const total = desdeUnidades(calculado, base.moneda)
-        const nota = `Pago ${rows.length} movimiento${rows.length === 1 ? '' : 's'}`
+        const detalleMoneda = base.moneda === 'USD' ? ` · ${total.toFixed(2)} USD` : ''
+        const nota = `Pago ${rows.length} movimiento${rows.length === 1 ? '' : 's'}${detalleMoneda}`
         await tx`
           INSERT INTO fondo_tarjeta_movimiento (fecha, tipo, moneda, monto, banco, nota)
-          VALUES (${hoyISO()}, 'pago', ${base.moneda}, ${-total}, ${base.banco}, ${nota})
+          VALUES (${hoyISO()}, 'pago', ${'CLP'}, ${-totalFondoClp}, ${base.banco}, ${nota})
         `
-        return { ok: true, actualizados: rows.length, total }
+        return { ok: true, actualizados: rows.length, total, total_fondo_clp: totalFondoClp }
       })
     } catch (error) {
       console.error('[tarjeta/pagar]', error.message)

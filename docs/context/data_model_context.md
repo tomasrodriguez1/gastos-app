@@ -257,7 +257,10 @@ registra una vez en `gastos`; registrar también un "aporte al fondo" lo contar�
 
 ### `fondo_tarjeta_movimiento`
 
-Fondo **común** (todas las tarjetas) con el que se pagan Edwards y BICE, separado por moneda.
+Fondo **común** (todas las tarjetas) con el que se pagan Edwards y BICE. La operación actual de
+`/tarjeta` usa CLP como saldo principal: ese único monto cubre tanto la deuda CLP como la compra de
+USD. La columna `moneda` se conserva porque existen movimientos históricos USD y la API mantiene
+el libro compatible.
 Libro de movimientos con signo:
 
 ```sql
@@ -269,13 +272,15 @@ fondo_tarjeta_movimiento(id SERIAL PK, fecha TEXT YYYY-MM-DD, tipo 'aporte'|'aju
 |------|-------|--------|
 | `aporte` | + | Manual desde `/tarjeta` ("+ Aportar") — `POST /api/tarjeta/fondo/aportes` |
 | `ajuste` | ± | Corrección manual del saldo a un valor absoluto; se guarda la diferencia — `PUT /api/tarjeta/fondo/saldo` |
-| `pago` | − | Automático dentro de la transacción de `POST /api/tarjeta/pagar` (con `banco`) |
+| `pago` | − | Automático dentro de la transacción de `POST /api/tarjeta/pagar` (con `banco`). Los pagos nuevos, incluso los de consumos USD, se registran en CLP; para USD usa `monto_clp_manual` por gasto o el `tipo_cambio` enviado por la vista |
 
-**Saldo = `SUM(monto)` por moneda, derivado, nunca persistido.** En `/tarjeta`: "Falta aportar" =
-deuda pendiente de todas las tarjetas (`resumen.totales[moneda].por_pagar`) − saldo. Los pagos no se
-pueden borrar (`DELETE /api/tarjeta/fondo/movimientos/:id` responde 409): quedan atados a gastos
-marcados `pagado`. Mismo criterio standalone que `reserva_tarjeta`: no es un `presupuesto_fondo` ni
-genera gastos (el cargo ya está en `gastos`; un aporte como gasto lo contaría dos veces).
+**Saldo = `SUM(monto)` por moneda, derivado, nunca persistido.** En `/tarjeta` se presenta el saldo
+CLP y su destino: deuda CLP + equivalente de la deuda USD; no se presenta el saldo USD histórico
+como un segundo bolsillo operativo. Un pago USD sin `monto_clp_manual` exige `tipo_cambio`, para no
+descontar del fondo un equivalente inventado. Los pagos no se pueden borrar
+(`DELETE /api/tarjeta/fondo/movimientos/:id` responde 409): quedan atados a gastos marcados
+`pagado`. Mismo criterio standalone que `reserva_tarjeta`: no es un `presupuesto_fondo` ni genera
+gastos (el cargo ya está en `gastos`; un aporte como gasto lo contaría dos veces).
 
 ### `tarjeta_ciclo`
 

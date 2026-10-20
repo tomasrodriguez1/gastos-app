@@ -262,6 +262,44 @@ describe('operaciones transaccionales de tarjeta', () => {
     expect(movimientos[0]).toMatchObject({ tipo: 'pago', moneda: 'CLP', monto: -1000, banco: 'Edwards' })
   })
 
+  test('un pago USD descuenta del fondo CLP usando el equivalente guardado', async () => {
+    const { db, movimientos } = dbFalsa([
+      gasto({ id: 'usd-1', monto: 0, usd: 23.8, monto_clp_manual: 22848 }),
+      gasto({ id: 'usd-2', monto: 0, usd: 10, monto_clp_manual: 9600 }),
+    ])
+    const router = createTarjetaRouter({ db })
+    const respuesta = await post(router, '/pagar', {
+      banco: 'Edwards', moneda: 'USD', gasto_ids: ['usd-1', 'usd-2'], total_pagado: 33.8,
+    })
+
+    expect(respuesta.status).toBe(200)
+    expect(await respuesta.json()).toMatchObject({ total: 33.8, total_fondo_clp: 32448 })
+    expect(movimientos[0]).toMatchObject({ tipo: 'pago', moneda: 'CLP', monto: -32448, banco: 'Edwards' })
+  })
+
+  test('un pago USD sin equivalente usa el tipo de cambio enviado por la vista', async () => {
+    const { db, movimientos } = dbFalsa([gasto({ id: 'usd-1', monto: 0, usd: 12.5 })])
+    const router = createTarjetaRouter({ db })
+    const respuesta = await post(router, '/pagar', {
+      banco: 'Edwards', moneda: 'USD', gasto_ids: ['usd-1'], total_pagado: 12.5, tipo_cambio: 950,
+    })
+
+    expect(respuesta.status).toBe(200)
+    expect(movimientos[0]).toMatchObject({ moneda: 'CLP', monto: -11875 })
+  })
+
+  test('un pago USD sin equivalente ni tipo de cambio no altera gastos ni fondo', async () => {
+    const { db, filas, movimientos } = dbFalsa([gasto({ id: 'usd-1', monto: 0, usd: 12.5 })])
+    const router = createTarjetaRouter({ db })
+    const respuesta = await post(router, '/pagar', {
+      banco: 'Edwards', moneda: 'USD', gasto_ids: ['usd-1'], total_pagado: 12.5,
+    })
+
+    expect(respuesta.status).toBe(409)
+    expect(filas[0].pagado).toBe(false)
+    expect(movimientos).toHaveLength(0)
+  })
+
   test('rechaza volver a pagar un movimiento ya pagado', async () => {
     const { db } = dbFalsa([gasto({ id: 'g-1', monto: 1000, pagado: true })])
     const router = createTarjetaRouter({ db })

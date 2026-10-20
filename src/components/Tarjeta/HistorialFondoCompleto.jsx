@@ -35,20 +35,16 @@ export function HistorialFondoCompleto({ movimientos, saldos, onEliminar }) {
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-700/50 bg-slate-900/20 p-4 sm:p-5">
         <div>
           <h2 id="historial-fondo-title" className="text-sm font-semibold text-slate-200">Aportes al fondo de tarjetas</h2>
-          <p className="mt-1 text-xs text-slate-500">El fondo es común para Edwards y BICE, con saldos separados por moneda.</p>
+          <p className="mt-1 text-xs text-slate-500">El fondo es común para Edwards y BICE y se administra en pesos.</p>
           <div className="mt-3 flex rounded-lg border border-slate-700 bg-slate-900/70 p-0.5" role="group" aria-label="Tipo de movimiento del fondo">
             <button type="button" onClick={() => cambiarVista('aportes')} className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${vista === 'aportes' ? 'bg-emerald-500/15 text-emerald-300' : 'text-slate-500 hover:text-slate-300'}`}>Solo aportes</button>
             <button type="button" onClick={() => cambiarVista('todos')} className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${vista === 'todos' ? 'bg-sky-500/15 text-sky-300' : 'text-slate-500 hover:text-slate-300'}`}>Historial completo</button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-6 text-right">
+        <div className="text-right">
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-slate-600">Saldo CLP</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-600">Saldo operativo CLP</div>
             <div className="mt-1 font-mono-numbers text-lg font-bold text-emerald-400">{isPrivacyModeEnabled ? '••••••' : formatMontoTarjeta(saldos?.CLP || 0, 'CLP')}</div>
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-slate-600">Saldo USD</div>
-            <div className="mt-1 font-mono-numbers text-lg font-bold text-violet-300">{isPrivacyModeEnabled ? '••••••' : formatMontoTarjeta(saldos?.USD || 0, 'USD')}</div>
           </div>
         </div>
       </div>
