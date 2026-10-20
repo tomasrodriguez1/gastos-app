@@ -1,26 +1,7 @@
 import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
-import { calcularTotalPrevisto, esGastoUsdPuro, montoDelCiclo } from '../../utils/calculos'
+import { calcularRitmoCiclo, calcularTotalPrevisto, esGastoUsdPuro, montoDelCiclo } from '../../utils/calculos'
 import { formatCLP, formatFecha, privacyFormat } from '../../utils/formatters'
 import { getSubcategoriaPresupuesto } from '../../utils/mapeo'
-import {
-  obtenerCicloActual,
-  obtenerCicloAnterior,
-  obtenerDiaDelCiclo,
-  obtenerDuracionCiclo,
-} from '../../utils/ciclos'
-
-function getDiaCorte(gastosCiclo, ciclo) {
-  const hoy = new Date()
-
-  if (ciclo === obtenerCicloActual(hoy)) {
-    const fechaHoy = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
-    return obtenerDiaDelCiclo(fechaHoy)
-  }
-
-  return gastosCiclo.reduce((max, gasto) => {
-    return Math.max(max, obtenerDiaDelCiclo(gasto.fecha))
-  }, 0)
-}
 
 function getCategoria(gasto) {
   const asignacion = gasto.presupuesto_manual || getSubcategoriaPresupuesto(
@@ -54,41 +35,20 @@ function gastosDelCiclo(gastos, mes) {
 export function PanelMetricasAccionables({ gastos, mes, presupuestoMes }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
   const presupuestoTotal = calcularTotalPrevisto(presupuestoMes)
-  const duracionCiclo = obtenerDuracionCiclo(mes)
-  const gastosMes = gastosDelCiclo(gastos, mes)
-
-  const diaCorte = getDiaCorte(gastosMes, mes)
-  const gastoAcumulado = gastosMes
-    .filter(gasto => {
-      const dia = obtenerDiaDelCiclo(gasto.fecha)
-      return diaCorte === 0 || dia <= diaCorte
-    })
-    .reduce((sum, gasto) => sum + gasto.montoCalculado, 0)
-
-  const proyeccionCierre = diaCorte > 0
-    ? Math.round((gastoAcumulado / diaCorte) * duracionCiclo)
-    : 0
-  const desviacionProyectada = proyeccionCierre - presupuestoTotal
-  const restante = presupuestoTotal - gastoAcumulado
-  const diasRestantes = diaCorte > 0 ? Math.max(1, duracionCiclo - diaCorte + 1) : duracionCiclo
-  const ritmoDiario = presupuestoTotal > 0 ? Math.floor(restante / diasRestantes) : 0
-
-  const pctMes = diaCorte > 0 ? Math.round((diaCorte / duracionCiclo) * 100) : 0
-  const pctPresupuesto = presupuestoTotal > 0 && diaCorte > 0
-    ? Math.round((gastoAcumulado / presupuestoTotal) * 100)
-    : null
-  const diferenciaPct = pctPresupuesto !== null ? pctPresupuesto - pctMes : null
-
-  const mesPrevio = obtenerCicloAnterior(mes)
-  const gastoMesPrevio = gastos
-    .filter(g => g.ciclo_financiero === mesPrevio && !esGastoUsdPuro(g))
-    .filter(g => {
-      const dia = obtenerDiaDelCiclo(g.fecha)
-      return diaCorte === 0 || dia <= diaCorte
-    })
-    .reduce((sum, g) => sum + montoDelCiclo(g), 0)
-  const hayDatosPrevio = gastos.some(g => g.ciclo_financiero === mesPrevio)
-  const deltaMesPrevio = gastoAcumulado - gastoMesPrevio
+  const {
+    diaCorte,
+    duracionCiclo,
+    proyeccionCierre,
+    desviacionProyectada,
+    diasRestantes,
+    ritmoDiario,
+    pctMes,
+    pctPresupuesto,
+    diferenciaPct,
+    gastoMesPrevio,
+    hayDatosPrevio,
+    deltaMesPrevio,
+  } = calcularRitmoCiclo(gastos, mes, presupuestoTotal)
 
   const sinPresupuesto = presupuestoTotal <= 0
   const proyeccionTone = sinPresupuesto

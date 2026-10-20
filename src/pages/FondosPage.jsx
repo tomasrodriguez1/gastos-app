@@ -22,8 +22,8 @@ export function FondosPage({
       <div>
         <h1 className="font-heading text-3xl text-white">Fondos</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Todo lo que es "plata guardada": el FGP, fondos de ahorro del presupuesto (los mismos del
-          Dashboard, mismo dato), reservas externas y el fondo común de tarjeta.
+          Todo lo que es "plata guardada": el FGP, fondos de ahorro del presupuesto, reservas externas
+          y el fondo común de tarjeta. El inicio muestra los saldos; acá se aportan, usan y archivan.
         </p>
       </div>
 

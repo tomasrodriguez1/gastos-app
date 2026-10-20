@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  calcularRitmoCiclo,
   calcularSaldosCiclo,
+  categoriasAdelantadas,
   calcularTotalIngresosReales,
   calcularGastosPorGrupo,
   calcularSaldoFondo,
@@ -134,6 +136,38 @@ describe('ingresos reales y saldos del Dashboard (DEC-020)', () => {
       saldoReal: 115000 + 50000 - 600000,
       saldoEsperado: 2100000 + 50000 - 600000,
     })
+  })
+
+  test('el ritmo del ciclo corta en hoy y compara contra el ciclo anterior al mismo día', () => {
+    const gastos = [
+      gasto('2026-10-01', '2026-10', 300000),
+      gasto('2026-09-10', '2026-09', 100000),
+      gasto('2026-09-25', '2026-09', 900000),
+    ]
+    const ritmo = calcularRitmoCiclo(gastos, '2026-10', 900000, new Date(2026, 9, 20))
+    expect(ritmo.diaCorte).toBe(22)
+    expect(ritmo.duracionCiclo).toBe(30)
+    expect(ritmo.gastoAcumulado).toBe(300000)
+    expect(ritmo.diasRestantes).toBe(9)
+    expect(ritmo.gastoMesPrevio).toBe(100000)
+    expect(ritmo.deltaMesPrevio).toBe(200000)
+    expect(ritmo.proyeccionCierre).toBe(Math.round((300000 / 22) * 30))
+    expect(ritmo.ritmoDiario).toBe(Math.floor(600000 / 9))
+  })
+
+  test('una categoría adelantada es la que va más rápido que el día del ciclo', () => {
+    const presupuesto = {
+      categorias: {
+        COMIDA: { subcategorias: { Diario: { previsto: 100 } } },
+        CASA: { subcategorias: { Arriendo: { previsto: 100 } } },
+      },
+    }
+    const gastos = [
+      gasto('2026-10-02', '2026-10', 80, { presupuesto_manual: { grupo: 'COMIDA', subcategoria: 'Diario' } }),
+      gasto('2026-10-02', '2026-10', 10, { presupuesto_manual: { grupo: 'CASA', subcategoria: 'Arriendo' } }),
+    ]
+    const adelantadas = categoriasAdelantadas(gastos, '2026-10', presupuesto, 10, 30)
+    expect(adelantadas.map(item => item.grupo)).toEqual(['COMIDA'])
   })
 
   test('sin resumen todavía devuelve null; fondos ausentes cuentan 0', () => {

@@ -126,7 +126,15 @@ export default function App() {
           <Routes>
             <Route
               path="/"
-              element={<DashboardPage {...sharedProps} gastos={todoLosGastos} />}
+              element={
+                <DashboardPage
+                  {...sharedProps}
+                  gastos={todoLosGastos}
+                  resumenFGP={resumenFGP}
+                  vencimientos={vencimientosTarjeta}
+                  saldoFondoTarjeta={reconciliacion.cargando ? null : (reconciliacion.fondo?.saldos?.CLP || 0)}
+                />
+              }
             />
             <Route
               path="/cashflow"

@@ -174,7 +174,7 @@ const NAVEGACION_DESKTOP = [
     grupo: 'Entender',
     items: [
       { to: '/cashflow', icon: IconCashflow, label: 'Flujo del ciclo' },
-      { to: '/analisis', icon: IconAnalisis, label: 'Análisis' },
+      { to: '/analisis', icon: IconAnalisis, label: 'Histórico' },
     ],
   },
   {
@@ -196,7 +196,7 @@ const MOBILE_NAV_MAS = [
   { to: '/bandeja', icon: IconGastos, label: 'Bandeja', pendientes: true },
   { to: '/ingresos', icon: IconIngresos, label: 'Ingresos', pendientesIngresos: true },
   { to: '/cashflow', icon: IconCashflow, label: 'Flujo' },
-  { to: '/analisis', icon: IconAnalisis, label: 'Análisis' },
+  { to: '/analisis', icon: IconAnalisis, label: 'Histórico' },
   { to: '/fondos', icon: IconFondos, label: 'Fondos' },
   { to: '/tarjeta', icon: IconTarjeta, label: 'Tarjetas' },
   { to: '/clases', end: true, icon: IconClases, label: 'Clases' },

@@ -1,5 +1,5 @@
 import { getCategoriaPresupuesto, getSubcategoriaPresupuesto } from './mapeo'
-import { obtenerDiaDelCiclo, obtenerDuracionCiclo } from './ciclos'
+import { obtenerCicloActual, obtenerCicloAnterior, obtenerDiaDelCiclo, obtenerDuracionCiclo } from './ciclos'
 
 // Gastos pendientes de revisión (ver estado 'pendiente') sin categoría resuelta caen acá en
 // vez de desaparecer de los totales por grupo — la plata ya salió de la cuenta, solo falta
@@ -40,6 +40,13 @@ export function esGastoUsdPuro(g) {
   return g.usd > 0 && !g.monto && !g.monto_clp_manual
 }
 
+export function grupoDeGasto(g) {
+  const ctx = g.contexto_override || g.contexto || ''
+  return g.presupuesto_manual?.grupo
+    || getCategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
+    || (g.estado === 'pendiente' || g.estado === 'error_parseo' ? SIN_CLASIFICAR : null)
+}
+
 export function calcularGastosPorGrupo(gastos, ciclo, opciones = {}) {
   const incluirFinanciados = opciones.incluirFinanciados === true
   return gastos
@@ -47,16 +54,50 @@ export function calcularGastosPorGrupo(gastos, ciclo, opciones = {}) {
     .filter(g => !esGastoUsdPuro(g))
     .filter(g => g.estado !== 'descartado' && g.en_presupuesto !== false)
     .reduce((acc, g) => {
-      const ctx = g.contexto_override || g.contexto || ''
-      const grupo = g.presupuesto_manual?.grupo
-        || getCategoriaPresupuesto(g.tipos || [], ctx, g.banco || '')
-        || (g.estado === 'pendiente' || g.estado === 'error_parseo' ? SIN_CLASIFICAR : null)
+      const grupo = grupoDeGasto(g)
       if (!grupo) return acc
       const monto = montoAgregado(g, incluirFinanciados)
       if (!monto) return acc
       acc[grupo] = (acc[grupo] || 0) + monto
       return acc
     }, {})
+}
+
+// Pendientes o con error de parseo del ciclo que todavía no tienen categoría.
+export function gastosSinClasificar(gastos, ciclo) {
+  return gastos.filter(g =>
+    g.ciclo_financiero === ciclo
+    && !esGastoUsdPuro(g)
+    && g.estado !== 'descartado'
+    && g.en_presupuesto !== false
+    && grupoDeGasto(g) === SIN_CLASIFICAR
+    && montoDelCiclo(g) > 0
+  )
+}
+
+// Categorías que van más rápido que el día del ciclo (o ya se pasaron del previsto).
+export function categoriasAdelantadas(gastos, ciclo, presupuestoMes, dia, duracion, limite = 3) {
+  const realPorGrupo = calcularGastosPorGrupo(gastos, ciclo)
+  const previstoPorGrupo = calcularPrevistoPorGrupo(presupuestoMes)
+  const avanceCiclo = duracion > 0 && dia > 0 ? dia / duracion : 0
+  return Object.keys({ ...realPorGrupo, ...previstoPorGrupo })
+    .filter(grupo => grupo !== SIN_CLASIFICAR)
+    .map(grupo => {
+      const real = realPorGrupo[grupo] || 0
+      const previsto = previstoPorGrupo[grupo] || 0
+      const ratio = previsto > 0 ? real / previsto : 0
+      return {
+        grupo,
+        real,
+        previsto,
+        ratio,
+        adelanto: previsto > 0 ? ratio - avanceCiclo : 0,
+        estado: semaforo(real, previsto),
+      }
+    })
+    .filter(item => item.previsto > 0 && item.real > 0 && item.adelanto > 0.02)
+    .sort((a, b) => b.adelanto - a.adelanto || b.real - a.real)
+    .slice(0, limite)
 }
 
 export function calcularTotalMes(gastos, ciclo) {
@@ -175,6 +216,66 @@ export function calcularTotalPrevisto(presupuestoMes) {
     }
   }
   return total
+}
+
+function fechaLocalISO(ahora) {
+  return [
+    ahora.getFullYear(),
+    String(ahora.getMonth() + 1).padStart(2, '0'),
+    String(ahora.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+function gastosConMontoDelCiclo(gastos, mes) {
+  return gastos
+    .filter(gasto => gasto.ciclo_financiero === mes && !esGastoUsdPuro(gasto))
+    .map(gasto => ({ ...gasto, montoCalculado: montoDelCiclo(gasto) || 0 }))
+    .filter(gasto => gasto.montoCalculado > 0)
+}
+
+// Ritmo del ciclo a una fecha: proyección de cierre, plata por día y comparación
+// con el ciclo anterior al mismo día. El ciclo actual corta en "hoy"; uno pasado, en su último gasto.
+export function calcularRitmoCiclo(gastos, mes, presupuestoTotal, ahora = new Date()) {
+  const duracionCiclo = obtenerDuracionCiclo(mes)
+  const gastosMes = gastosConMontoDelCiclo(gastos, mes)
+  const diaCorte = mes === obtenerCicloActual(ahora)
+    ? obtenerDiaDelCiclo(fechaLocalISO(ahora))
+    : gastosMes.reduce((max, gasto) => Math.max(max, obtenerDiaDelCiclo(gasto.fecha)), 0)
+
+  const gastoAcumulado = gastosMes
+    .filter(gasto => diaCorte === 0 || obtenerDiaDelCiclo(gasto.fecha) <= diaCorte)
+    .reduce((sum, gasto) => sum + gasto.montoCalculado, 0)
+
+  const proyeccionCierre = diaCorte > 0 ? Math.round((gastoAcumulado / diaCorte) * duracionCiclo) : 0
+  const restante = presupuestoTotal - gastoAcumulado
+  const diasRestantes = diaCorte > 0 ? Math.max(1, duracionCiclo - diaCorte + 1) : duracionCiclo
+  const pctPresupuesto = presupuestoTotal > 0 && diaCorte > 0
+    ? Math.round((gastoAcumulado / presupuestoTotal) * 100)
+    : null
+  const pctMes = diaCorte > 0 ? Math.round((diaCorte / duracionCiclo) * 100) : 0
+
+  const mesPrevio = obtenerCicloAnterior(mes)
+  const gastoMesPrevio = gastos
+    .filter(gasto => gasto.ciclo_financiero === mesPrevio && !esGastoUsdPuro(gasto))
+    .filter(gasto => diaCorte === 0 || obtenerDiaDelCiclo(gasto.fecha) <= diaCorte)
+    .reduce((sum, gasto) => sum + montoDelCiclo(gasto), 0)
+
+  return {
+    diaCorte,
+    duracionCiclo,
+    gastoAcumulado,
+    proyeccionCierre,
+    desviacionProyectada: proyeccionCierre - presupuestoTotal,
+    restante,
+    diasRestantes,
+    ritmoDiario: presupuestoTotal > 0 ? Math.floor(restante / diasRestantes) : 0,
+    pctMes,
+    pctPresupuesto,
+    diferenciaPct: pctPresupuesto !== null ? pctPresupuesto - pctMes : null,
+    gastoMesPrevio,
+    hayDatosPrevio: gastos.some(gasto => gasto.ciclo_financiero === mesPrevio),
+    deltaMesPrevio: gastoAcumulado - gastoMesPrevio,
+  }
 }
 
 export function calcularUltimosMeses(gastos, cicloActual, cantidad = 6) {
