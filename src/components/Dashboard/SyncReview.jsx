@@ -65,7 +65,7 @@ function EditPanel({ gasto, catalogos, onGuardar, onCancelar }) {
     const changes = {
       fecha, motivo: motivo.trim(), banco, tipos, contexto,
       monto: montoNum, monto_real: montoNum,
-      pagado: pagado ? 1 : 0,
+      pagado,
       contexto_override: contextoOverride || null,
       presupuesto_manual: grupo && subcategoria ? { grupo, subcategoria } : null,
       monto_presupuesto_manual: Number(montoParcial) > 0 ? Number(montoParcial) : null,

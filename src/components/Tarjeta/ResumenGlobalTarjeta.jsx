@@ -67,13 +67,13 @@ function ControlesFondoClp({ saldo, onAportar, onAjustarSaldo }) {
   )
 }
 
-function BancoCard({ banco, clp, usd, deudaPesos, totalGlobal }) {
+function BancoCard({ banco, deudaPesos, totalGlobal }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
   const oculto = valor => (isPrivacyModeEnabled ? '••••••' : valor)
   const total = deudaPesos.total || 0
   const facturado = deudaPesos.facturado || 0
   const noFacturado = Math.max(0, total - facturado)
-  const movimientos = (clp.movimientos || 0) + (usd.movimientos || 0)
+  const movimientos = deudaPesos.movimientosClp + deudaPesos.movimientosUsd
 
   return (
     <article className="overflow-hidden rounded-xl border border-slate-700/50 bg-slate-800/50">
@@ -91,13 +91,13 @@ function BancoCard({ banco, clp, usd, deudaPesos, totalGlobal }) {
       <div className="grid grid-cols-1 divide-y divide-slate-700/30 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
         <div className="p-4 sm:p-5">
           <div className="text-[10px] uppercase tracking-wider text-slate-600">Deuda CLP</div>
-          <div className="mt-1 font-mono-numbers text-xl font-bold text-sky-300">{oculto(formatMontoTarjeta(clp.por_pagar, 'CLP'))}</div>
-          <div className="mt-1 text-xs text-slate-500">{clp.movimientos || 0} movimientos</div>
+          <div className="mt-1 font-mono-numbers text-xl font-bold text-sky-300">{oculto(formatMontoTarjeta(deudaPesos.clp, 'CLP'))}</div>
+          <div className="mt-1 text-xs text-slate-500">{deudaPesos.movimientosClp} movimientos</div>
         </div>
         <div className="p-4 sm:p-5">
           <div className="text-[10px] uppercase tracking-wider text-slate-600">Deuda USD</div>
-          <div className="mt-1 font-mono-numbers text-xl font-bold text-violet-300">{oculto(formatMontoTarjeta(usd.por_pagar, 'USD'))}</div>
-          <div className="mt-1 text-xs text-slate-500">{usd.movimientos || 0} movimientos</div>
+          <div className="mt-1 font-mono-numbers text-xl font-bold text-violet-300">{oculto(formatMontoTarjeta(deudaPesos.usd, 'USD'))}</div>
+          <div className="mt-1 text-xs text-slate-500">{deudaPesos.movimientosUsd} movimientos</div>
         </div>
       </div>
       <div className="grid grid-cols-3 gap-3 border-t border-slate-700/40 px-4 py-3 text-xs sm:px-5">
@@ -109,16 +109,14 @@ function BancoCard({ banco, clp, usd, deudaPesos, totalGlobal }) {
   )
 }
 
-export function ResumenGlobalTarjeta({ deuda, totales, porBanco, tipoCambio, onTipoCambio, fondoSaldos, onAportar, onAjustarSaldo }) {
+export function ResumenGlobalTarjeta({ deuda, porBanco, tipoCambio, onTipoCambio, fondoSaldos, onAportar, onAjustarSaldo }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
-  const clp = totales?.CLP || {}
-  const usd = totales?.USD || {}
   const fondoDisponible = Math.round(Number(fondoSaldos?.CLP) || 0)
   const deudaClp = deuda.clp || 0
   const deudaUsdClp = (deuda.usdPropioClp || 0) + (deuda.usdTasaClp || 0)
   const saldoDespues = fondoDisponible - (deuda.total || 0)
   const oculto = valor => (isPrivacyModeEnabled ? '••••••' : valor)
-  const mostrarTasa = deuda.pideTipoCambio || usd.por_pagar > 0
+  const mostrarTasa = deuda.pideTipoCambio || deuda.usd > 0
   const baseBarra = Math.max(fondoDisponible, deuda.total || 0, 1)
   const anchoClp = Math.min(100, Math.max(0, (deudaClp / baseBarra) * 100))
   const anchoUsd = Math.min(100 - anchoClp, Math.max(0, (deudaUsdClp / baseBarra) * 100))
@@ -139,16 +137,16 @@ export function ResumenGlobalTarjeta({ deuda, totales, porBanco, tipoCambio, onT
           <div id="deuda-global-title" className="text-xs font-medium uppercase tracking-wider text-slate-500">Deuda global estimada</div>
           <div className="mt-2 font-mono-numbers text-4xl font-bold tracking-tight text-slate-100">{oculto(formatCLP(totalDeuda))}</div>
           <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-400">
-            <strong className="font-mono-numbers text-base text-sky-300">{oculto(formatMontoTarjeta(clp.por_pagar || 0, 'CLP'))}</strong>
+            <strong className="font-mono-numbers text-base text-sky-300">{oculto(formatMontoTarjeta(deudaClp, 'CLP'))}</strong>
             <span className="text-slate-600">+</span>
-            <strong className="font-mono-numbers text-base text-violet-300">{oculto(formatMontoTarjeta(usd.por_pagar || 0, 'USD'))}</strong>
+            <strong className="font-mono-numbers text-base text-violet-300">{oculto(formatMontoTarjeta(deuda.usd || 0, 'USD'))}</strong>
             <span>convertidos para planificar</span>
           </div>
           <div className="mt-6 grid flex-1 gap-3 sm:grid-cols-2">
             <div className="flex h-full flex-col justify-between rounded-xl border border-slate-700/50 bg-slate-950/30 p-4">
               <div>
                 <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Deuda en CLP</div>
-                <div className="mt-2 font-mono-numbers text-2xl font-bold text-sky-300">{oculto(formatMontoTarjeta(clp.por_pagar || 0, 'CLP'))}</div>
+                <div className="mt-2 font-mono-numbers text-2xl font-bold text-sky-300">{oculto(formatMontoTarjeta(deudaClp, 'CLP'))}</div>
                 <div className="mt-1 text-sm text-slate-500">En pesos</div>
               </div>
               <div className="mt-5">
@@ -156,7 +154,7 @@ export function ResumenGlobalTarjeta({ deuda, totales, porBanco, tipoCambio, onT
                   <div className="h-full bg-sky-400" style={{ width: `${parteClp}%` }} />
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2 text-sm text-slate-400">
-                  <span>{clp.movimientos || 0} movimientos</span>
+                  <span>{deuda.movimientosClp || 0} movimientos</span>
                   <span className="font-mono-numbers text-slate-500">{parteClp}%</span>
                 </div>
               </div>
@@ -164,7 +162,7 @@ export function ResumenGlobalTarjeta({ deuda, totales, porBanco, tipoCambio, onT
             <div className="flex h-full flex-col justify-between rounded-xl border border-slate-700/50 bg-slate-950/30 p-4">
               <div>
                 <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Deuda en USD</div>
-                <div className="mt-2 font-mono-numbers text-2xl font-bold text-violet-300">{oculto(formatMontoTarjeta(usd.por_pagar || 0, 'USD'))}</div>
+                <div className="mt-2 font-mono-numbers text-2xl font-bold text-violet-300">{oculto(formatMontoTarjeta(deuda.usd || 0, 'USD'))}</div>
                 <div className="mt-1 font-mono-numbers text-sm text-slate-500">{deuda.parcial ? 'Conversión pendiente' : `≈ ${oculto(formatCLP(deudaUsdClp))}`}</div>
               </div>
               <div className="mt-5">
@@ -172,7 +170,7 @@ export function ResumenGlobalTarjeta({ deuda, totales, porBanco, tipoCambio, onT
                   <div className="h-full bg-violet-400" style={{ width: `${parteUsd ?? 0}%` }} />
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2 text-sm text-slate-400">
-                  <span>{usd.movimientos || 0} movimientos</span>
+                  <span>{deuda.movimientosUsd || 0} movimientos</span>
                   <span className="font-mono-numbers text-slate-500">{parteUsd == null ? '—' : `${parteUsd}%`}</span>
                 </div>
               </div>
@@ -214,7 +212,7 @@ export function ResumenGlobalTarjeta({ deuda, totales, porBanco, tipoCambio, onT
               <div className="flex items-start justify-between gap-3">
                 <span className="flex items-center gap-2 text-slate-400"><span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-violet-400" />USD por comprar</span>
                 <div className="text-right">
-                  <strong className="block font-mono-numbers font-medium text-violet-300">{oculto(formatMontoTarjeta(usd.por_pagar || 0, 'USD'))}</strong>
+                  <strong className="block font-mono-numbers font-medium text-violet-300">{oculto(formatMontoTarjeta(deuda.usd || 0, 'USD'))}</strong>
                   <span className="font-mono-numbers text-xs text-slate-500">{deuda.parcial ? 'Conversión pendiente' : `≈ ${oculto(formatCLP(deudaUsdClp))}`}</span>
                 </div>
               </div>

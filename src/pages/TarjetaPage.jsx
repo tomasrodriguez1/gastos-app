@@ -43,15 +43,11 @@ export function TarjetaPage({ gastos, reconciliacion, vencimientos, onActualizar
     [gastos, tasaValida, ciclosCierre],
   )
 
-  const porBanco = useMemo(() => BANCOS.map(banco => {
-    const resumenBanco = reconciliacion.resumen?.bancos?.find(item => item.banco === banco)?.monedas || {}
-    return {
-      banco,
-      clp: resumenBanco.CLP || VACIO,
-      usd: resumenBanco.USD || VACIO,
-      deudaPesos: deudaEnPesos(gastos, { bancos: [banco], tipoCambio: tasaValida, ciclos: ciclosCierre }),
-    }
-  }), [reconciliacion.resumen, gastos, tasaValida, ciclosCierre])
+  // Deuda global y tarjetas por banco salen de la misma lista de gastos para que siempre cuadren.
+  const porBanco = useMemo(() => BANCOS.map(banco => ({
+    banco,
+    deudaPesos: deudaEnPesos(gastos, { bancos: [banco], tipoCambio: tasaValida, ciclos: ciclosCierre }),
+  })), [gastos, tasaValida, ciclosCierre])
 
   const nombresFondos = useMemo(() => {
     const set = new Set()
@@ -102,7 +98,6 @@ export function TarjetaPage({ gastos, reconciliacion, vencimientos, onActualizar
 
       <ResumenGlobalTarjeta
         deuda={deuda}
-        totales={totales}
         porBanco={porBanco}
         tipoCambio={tipoCambio}
         onTipoCambio={setTipoCambio}

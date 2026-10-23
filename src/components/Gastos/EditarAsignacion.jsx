@@ -86,7 +86,7 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos, nombre
       contexto,
       monto: montoNum,
       monto_real: montoNum,
-      pagado: pagado ? 1 : 0,
+      pagado,
       plata_en_cuenta: plataEnCuenta,
       en_presupuesto: enPresupuesto,
       financiado_por: financiadoPor || null,

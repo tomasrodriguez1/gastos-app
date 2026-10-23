@@ -49,6 +49,8 @@ export function deudaEnPesos(gastos, { bancos = [], tipoCambio = null, ciclos = 
     movimientosClp: 0,
     movimientosUsdPropio: 0,
     movimientosUsdTasa: 0,
+    usd: 0,
+    movimientosUsd: 0,
     parcial: false,
     pideTipoCambio: false,
   }
@@ -96,6 +98,8 @@ export function deudaEnPesos(gastos, { bancos = [], tipoCambio = null, ciclos = 
   resultado.usdTasaUsd = redondearUsd(resultado.usdTasaUsd)
   resultado.sinConvertirUsd = redondearUsd(resultado.sinConvertirUsd)
   resultado.total = resultado.clp + resultado.usdPropioClp + resultado.usdTasaClp
+  resultado.usd = redondearUsd(resultado.usdPropioUsd + resultado.usdTasaUsd + resultado.sinConvertirUsd)
+  resultado.movimientosUsd = resultado.movimientosUsdPropio + resultado.movimientosUsdTasa + resultado.sinConvertir
   resultado.parcial = resultado.sinConvertir > 0
   resultado.pideTipoCambio = resultado.sinConvertir > 0 || resultado.movimientosUsdTasa > 0
   return resultado

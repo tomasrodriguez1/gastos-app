@@ -94,6 +94,20 @@ describe('deudaEnPesos', () => {
     expect(deuda.total).toBe(14000)
   })
 
+  test('cuenta USD y movimientos por moneda, y omite pagados', () => {
+    const deuda = deudaEnPesos([
+      { banco: 'Edwards', monto: 1000, fecha: '2026-09-20' },
+      { banco: 'Edwards', monto: 5000, fecha: '2026-09-20', pagado: true },
+      { banco: 'Edwards', monto: 0, usd: 10.5, monto_clp_manual: 9000, fecha: '2026-09-01' },
+      { banco: 'BICE', monto: 0, usd: 2.25, fecha: '2026-09-01' },
+    ], { bancos, hoyISO: '2026-10-13' })
+
+    expect(deuda.clp).toBe(1000)
+    expect(deuda.movimientosClp).toBe(1)
+    expect(deuda.usd).toBe(12.75)
+    expect(deuda.movimientosUsd).toBe(2)
+  })
+
   test('sin día de cierre nada cuenta como facturado', () => {
     const deuda = deudaEnPesos([
       { banco: 'Edwards', monto: 1000, fecha: '2026-09-20' },
