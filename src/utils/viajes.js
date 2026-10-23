@@ -90,8 +90,11 @@ export function resumirViaje(viaje, gastos) {
   let usd = 0
 
   for (const g of propios) {
-    if (g.usd > 0) usd += Number(g.usd) || 0
-    if (esGastoUsdPuro(g)) continue
+    // Solo los USD que no tienen monto en pesos: el resto ya está sumado en CLP.
+    if (esGastoUsdPuro(g)) {
+      usd += Number(g.usd) || 0
+      continue
+    }
     const monto = montoPresupuestable(g)
     if (!monto) continue
     total += monto

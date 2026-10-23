@@ -134,6 +134,17 @@ export function buscarViajePorTexto(viajes, texto) {
   return parciales.length === 1 ? parciales[0] : null
 }
 
+// Dos viajes en curso que se superponen anulan la autodetección (no se sabe a cuál va el gasto).
+// Lo usan el MCP y el agente para avisar después de crear o activar un viaje.
+export function avisoSolapamiento(viaje, viajes) {
+  if (viaje.estado !== 'en_curso') return null
+  const choca = viajes.find(v => v.id !== viaje.id && v.estado === 'en_curso'
+    && v.fecha_desde <= viaje.fecha_hasta && viaje.fecha_desde <= v.fecha_hasta)
+  return choca
+    ? `"${choca.nombre}" también está en curso en fechas que se cruzan: mientras ambos sigan así, los gastos nuevos no se etiquetan solos. Ofrecé cerrar uno.`
+    : null
+}
+
 export async function obtenerViaje(id, db = sql) {
   const [row] = await db`SELECT * FROM viaje WHERE id = ${id}`
   return row ? serializarViaje(row) : null
@@ -188,7 +199,9 @@ function idsValidos(gastoIds) {
 
 // Asigna gastos a un viaje. Donde el gasto no tenía presupuesto_manual escribe la sugerencia
 // (ALE/VIAJES); un override existente nunca se pisa. Acepta id o sync_key, como PATCH /api/gastos.
-export async function asignarGastosAViaje(viajeId, gastoIds, db = sql) {
+// sugerirCategoria=false solo etiqueta: para viajes pasados, donde recategorizar movería los
+// totales de ciclos ya cerrados.
+export async function asignarGastosAViaje(viajeId, gastoIds, db = sql, { sugerirCategoria = true } = {}) {
   const ids = idsValidos(gastoIds)
   if (ids.length === 0) return { error: 'Faltan gasto_ids', status: 400 }
   const viaje = await obtenerViaje(viajeId, db)
@@ -199,7 +212,9 @@ export async function asignarGastosAViaje(viajeId, gastoIds, db = sql) {
     const actualizados = []
     for (const row of rows) {
       const gasto = deserializarGasto(row)
-      const presupuesto = gasto.presupuesto_manual?.grupo ? gasto.presupuesto_manual : sugerenciaParaGasto(gasto)
+      const presupuesto = gasto.presupuesto_manual?.grupo || !sugerirCategoria
+        ? gasto.presupuesto_manual
+        : sugerenciaParaGasto(gasto)
       const [r] = await tx`
         UPDATE gastos SET viaje_id = ${viajeId}, presupuesto_manual = ${presupuesto}, updated_at = NOW()
         WHERE id = ${gasto.id}
@@ -257,7 +272,8 @@ export function createViajeRouter({ db = sql } = {}) {
 
   router.post('/:id/asignar', async (c) => {
     const body = await c.req.json()
-    return responder(c, await asignarGastosAViaje(c.req.param('id'), body?.gasto_ids, db), null)
+    const opciones = { sugerirCategoria: body?.sugerir_categoria !== false }
+    return responder(c, await asignarGastosAViaje(c.req.param('id'), body?.gasto_ids, db, opciones), null)
   })
 
   return router

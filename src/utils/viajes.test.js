@@ -76,6 +76,12 @@ describe('resumirViaje', () => {
     expect(r.porGrupo.VIAJES.subcategorias.Comida).toBe(30000)
   })
 
+  test('USD con monto en pesos no se cuenta como sin convertir', () => {
+    const r = resumirViaje(PERU, [{ id: 'x', viaje_id: 'v1', fecha: '2026-10-02', monto: 9500, monto_real: 9500, usd: 10, tipos: [] }])
+    expect(r.total).toBe(9500)
+    expect(r.usd).toBe(0)
+  })
+
   test('incluye gastos financiados por un fondo', () => {
     const r = resumirViaje(PERU, [{ ...gastos[1], financiado_por: 'Vacaciones' }])
     expect(r.total).toBe(30000)

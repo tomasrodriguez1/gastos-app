@@ -33,7 +33,16 @@ import {
   obtenerConversacion,
 } from './agente/historial.js'
 import { transcribir } from './agente/transcripcion.js'
-import { listarViajes, buscarViajePorTexto, asignarGastosAViaje, desasignarGastos } from './viajes.js'
+import {
+  listarViajes,
+  buscarViajePorTexto,
+  asignarGastosAViaje,
+  desasignarGastos,
+  obtenerResumenViaje,
+  crearViaje,
+  editarViaje,
+  avisoSolapamiento,
+} from './viajes.js'
 import {
   cargarReservasActivas,
   registrarSaldo,
@@ -121,7 +130,12 @@ function promptSistema(catalogos, hoy, reservas, cicloActual) {
     'Viajes: un gasto puede pertenecer a un viaje (listar_viajes). Si el usuario dice que un gasto es',
     'de un viaje ("esto fue en Perú"), pasá viaje en crear_gasto o editar_gasto con "viaje" en campos.',
     'Si hay un viaje en curso, crear_gasto lo asigna solo. El viaje define la categoría sugerida: con la',
-    'polola va a ALE, si no a VIAJES. No crees ni edites viajes: eso se hace en /viajes.',
+    'polola va a ALE, si no a VIAJES. "¿Cómo voy en Perú?" → resumen_viaje; comparar viajes →',
+    'listar_viajes. Si dice que parte o va a viajar, ofrecé crear_viaje (en_curso si ya empezó,',
+    'planificado si es a futuro): mostrá nombre y fechas y esperá su confirmación antes de crearlo,',
+    'igual que con un gasto. Si el viaje ya existe, cambiar_estado_viaje (en_curso al partir, cerrado',
+    'al volver). Si la tool trae un aviso de viajes cruzados, decíselo. No borres viajes ni cambies su',
+    'presupuesto o fechas: eso se hace en /viajes.',
     '',
     'Preguntas de estado del ciclo (solo lectura, no escribas presupuesto): "¿cómo voy?", "¿cuánto me',
     'queda en comida?", "¿qué categoría está en rojo?", "¿cuánto gasté en Uber?". Usá resumen_ciclo',
@@ -439,8 +453,9 @@ function editarGastoToolFactory(catalogos) {
 
 const listarViajesTool = tool({
   description:
-    'Lista los viajes (etiqueta que agrupa gastos de un viaje) con fechas, estado y total gastado. ' +
-    'Solo lectura: los viajes se crean y editan en /viajes de la app.',
+    'Lista los viajes (etiqueta que agrupa gastos de un viaje) con fechas, estado, presupuesto, total ' +
+    'gastado, gasto antes y durante, gasto por día y % que salió de ALE (viajes con la Ale). Usala ' +
+    'para comparar viajes y para saber qué nombre pasar en `viaje`.',
   inputSchema: z.object({}),
   execute: async () => ({
     viajes: (await listarViajes()).map(v => ({
@@ -451,8 +466,87 @@ const listarViajesTool = tool({
       presupuesto: v.presupuesto,
       total_gastado: v.total_gastos,
       n_gastos: v.n_gastos,
+      gasto_antes: v.gasto_antes,
+      gasto_durante: v.gasto_durante,
+      dias: v.dias,
+      por_dia: v.por_dia,
+      pct_ale: v.pct_ale,
+      usd_sin_convertir: v.usd_sin_convertir,
     })),
   }),
+})
+
+async function viajePorNombre(texto) {
+  const viajes = await listarViajes()
+  return { viaje: buscarViajePorTexto(viajes, texto), viajes }
+}
+
+const resumenViajeTool = tool({
+  description:
+    'Detalle de UN viaje: total, cuánto queda del presupuesto, gasto antes de salir y durante, gasto ' +
+    'por día, desglose por grupo (ALE = con la Ale, VIAJES = sin ella, u otros) con subcategorías, ' +
+    'gastos pendientes de revisión y los 5 más grandes. Para "¿cómo voy en el viaje?".',
+  inputSchema: z.object({
+    viaje: z.string().describe('Nombre del viaje (de listar_viajes)'),
+  }),
+  execute: async ({ viaje }) => {
+    const { viaje: encontrado } = await viajePorNombre(viaje)
+    if (!encontrado) return { error: `No encontré un viaje "${viaje}". Llamá a listar_viajes y preguntá cuál es.` }
+    return obtenerResumenViaje(encontrado.id)
+  },
+})
+
+// Viajes (DEC-025): escriben directo como las reservas — no mueven plata y los gastos que
+// etiquetan siguen naciendo pendientes. La confirmación previa vive en el prompt.
+const crearViajeTool = tool({
+  description:
+    'Crea un viaje. Con estado en_curso, los gastos nuevos dentro de sus fechas se etiquetan solos ' +
+    '(siguen pendientes en la bandeja). Solo después de que el usuario confirmó nombre y fechas. No ' +
+    'lo crees si ya existe uno con ese nombre: usá cambiar_estado_viaje.',
+  inputSchema: z.object({
+    nombre: z.string().min(1).describe('Ej. "Perú 2026"'),
+    fecha_desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Día de salida YYYY-MM-DD'),
+    fecha_hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Día de vuelta YYYY-MM-DD'),
+    estado: z.enum(['planificado', 'en_curso']).default('planificado'),
+    presupuesto: z.number().int().min(0).optional().describe('Opcional, CLP entero'),
+    emoji: z.string().optional().describe('Opcional, un emoji'),
+  }),
+  execute: async (input) => {
+    const { viajes } = await viajePorNombre('')
+    const repetido = viajes.find(v => v.nombre.toLowerCase() === input.nombre.trim().toLowerCase())
+    if (repetido) return { error: `Ya existe el viaje "${repetido.nombre}" (${repetido.estado}). Usá cambiar_estado_viaje si hay que activarlo.` }
+    const resultado = await crearViaje(input)
+    if (resultado.error) return { error: resultado.error }
+    return {
+      ok: true,
+      viaje: resultado.viaje,
+      aviso: avisoSolapamiento(resultado.viaje, viajes),
+      resumen: `Viaje creado: ${resultado.viaje.nombre} (${resultado.viaje.fecha_desde} → ${resultado.viaje.fecha_hasta}, ${resultado.viaje.estado}).`,
+    }
+  },
+})
+
+const cambiarEstadoViajeTool = tool({
+  description:
+    'Cambia solo el estado de un viaje: planificado → en_curso (los gastos nuevos dentro de sus ' +
+    'fechas se etiquetan solos) → cerrado. No toca gastos, fechas ni presupuesto.',
+  inputSchema: z.object({
+    viaje: z.string().describe('Nombre del viaje (de listar_viajes)'),
+    estado: z.enum(['planificado', 'en_curso', 'cerrado']),
+  }),
+  execute: async ({ viaje, estado }) => {
+    const { viaje: encontrado, viajes } = await viajePorNombre(viaje)
+    if (!encontrado) return { error: `No encontré un viaje "${viaje}". Llamá a listar_viajes y preguntá cuál es.` }
+    if (encontrado.estado === estado) return { ok: true, cambio: false, resumen: `${encontrado.nombre} ya estaba ${estado}.` }
+    const resultado = await editarViaje(encontrado.id, { estado })
+    if (resultado.error) return { error: resultado.error }
+    return {
+      ok: true,
+      cambio: true,
+      aviso: avisoSolapamiento(resultado.viaje, viajes),
+      resumen: `${encontrado.nombre}: ${encontrado.estado} → ${estado}.`,
+    }
+  },
 })
 
 // Reservas F6. crear/editar/registrar escriben directo (sin estado 'pendiente'
@@ -697,6 +791,9 @@ export function construirAgente({ catalogos, reservas, extraSistema = '' }) {
       resumen_ciclo: resumenCicloTool,
       buscar_gastos: buscarGastosTool,
       listar_viajes: listarViajesTool,
+      resumen_viaje: resumenViajeTool,
+      crear_viaje: crearViajeTool,
+      cambiar_estado_viaje: cambiarEstadoViajeTool,
     },
     stopWhen: stepCountIs(16),
   }

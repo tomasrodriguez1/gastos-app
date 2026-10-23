@@ -32,6 +32,7 @@ import {
   obtenerResumenViaje,
   crearViaje,
   editarViaje,
+  avisoSolapamiento,
 } from '../viajes.js'
 import { SIN_VIAJE } from '../consultas/gastos.js'
 import { ESTADOS_VIAJE } from '../../src/utils/viajes.js'
@@ -627,16 +628,6 @@ const crearViajeTool = {
       meta: { aviso: avisoSolapamiento(resultado.viaje, viajes) },
     }
   },
-}
-
-// Dos viajes en curso que se superponen anulan la autodetección (no se sabe a cuál va el gasto).
-function avisoSolapamiento(viaje, viajes) {
-  if (viaje.estado !== 'en_curso') return null
-  const choca = viajes.find(v => v.id !== viaje.id && v.estado === 'en_curso'
-    && v.fecha_desde <= viaje.fecha_hasta && viaje.fecha_desde <= v.fecha_hasta)
-  return choca
-    ? `"${choca.nombre}" también está en curso en fechas que se cruzan: mientras ambos sigan así, los gastos nuevos no se etiquetan solos. Ofrecé cerrar uno.`
-    : null
 }
 
 // ─── 10. cambiar_estado_viaje ────────────────────────────────────────────────

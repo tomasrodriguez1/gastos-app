@@ -553,12 +553,40 @@ Decision:
   (eso es editar gastos, que el MCP no hace).
 - Lectura nueva: `resumen_viaje`, `listar_viajes` ampliada y filtro/agrupación `viaje` en
   `buscar_gastos`/`resumir_gastos`.
+- El agente interno de `/agente` (y Telegram) tiene las mismas cuatro tools de viajes; como con
+  las reservas, el prompt le exige mostrar nombre y fechas y esperar confirmación antes de
+  `crear_viaje`. El aviso de viajes cruzados (`avisoSolapamiento`) vive en `server/viajes.js` y lo
+  comparten ambos.
 Alternatives considered: MCP de viajes solo lectura (descartada por el usuario: abrir el viaje
 desde el teléfono es el caso principal); crear viajes como pendientes de aprobación (descartada:
 agrega una bandeja nueva para algo que no mueve plata).
 Consequences: un cliente MCP puede poner un viaje en curso por error y etiquetar gastos nuevos; se
 corrige en la bandeja (gastos pendientes) y cambiando el estado. Las fechas de un viaje creado por
 MCP solo se corrigen en `/viajes`.
+
+## DEC-026 - Un FGP en rojo lo cubre primero el saldo real del ciclo
+
+Date: 2026-10-23
+Context: el FGP (DEC-016) es un saldo derivado (previsto − gastado de las líneas FGP). Cuando una
+línea se pasaba, el panel, el aviso global y el inicio pedían registrar de dónde salía la
+diferencia aunque el ciclo tuviera plata de sobra.
+Decision:
+- `calcularFondoFGP` recibe `saldoRealCiclo` (ingresos reales + fondos − gastos del ciclo actual,
+  el mismo "Saldo real" del inicio, `calcularSaldosCiclo`) y devuelve `faltante`,
+  `cubiertoPorCiclo = min(faltante, max(0, saldoRealCiclo))` y `faltantePorCubrir`.
+- Solo `faltantePorCubrir > 0` es "FGP en rojo": formulario de cobertura (por ese monto), aviso
+  global y acción del inicio. Si el ciclo lo cubre todo, `/fondos` muestra una nota ámbar sin
+  pedir nada. El saldo acumulado se sigue mostrando tal cual (negativo) y no se registra ningún
+  movimiento.
+- Mientras el resumen de ingresos carga, `resumenFGP` queda en `null` (sin rojo falso); si falla,
+  se pide cobertura por el total, como antes.
+Alternatives considered: registrar automáticamente una cobertura "saldo del ciclo" (descartada:
+escribe un movimiento que depende de un dato que sigue cambiando durante el ciclo); reemplazar el
+saldo FGP por un saldo leído de la cuenta (descartada por el usuario).
+Consequences: el saldo FGP negativo se arrastra al ciclo siguiente; si ese ciclo no tiene saldo
+real suficiente, ahí sí vuelve a pedir cobertura. El saldo real usa el ciclo actual, así que una
+plata que sobra ya comprometida en otra cosa del ciclo igual cuenta como disponible. No cambia
+"Mover a fondo TC".
 
 ## GAP: decisions to document
 

@@ -102,6 +102,14 @@ describe('asignar / desasignar', () => {
     expect(g3.presupuesto_manual).toEqual({ grupo: 'VIAJES', subcategoria: 'Alojamiento' })
   })
 
+  test('sugerirCategoria=false solo etiqueta, sin escribir presupuesto_manual', async () => {
+    const { db, state } = dbFalsa({ viajes: [PERU], gastos: gastos() })
+    await asignarGastosAViaje('v1', ['g1', 'g3'], db, { sugerirCategoria: false })
+    const [g1, , g3] = state.gastos
+    expect(g1).toMatchObject({ viaje_id: 'v1', presupuesto_manual: null })
+    expect(g3.presupuesto_manual).toEqual({ grupo: 'VIAJES', subcategoria: 'Alojamiento' })
+  })
+
   test('desasignar limpia solo la sugerencia, no el override manual', async () => {
     const { db, state } = dbFalsa({ viajes: [PERU], gastos: gastos() })
     await asignarGastosAViaje('v1', ['g1', 'g3'], db)
