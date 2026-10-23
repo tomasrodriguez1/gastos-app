@@ -1,4 +1,4 @@
-// Tools del servidor MCP: 7 de gastos (acá, incluida listar_viajes) + 9 de clases particulares
+// Tools del servidor MCP: 6 de gastos + 4 de viajes (acá) + 9 de clases particulares
 // (toolsClases.js) + 2 de ingresos (toolsIngresos.js). Capa fina: validan el input (antes de tocar la DB) y
 // delegan en funciones que ya usa la app — ejecutarCrearGasto (mismo camino que
 // el chat de /agente), resumenCiclo, cargarCatalogos, el read service de
@@ -7,6 +7,9 @@
 // Gastos: la única escritura es crear_gasto, que deja el gasto en estado
 // 'pendiente' en la bandeja (/bandeja, /log). No hay tools para confirmar,
 // editar ni borrar gastos, ni para escribir presupuesto, fondos o catálogos.
+// Viajes (DEC-025): crear_viaje y cambiar_estado_viaje escriben directo — un viaje no es plata y
+// lo que provoca (gastos nuevos etiquetados con el viaje) sigue naciendo pendiente. No pueden
+// borrar viajes, cambiar su presupuesto ni asignar/quitar gastos existentes.
 // Clases: crean alumnos/clases y cambian estados. No borran nada ni reabren un pago (ver
 // toolsClases.js).
 // Ingresos: registrar_ingreso y registrar_pago (clases) dejan el ingreso y el pago PENDIENTES de
@@ -23,7 +26,15 @@ import { TOOLS_INGRESOS, depsIngresos } from './toolsIngresos.js'
 import { cargarCatalogos } from '../catalogos.js'
 import { ejecutarCrearGasto } from '../agente.js'
 import { obtenerGastoPorId } from '../gastos/actualizar.js'
-import { listarViajes, buscarViajePorTexto } from '../viajes.js'
+import {
+  listarViajes,
+  buscarViajePorTexto,
+  obtenerResumenViaje,
+  crearViaje,
+  editarViaje,
+} from '../viajes.js'
+import { SIN_VIAJE } from '../consultas/gastos.js'
+import { ESTADOS_VIAJE } from '../../src/utils/viajes.js'
 import { resumenCiclo } from '../consultas/ciclo.js'
 import { buscarGastos, resumirGastos, MAX_GRUPOS } from '../consultas/gastos.js'
 import {
@@ -108,6 +119,24 @@ const filtrosShape = {
   grupo: z.string().trim().min(1).optional().describe('Grupo presupuestario resuelto, coincidencia parcial sin distinguir mayúsculas (ej. "transporte")'),
   estado: z.enum(['confirmado', 'pendiente', 'error_parseo']).optional()
     .describe('Por defecto todos menos descartados. pendiente/error_parseo = en la bandeja esperando revisión humana'),
+  viaje: z.string().trim().min(1).optional().describe('Solo gastos de este viaje: nombre de listar_viajes (sin distinguir mayúsculas, vale parcial si es único)'),
+}
+
+// El usuario nombra el viaje, no su id. Ambiguo o inexistente → validacion con la lista.
+async function resolverViaje(texto, deps) {
+  const viajes = await deps.listarViajes()
+  const viaje = buscarViajePorTexto(viajes, texto)
+  if (!viaje) {
+    throw validacion(`viaje "${texto}" no existe o es ambiguo. Viajes: ${viajes.map(v => v.nombre).join(', ') || '(ninguno)'}`)
+  }
+  return { viaje, viajes }
+}
+
+// Filtro `viaje` (nombre) → `viaje_id` para el read service.
+async function filtrosConViaje({ viaje, ...filtros }, deps) {
+  if (!viaje) return filtros
+  const { viaje: encontrado } = await resolverViaje(viaje, deps)
+  return { ...filtros, viaje_id: encontrado.id }
 }
 
 function validarFiltros(input) {
@@ -179,14 +208,7 @@ const crearGasto = {
     const contexto = porNombre(catalogos.contextos, input.contexto) || ''
     const contextoDescartado = input.contexto && !contexto ? input.contexto : null
 
-    let viaje = null
-    if (input.viaje) {
-      const viajes = await deps.listarViajes()
-      viaje = buscarViajePorTexto(viajes, input.viaje)
-      if (!viaje) {
-        throw validacion(`viaje "${input.viaje}" no existe o es ambiguo. Viajes: ${viajes.map(v => v.nombre).join(', ') || '(ninguno)'}`)
-      }
-    }
+    const viaje = input.viaje ? (await resolverViaje(input.viaje, deps)).viaje : null
 
     const motivo = input.motivo.trim()
     const resultado = await deps.ejecutarCrearGasto(catalogos, {
@@ -274,7 +296,7 @@ const buscarGastosTool = {
   async handler(input, deps) {
     validarFiltros(input)
     validarMontos(input.monto_min, input.monto_max)
-    const { filas, meta } = await deps.buscarGastos(input)
+    const { filas, meta } = await deps.buscarGastos(await filtrosConViaje(input, deps))
     return { data: filas, meta }
   },
 }
@@ -297,19 +319,27 @@ const resumirGastosTool = {
     'monto_ciclo sea 0 (p.ej. financiadas por un fondo de ahorro). Pendientes sin categoría van a',
     '"SIN CLASIFICAR" y sí suman; confirmados sin regla de mapeo van a "SIN MAPEO". `porcentaje` es',
     '0–100 sobre total_ciclo. Máximo 30 grupos; el resto se suma en "otros". Sin grupos si',
-    'agrupar_por es "ninguno" (default).',
+    'agrupar_por es "ninguno" (default). agrupar_por "viaje" desglosa por viaje (clave = nombre del',
+    'viaje, "(sin viaje)" para el resto); para el costo completo de UN viaje usá resumen_viaje, que',
+    'además incluye lo financiado por fondos.',
   ].join(' '),
   annotations: { title: 'Resumir gastos', readOnlyHint: true, openWorldHint: false },
   schema: z.strictObject({
     ...filtrosShape,
-    agrupar_por: z.enum(['ninguno', 'grupo', 'subcategoria', 'banco', 'dia', 'mes', 'ciclo']).default('ninguno')
+    agrupar_por: z.enum(['ninguno', 'grupo', 'subcategoria', 'banco', 'dia', 'mes', 'ciclo', 'viaje']).default('ninguno')
       .describe('Dimensión del desglose. grupo/subcategoria = categoría presupuestaria resuelta'),
   }),
   async handler(input, deps) {
     validarFiltros(input)
     const { agrupar_por, ...filtros } = input
-    const r = await deps.resumirGastos({ ...filtros, agrupar_por })
-    const { grupos, grupos_totales, ...totales } = r
+    const r = await deps.resumirGastos({ ...(await filtrosConViaje(filtros, deps)), agrupar_por })
+    const { grupos_totales, ...totales } = r
+    let { grupos } = r
+    if (grupos && agrupar_por === 'viaje') {
+      const nombres = new Map((await deps.listarViajes()).map(v => [v.id, v.nombre]))
+      grupos = grupos.map(g => ({ ...g, clave: g.clave === SIN_VIAJE ? SIN_VIAJE : (nombres.get(g.clave) || g.clave) }))
+    }
+    delete totales.grupos
     return {
       data: grupos ? { ...totales, grupos } : totales,
       meta: { agrupar_por, ...(grupos ? { grupos_totales, truncado: grupos_totales > MAX_GRUPOS } : {}) },
@@ -501,9 +531,11 @@ const listarViajesTool = {
   name: 'listar_viajes',
   description: [
     'Lista los viajes: una etiqueta que agrupa los gastos de un viaje (pasajes, comida, transporte…),',
-    'con fechas, estado (planificado | en_curso | cerrado), presupuesto opcional y total gastado.',
-    'Solo lectura; los viajes se crean en /viajes de la app. Usala para saber qué nombre pasar en',
-    'crear_gasto.viaje o para responder cuánto costó un viaje.',
+    'con fechas, estado (planificado | en_curso | cerrado), presupuesto opcional, total gastado,',
+    'gasto antes y durante el viaje, gasto por día y % que salió del grupo ALE (viajes con la Ale).',
+    'Solo lectura. Usala para saber qué nombre pasar en `viaje` y para comparar viajes ("¿cuál fue',
+    'el más caro por día?"). Para el detalle de uno usá resumen_viaje. Importes CLP: costo propio',
+    '(descuenta split, incluye lo financiado por fondos); USD sin tipo de cambio va aparte.',
   ].join(' '),
   annotations: { title: 'Listar viajes', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   schema: z.strictObject({}),
@@ -519,8 +551,119 @@ const listarViajesTool = {
         presupuesto: v.presupuesto,
         total_gastado: v.total_gastos,
         n_gastos: v.n_gastos,
+        gasto_antes: v.gasto_antes,
+        gasto_durante: v.gasto_durante,
+        dias: v.dias,
+        por_dia: v.por_dia,
+        pct_ale: v.pct_ale,
+        usd_sin_convertir: v.usd_sin_convertir,
       })),
       meta: { total: viajes.length },
+    }
+  },
+}
+
+// ─── 8. resumen_viaje ────────────────────────────────────────────────────────
+
+const resumenViajeTool = {
+  name: 'resumen_viaje',
+  description: [
+    'Detalle de UN viaje: total, presupuesto y cuánto queda, gasto antes de salir (pasajes, reservas)',
+    'y durante, gasto por día, desglose por grupo presupuestario (ALE = con la Ale, VIAJES = sin ella,',
+    'u otros) con subcategorías, cuántos gastos siguen pendientes de revisión y los 5 más grandes.',
+    'Usala para "¿cómo voy en Perú?", "¿cuánto llevo en comida en el viaje?". `viaje` es el nombre',
+    'de listar_viajes. Importes CLP de costo propio (descuenta split, incluye lo financiado por',
+    'fondos, excluye descartados); USD sin tipo de cambio va aparte en usd_sin_convertir. Los',
+    'pendientes ya cuentan en el total aunque no estén confirmados.',
+  ].join(' '),
+  annotations: { title: 'Resumen de un viaje', readOnlyHint: true, openWorldHint: false },
+  schema: z.strictObject({
+    viaje: z.string().trim().min(1).describe('Nombre del viaje (de listar_viajes)'),
+  }),
+  async handler(input, deps) {
+    const { viaje } = await resolverViaje(input.viaje, deps)
+    const resumen = await deps.resumenViaje(viaje.id)
+    if (!resumen) throw new ErrorTool('no_encontrado', `No encontré el viaje "${input.viaje}"`)
+    return { data: resumen, meta: {} }
+  },
+}
+
+// ─── 9. crear_viaje ──────────────────────────────────────────────────────────
+
+const crearViajeTool = {
+  name: 'crear_viaje',
+  description: [
+    'Crea un viaje (etiqueta para agrupar los gastos de un viaje). No mueve plata ni toca gastos.',
+    'Usala cuando el usuario dice que va a viajar o está partiendo. Con estado "en_curso", los',
+    'gastos nuevos (incluido crear_gasto) cuya fecha cae entre fecha_desde y fecha_hasta se',
+    'etiquetan solos con el viaje — siguen pendientes en la bandeja. Si el usuario dice "parto hoy",',
+    'usá en_curso; si es a futuro, planificado (default). No crees uno si ya hay un viaje con ese',
+    'nombre en listar_viajes: si hay que activarlo usá cambiar_estado_viaje. Fechas YYYY-MM-DD',
+    '(pueden ser futuras); presupuesto opcional en CLP entero. Confirmá con el usuario nombre y',
+    'fechas antes de llamar.',
+  ].join(' '),
+  annotations: { title: 'Crear viaje', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  schema: z.strictObject({
+    nombre: z.string().trim().min(1, 'no puede estar vacío').max(80).describe('Ej. "Perú 2026"'),
+    fecha_desde: fechaSchema.describe('Día de salida YYYY-MM-DD'),
+    fecha_hasta: fechaSchema.describe('Día de vuelta YYYY-MM-DD, >= fecha_desde'),
+    estado: z.enum(['planificado', 'en_curso']).default('planificado')
+      .describe('planificado (default) o en_curso si el viaje ya empezó'),
+    presupuesto: z.number().int('CLP entero').min(0).optional().describe('Opcional, CLP entero'),
+    emoji: z.string().trim().max(8).optional().describe('Opcional, un emoji (ej. ✈️)'),
+    nota: z.string().trim().max(300).optional(),
+  }),
+  async handler(input, deps) {
+    validarRango('fecha_desde', input.fecha_desde, 'fecha_hasta', input.fecha_hasta)
+    const viajes = await deps.listarViajes()
+    const mismoNombre = viajes.find(v => v.nombre.toLowerCase() === input.nombre.toLowerCase())
+    if (mismoNombre) {
+      throw new ErrorTool('conflicto', `Ya existe el viaje "${mismoNombre.nombre}" (${mismoNombre.estado}). Para activarlo usá cambiar_estado_viaje.`)
+    }
+    const resultado = await deps.crearViaje(input)
+    if (resultado.error) throw validacion(resultado.error)
+    return {
+      data: resultado.viaje,
+      meta: { aviso: avisoSolapamiento(resultado.viaje, viajes) },
+    }
+  },
+}
+
+// Dos viajes en curso que se superponen anulan la autodetección (no se sabe a cuál va el gasto).
+function avisoSolapamiento(viaje, viajes) {
+  if (viaje.estado !== 'en_curso') return null
+  const choca = viajes.find(v => v.id !== viaje.id && v.estado === 'en_curso'
+    && v.fecha_desde <= viaje.fecha_hasta && viaje.fecha_desde <= v.fecha_hasta)
+  return choca
+    ? `"${choca.nombre}" también está en curso en fechas que se cruzan: mientras ambos sigan así, los gastos nuevos no se etiquetan solos. Ofrecé cerrar uno.`
+    : null
+}
+
+// ─── 10. cambiar_estado_viaje ────────────────────────────────────────────────
+
+const cambiarEstadoViajeTool = {
+  name: 'cambiar_estado_viaje',
+  description: [
+    'Cambia el estado de un viaje: planificado → en_curso (empezó: los gastos nuevos dentro de sus',
+    'fechas se etiquetan solos con el viaje, siguen pendientes en la bandeja) → cerrado (terminó).',
+    'Solo cambia el estado: no borra el viaje, no toca su presupuesto ni sus gastos. `viaje` es el',
+    'nombre de listar_viajes. Idempotente: pedir el estado que ya tiene no cambia nada.',
+  ].join(' '),
+  annotations: { title: 'Cambiar estado de viaje', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  schema: z.strictObject({
+    viaje: z.string().trim().min(1).describe('Nombre del viaje (de listar_viajes)'),
+    estado: z.enum(ESTADOS_VIAJE).describe('planificado | en_curso | cerrado'),
+  }),
+  async handler(input, deps) {
+    const { viaje, viajes } = await resolverViaje(input.viaje, deps)
+    if (viaje.estado === input.estado) {
+      return { data: { ...viaje, cambio: false }, meta: { aviso: null } }
+    }
+    const resultado = await deps.editarViaje(viaje.id, { estado: input.estado })
+    if (resultado.error) throw validacion(resultado.error)
+    return {
+      data: { ...resultado.viaje, estado_anterior: viaje.estado, cambio: true },
+      meta: { aviso: avisoSolapamiento(resultado.viaje, viajes) },
     }
   },
 }
@@ -528,6 +671,9 @@ const listarViajesTool = {
 export const TOOLS = [
   crearGasto,
   listarViajesTool,
+  resumenViajeTool,
+  crearViajeTool,
+  cambiarEstadoViajeTool,
   buscarGastosTool,
   resumirGastosTool,
   compararPeriodos,
@@ -545,6 +691,9 @@ export const depsPorDefecto = {
   resumirGastos,
   resumenCiclo,
   listarViajes: () => listarViajes(),
+  resumenViaje: (id) => obtenerResumenViaje(id),
+  crearViaje: (datos) => crearViaje(datos),
+  editarViaje: (id, cambios) => editarViaje(id, cambios),
   ...depsClases,
   ...depsIngresos,
   ahora: () => new Date(),

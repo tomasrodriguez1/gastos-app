@@ -56,8 +56,12 @@ const deps = {
   resumirGastos: mock(async ({ agrupar_por }) => agregarFilas([], { agrupar_por })),
   resumenCiclo: mock(async ({ ciclo }) => resumenFalso(ciclo, 1000)),
   listarViajes: mock(async () => [
-    { id: 'v-peru', nombre: 'Perú 2026', fecha_desde: '2026-10-01', fecha_hasta: '2026-10-10', estado: 'en_curso', presupuesto: null, total_gastos: 50000, n_gastos: 2 },
+    { id: 'v-peru', nombre: 'Perú 2026', fecha_desde: '2026-10-01', fecha_hasta: '2026-10-10', estado: 'en_curso', presupuesto: null, total_gastos: 50000, n_gastos: 2, por_dia: 5000, pct_ale: 60 },
+    { id: 'v-sur', nombre: 'Sur', fecha_desde: '2026-02-01', fecha_hasta: '2026-02-05', estado: 'cerrado', presupuesto: 300000, total_gastos: 0, n_gastos: 0, por_dia: 0, pct_ale: 0 },
   ]),
+  resumenViaje: mock(async (id) => ({ viaje: { id, nombre: 'Perú 2026' }, total: 50000, pendientes_revision: 1, por_grupo: [] })),
+  crearViaje: mock(async (datos) => ({ viaje: { id: 'v-nuevo', ...datos } })),
+  editarViaje: mock(async (id, cambios) => ({ viaje: { id, nombre: 'Sur', fecha_desde: '2026-02-01', fecha_hasta: '2026-02-05', ...cambios } })),
   listarAlumnos: mock(async () => [{ id: 1, nombre: 'Cristóbal Mena', precio_hora_default: 25000, activo: true }]),
   buscarClases: mock(async ({ limite, offset }) => ({
     filas: [CLASE],
@@ -172,15 +176,15 @@ describe('auth /mcp', () => {
 })
 
 describe('descubrimiento', () => {
-  test('expone exactamente las 18 tools (7 de gastos + 9 de clases + 2 de ingresos), sin escrituras extra', async () => {
+  test('expone exactamente las 21 tools (6 de gastos + 4 de viajes + 9 de clases + 2 de ingresos), sin escrituras extra', async () => {
     const client = await conectar()
     const { tools } = await client.listTools()
     expect(tools.map(t => t.name).sort()).toEqual([
-      'agendar_clase', 'buscar_clases', 'buscar_gastos', 'cancelar_clase', 'comparar_periodos', 'crear_alumno',
-      'crear_gasto', 'listar_alumnos', 'listar_catalogos', 'listar_viajes', 'marcar_dictada', 'mover_clase', 'registrar_ingreso',
-      'registrar_pago', 'resumen_clases', 'resumen_ingresos', 'resumen_presupuesto', 'resumir_gastos',
+      'agendar_clase', 'buscar_clases', 'buscar_gastos', 'cambiar_estado_viaje', 'cancelar_clase', 'comparar_periodos', 'crear_alumno',
+      'crear_gasto', 'crear_viaje', 'listar_alumnos', 'listar_catalogos', 'listar_viajes', 'marcar_dictada', 'mover_clase', 'registrar_ingreso',
+      'registrar_pago', 'resumen_clases', 'resumen_ingresos', 'resumen_presupuesto', 'resumen_viaje', 'resumir_gastos',
     ])
-    const escrituras = ['crear_gasto', 'crear_alumno', 'agendar_clase', 'mover_clase', 'marcar_dictada', 'cancelar_clase', 'registrar_pago', 'registrar_ingreso']
+    const escrituras = ['crear_gasto', 'crear_viaje', 'cambiar_estado_viaje', 'crear_alumno', 'agendar_clase', 'mover_clase', 'marcar_dictada', 'cancelar_clase', 'registrar_pago', 'registrar_ingreso']
     for (const t of tools) {
       expect(t.inputSchema.type).toBe('object')
       expect(t.description.length).toBeGreaterThan(80)
@@ -705,11 +709,83 @@ describe('viajes', () => {
     await client.close()
   })
 
-  test('listar_viajes devuelve nombre, estado y total', async () => {
+  test('listar_viajes devuelve nombre, estado, total, por día y % ALE', async () => {
     const client = await conectar()
     const r = await llamar(client, 'listar_viajes', {})
     expect(r.ok).toBe(true)
-    expect(r.data[0]).toMatchObject({ nombre: 'Perú 2026', estado: 'en_curso', total_gastado: 50000 })
+    expect(r.data[0]).toMatchObject({ nombre: 'Perú 2026', estado: 'en_curso', total_gastado: 50000, por_dia: 5000, pct_ale: 60 })
+    await client.close()
+  })
+
+  test('resumen_viaje resuelve el nombre y devuelve el detalle', async () => {
+    const client = await conectar()
+    const r = await llamar(client, 'resumen_viaje', { viaje: 'perú' })
+    expect(r.ok).toBe(true)
+    expect(deps.resumenViaje).toHaveBeenCalledWith('v-peru')
+    expect(r.data).toMatchObject({ total: 50000, pendientes_revision: 1 })
+    expect(await llamar(client, 'resumen_viaje', { viaje: 'Japón' })).toMatchObject({ ok: false, code: 'validacion' })
+    await client.close()
+  })
+
+  test('buscar_gastos y resumir_gastos filtran por viaje (nombre → viaje_id)', async () => {
+    const client = await conectar()
+    await llamar(client, 'buscar_gastos', { viaje: 'sur' })
+    expect(deps.buscarGastos.mock.calls[0][0]).toMatchObject({ viaje_id: 'v-sur' })
+    expect(deps.buscarGastos.mock.calls[0][0]).not.toHaveProperty('viaje')
+    await llamar(client, 'resumir_gastos', { viaje: 'Perú 2026' })
+    expect(deps.resumirGastos.mock.calls[0][0]).toMatchObject({ viaje_id: 'v-peru' })
+    expect(await llamar(client, 'buscar_gastos', { viaje: 'nada' })).toMatchObject({ ok: false, code: 'validacion' })
+    await client.close()
+  })
+
+  test('resumir_gastos agrupar_por viaje traduce el id al nombre', async () => {
+    const filas = [
+      { incluido: true, monto: 30000, monto_ciclo: 30000, viaje_id: 'v-peru' },
+      { incluido: true, monto: 10000, monto_ciclo: 10000, viaje_id: null },
+    ]
+    deps.resumirGastos.mockImplementationOnce(async ({ agrupar_por }) => agregarFilas(filas, { agrupar_por }))
+    const client = await conectar()
+    const r = await llamar(client, 'resumir_gastos', { agrupar_por: 'viaje' })
+    expect(r.data.grupos.map(g => g.clave)).toEqual(['Perú 2026', '(sin viaje)'])
+    await client.close()
+  })
+
+  test('crear_viaje: crea, rechaza nombre repetido, fechas invertidas y estado cerrado', async () => {
+    const client = await conectar()
+    const ok = await llamar(client, 'crear_viaje', { nombre: 'Japón', fecha_desde: '2027-03-01', fecha_hasta: '2027-03-15' })
+    expect(ok.ok).toBe(true)
+    expect(deps.crearViaje.mock.calls[0][0]).toMatchObject({ nombre: 'Japón', estado: 'planificado' })
+    expect(await llamar(client, 'crear_viaje', { nombre: 'perú 2026', fecha_desde: '2027-03-01', fecha_hasta: '2027-03-15' }))
+      .toMatchObject({ ok: false, code: 'conflicto' })
+    expect(await llamar(client, 'crear_viaje', { nombre: 'X', fecha_desde: '2027-03-15', fecha_hasta: '2027-03-01' }))
+      .toMatchObject({ ok: false, code: 'validacion' })
+    expect(await llamar(client, 'crear_viaje', { nombre: 'X', fecha_desde: '2027-03-01', fecha_hasta: '2027-03-02', estado: 'cerrado' }))
+      .toMatchObject({ ok: false, code: 'validacion' })
+    expect(deps.crearViaje).toHaveBeenCalledTimes(1)
+    await client.close()
+  })
+
+  test('crear_viaje en curso que se cruza con otro en curso → aviso', async () => {
+    const client = await conectar()
+    const r = await llamar(client, 'crear_viaje', { nombre: 'Cusco', fecha_desde: '2026-10-05', fecha_hasta: '2026-10-08', estado: 'en_curso' })
+    expect(r.ok).toBe(true)
+    expect(r.meta.aviso).toContain('Perú 2026')
+    await client.close()
+  })
+
+  test('cambiar_estado_viaje: cambia, es idempotente y no acepta otros campos', async () => {
+    const client = await conectar()
+    const r = await llamar(client, 'cambiar_estado_viaje', { viaje: 'Sur', estado: 'en_curso' })
+    expect(r.ok).toBe(true)
+    expect(deps.editarViaje).toHaveBeenCalledWith('v-sur', { estado: 'en_curso' })
+    expect(r.data).toMatchObject({ estado: 'en_curso', estado_anterior: 'cerrado', cambio: true })
+
+    const igual = await llamar(client, 'cambiar_estado_viaje', { viaje: 'Perú 2026', estado: 'en_curso' })
+    expect(igual.data.cambio).toBe(false)
+    expect(deps.editarViaje).toHaveBeenCalledTimes(1)
+
+    expect(await llamar(client, 'cambiar_estado_viaje', { viaje: 'Sur', estado: 'cerrado', presupuesto: 0 }))
+      .toMatchObject({ ok: false, code: 'validacion' })
     await client.close()
   })
 })

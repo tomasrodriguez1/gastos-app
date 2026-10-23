@@ -65,7 +65,7 @@ describe('buscarGastos / resumirGastos (Postgres)', () => {
 
     const fila = porCiclo.filas.find(f => f.motivo === 'Test MCP sin mapear')
     expect(Object.keys(fila).sort()).toEqual([
-      'banco', 'estado', 'fecha', 'grupo', 'id', 'monto', 'monto_ciclo', 'motivo', 'origen', 'subcategoria', 'usd',
+      'banco', 'estado', 'fecha', 'grupo', 'id', 'monto', 'monto_ciclo', 'motivo', 'origen', 'subcategoria', 'usd', 'viaje_id',
     ])
     expect(fila).toMatchObject({ grupo: SIN_CLASIFICAR, monto_ciclo: 3000, estado: 'pendiente', origen: 'mcp' })
     expect(porCiclo.filas.find(f => f.usd === 90).monto_ciclo).toBe(0)

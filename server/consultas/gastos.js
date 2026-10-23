@@ -22,6 +22,7 @@ import { montoDelCiclo } from '../../src/utils/calculos.js'
 // en el dashboard, pero no tienen grupo presupuestario.
 export const SIN_MAPEO = 'SIN MAPEO'
 export const MAX_GRUPOS = 30
+export const SIN_VIAJE = '(sin viaje)'
 
 function escaparLike(texto) {
   return texto.replace(/[\\%_]/g, '\\$&')
@@ -39,13 +40,13 @@ function clausulaOrden(orden) {
 // Sin payload_raw, sync_key ni fuente_id: nada de eso sale por el MCP.
 async function cargarGastos(filtros = {}, orden = 'fecha_desc') {
   const {
-    fecha_desde, fecha_hasta, ciclo, mes, banco, texto, monto_min, monto_max, estado,
+    fecha_desde, fecha_hasta, ciclo, mes, banco, texto, monto_min, monto_max, estado, viaje_id,
   } = filtros
   const vacio = sql``
   const rows = await sql`
     SELECT id, fecha, mes, ciclo_financiero, motivo, banco, tipos, contexto, contexto_override,
            monto, monto_real, usd, monto_clp_manual, split, monto_presupuesto_manual,
-           presupuesto_manual, en_presupuesto, financiado_por, estado, origen, created_at
+           presupuesto_manual, en_presupuesto, financiado_por, estado, origen, viaje_id, created_at
     FROM gastos
     WHERE TRUE
       ${fecha_desde ? sql`AND fecha >= ${fecha_desde}` : vacio}
@@ -56,6 +57,7 @@ async function cargarGastos(filtros = {}, orden = 'fecha_desc') {
       ${texto ? sql`AND motivo ILIKE ${'%' + escaparLike(texto) + '%'}` : vacio}
       ${monto_min != null ? sql`AND monto >= ${monto_min}` : vacio}
       ${monto_max != null ? sql`AND monto <= ${monto_max}` : vacio}
+      ${viaje_id ? sql`AND viaje_id = ${viaje_id}` : vacio}
       ${estado
         ? sql`AND estado = ${estado}`
         : sql`AND (estado IS NULL OR estado <> 'descartado')`}
@@ -83,6 +85,7 @@ export function prepararFila(gasto, reglas) {
     origen: gasto.origen,
     grupo: cat?.grupo || null,
     subcategoria: cat?.subcategoria || null,
+    viaje_id: gasto.viaje_id || null,
     incluido,
   }
 }
@@ -101,8 +104,8 @@ async function cargarFilas(filtros, orden) {
 export async function buscarGastos({ limite = 20, offset = 0, orden = 'fecha_desc', ...filtros } = {}) {
   const filas = await cargarFilas(filtros, orden)
   const pagina = filas.slice(offset, offset + limite).map(({
-    id, fecha, motivo, monto, usd, monto_ciclo, banco, estado, origen, grupo, subcategoria,
-  }) => ({ id, fecha, motivo, monto, usd, monto_ciclo, banco, estado, origen, grupo, subcategoria }))
+    id, fecha, motivo, monto, usd, monto_ciclo, banco, estado, origen, grupo, subcategoria, viaje_id,
+  }) => ({ id, fecha, motivo, monto, usd, monto_ciclo, banco, estado, origen, grupo, subcategoria, viaje_id }))
   return {
     filas: pagina,
     meta: {
@@ -123,6 +126,8 @@ function claveDe(fila, agruparPor) {
     case 'dia': return fila.fecha
     case 'mes': return fila.mes
     case 'ciclo': return fila.ciclo_financiero
+    // El id; la capa MCP lo traduce al nombre del viaje.
+    case 'viaje': return fila.viaje_id || SIN_VIAJE
     default: return null
   }
 }

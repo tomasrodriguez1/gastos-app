@@ -7,6 +7,7 @@ import {
   editarViaje,
   eliminarViaje,
   listarViajes,
+  obtenerResumenViaje,
 } from './viajes'
 
 // db falsa: tagged template que despacha por texto de consulta, como en fondosAhorro.test.js.
@@ -35,6 +36,7 @@ function dbFalsa({ viajes = [], gastos = [] } = {}) {
       return antes === state.viajes.length ? [] : [{ id: values[0] }]
     }
     if (consulta.includes('SELECT * FROM gastos WHERE viaje_id IS NOT NULL')) return state.gastos.filter(g => g.viaje_id)
+    if (consulta.includes('SELECT * FROM gastos WHERE viaje_id =')) return state.gastos.filter(g => g.viaje_id === values[0])
     if (consulta.includes('SELECT * FROM gastos WHERE id = ANY')) {
       const [ids] = values
       return state.gastos.filter(g => ids.includes(g.id) || ids.includes(g.sync_key))
@@ -135,7 +137,26 @@ describe('eliminarViaje / listarViajes', () => {
       ],
     })
     const [v] = await listarViajes(db)
-    expect(v).toMatchObject({ nombre: 'Perú 2026', total_gastos: 35000, n_gastos: 2 })
+    expect(v).toMatchObject({ nombre: 'Perú 2026', total_gastos: 35000, n_gastos: 2, dias: 5, por_dia: 7000, pct_ale: 0 })
+  })
+
+  test('obtenerResumenViaje: KPIs, grupos, pendientes y mayores gastos', async () => {
+    const { db } = dbFalsa({
+      viajes: [{ ...PERU, presupuesto: '100000' }],
+      gastos: [
+        { id: 'g1', viaje_id: 'v1', fecha: '2026-09-01', monto: 60000, monto_real: 60000, tipos: [], estado: 'confirmado', presupuesto_manual: { grupo: 'ALE', subcategoria: 'Pasajes' } },
+        { id: 'g2', viaje_id: 'v1', fecha: '2026-10-02', monto: 20000, monto_real: 20000, tipos: [], estado: 'pendiente', presupuesto_manual: { grupo: 'VIAJES', subcategoria: 'Comida' } },
+        { id: 'g3', viaje_id: 'otro', fecha: '2026-10-02', monto: 999, monto_real: 999, tipos: [] },
+      ],
+    })
+    const r = await obtenerResumenViaje('v1', db)
+    expect(r).toMatchObject({
+      total: 80000, restante: 20000, gasto_antes: 60000, gasto_durante: 20000,
+      por_dia_durante: 4000, cantidad: 2, pendientes_revision: 1,
+    })
+    expect(r.por_grupo[0]).toMatchObject({ grupo: 'ALE', total: 60000, porcentaje: 75 })
+    expect(r.mayores_gastos.map(g => g.id)).toEqual(['g1', 'g2'])
+    expect(await obtenerResumenViaje('nope', db)).toBeNull()
   })
 })
 

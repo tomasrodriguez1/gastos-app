@@ -71,8 +71,56 @@ export async function listarViajes(db = sql) {
   const gastos = (await db`SELECT * FROM gastos WHERE viaje_id IS NOT NULL`).map(deserializarGasto)
   return viajes.map(v => {
     const r = resumirViaje(v, gastos)
-    return { ...v, total_gastos: r.total, n_gastos: r.gastos.length }
+    const ale = r.porGrupo.ALE?.total || 0
+    return {
+      ...v,
+      total_gastos: r.total,
+      n_gastos: r.gastos.length,
+      gasto_antes: r.antes,
+      gasto_durante: r.durante,
+      dias: r.dias,
+      por_dia: r.dias ? Math.round(r.total / r.dias) : 0,
+      pct_ale: r.total ? Math.round((ale / r.total) * 1000) / 10 : 0,
+      usd_sin_convertir: r.usd,
+    }
   })
+}
+
+// Detalle de un viaje para el MCP/agente: KPIs, desglose por grupo y subcategoría, pendientes
+// de revisión y los gastos más grandes. Mismos números que la página /viajes (resumirViaje).
+export async function obtenerResumenViaje(id, db = sql) {
+  const viaje = await obtenerViaje(id, db)
+  if (!viaje) return null
+  const gastos = (await db`SELECT * FROM gastos WHERE viaje_id = ${id}`).map(deserializarGasto)
+  const r = resumirViaje(viaje, gastos)
+  const redondear = n => Math.round(n)
+  return {
+    viaje,
+    total: r.total,
+    presupuesto: viaje.presupuesto,
+    restante: viaje.presupuesto != null ? viaje.presupuesto - r.total : null,
+    gasto_antes: r.antes,
+    gasto_durante: r.durante,
+    dias: r.dias,
+    por_dia_durante: r.promedioDiario,
+    usd_sin_convertir: r.usd,
+    cantidad: r.gastos.length,
+    pendientes_revision: r.gastos.filter(g => g.estado === 'pendiente' || g.estado === 'error_parseo').length,
+    por_grupo: Object.entries(r.porGrupo)
+      .sort((a, b) => b[1].total - a[1].total)
+      .map(([grupo, { total, subcategorias }]) => ({
+        grupo,
+        total: redondear(total),
+        porcentaje: r.total ? Math.round((total / r.total) * 1000) / 10 : 0,
+        subcategorias: Object.entries(subcategorias)
+          .sort((a, b) => b[1] - a[1])
+          .map(([subcategoria, monto]) => ({ subcategoria, total: redondear(monto) })),
+      })),
+    mayores_gastos: [...r.gastos]
+      .sort((a, b) => (b.monto_real ?? b.monto ?? 0) - (a.monto_real ?? a.monto ?? 0))
+      .slice(0, 5)
+      .map(g => ({ id: g.id, fecha: g.fecha, motivo: g.motivo, monto: g.monto_real ?? g.monto, usd: g.usd || 0, estado: g.estado })),
+  }
 }
 
 // Para el agente y el MCP: el usuario nombra el viaje ("Perú"), no su id. Match exacto por id o

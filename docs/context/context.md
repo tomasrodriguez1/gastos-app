@@ -207,15 +207,23 @@ decisión en DEC-018.
 
 `POST /mcp` — servidor MCP (Streamable HTTP, `@modelcontextprotocol/sdk`) para agentes externos,
 en el mismo proceso. Auth propia: `Authorization: Bearer <MCP_TOKEN>`, exento del gate global y
-con 401 siempre sin token, también en dev. Tiene 18 tools. **Ninguna escritura queda confirmada**:
+con 401 siempre sin token, también en dev. Tiene 21 tools. **Ninguna escritura queda confirmada**:
 los gastos quedan pendientes en la bandeja y los ingresos y pagos de clases quedan por aprobar en
-`/ingresos` (human in the loop).
+`/ingresos` (human in the loop). Única excepción: crear un viaje y cambiar su estado (DEC-025).
 
-**Gastos (7):**
+**Gastos (6):**
 - `crear_gasto`: la única escritura. Deja el gasto `pendiente` con `origen='mcp'` vía
   `ejecutarCrearGasto` y nunca lo confirma. Acepta `viaje` (nombre) opcional (DEC-024).
-- Lectura: `buscar_gastos`, `resumir_gastos`, `comparar_periodos`, `resumen_presupuesto` (reusa
-  `resumenCiclo`), `listar_catalogos` y `listar_viajes`.
+- Lectura: `buscar_gastos` y `resumir_gastos` (ambas con filtro `viaje`; `resumir_gastos` también
+  `agrupar_por: viaje`), `comparar_periodos`, `resumen_presupuesto` (reusa `resumenCiclo`) y
+  `listar_catalogos`.
+
+**Viajes (4, DEC-024/DEC-025):**
+- Lectura: `listar_viajes` (totales, antes/durante, por día, % ALE) y `resumen_viaje` (detalle de
+  uno: presupuesto restante, desglose por grupo y subcategoría, pendientes, mayores gastos).
+- Escritura directa: `crear_viaje` (planificado o en_curso; rechaza nombre repetido) y
+  `cambiar_estado_viaje` (solo el estado). No borran viajes, no tocan presupuesto ni asignan o
+  quitan gastos existentes.
 
 **Clases particulares (9, DEC-019):**
 - Lectura: `listar_alumnos`, `buscar_clases`, `resumen_clases`.

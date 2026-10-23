@@ -537,6 +537,29 @@ Consequences: si después cambia el contexto de un gasto, el `presupuesto_manual
 recalcula solo (se corrige en el modal). Con dos viajes `en_curso` superpuestos no se autodetecta
 ninguno. Vincular un viaje a un fondo de ahorro (ahorrado vs gastado) queda fuera de alcance.
 
+## DEC-025 - El MCP puede crear viajes y cambiar su estado
+
+Date: 2026-10-23
+Context: viajando, el usuario quiere "abrir" el viaje desde el teléfono (cliente MCP) para que los
+gastos que llegan queden etiquetados solos (DEC-024). DEC-017/DEC-020 dicen que ninguna escritura
+del MCP queda confirmada sin un humano.
+Decision:
+- Excepción acotada: `crear_viaje` y `cambiar_estado_viaje` escriben directo. Un viaje no es plata;
+  lo que provoca (gastos nuevos con el viaje y la categoría sugerida) sigue naciendo `pendiente` en
+  la bandeja, así que la revisión humana queda donde importa.
+- `crear_viaje` solo acepta `planificado` o `en_curso` y rechaza un nombre repetido (`conflicto`).
+  `cambiar_estado_viaje` solo toca el estado. Ambas avisan si quedan dos viajes en curso cruzados.
+- Fuera del MCP: borrar viajes, cambiar presupuesto o fechas, y asignar/quitar gastos existentes
+  (eso es editar gastos, que el MCP no hace).
+- Lectura nueva: `resumen_viaje`, `listar_viajes` ampliada y filtro/agrupación `viaje` en
+  `buscar_gastos`/`resumir_gastos`.
+Alternatives considered: MCP de viajes solo lectura (descartada por el usuario: abrir el viaje
+desde el teléfono es el caso principal); crear viajes como pendientes de aprobación (descartada:
+agrega una bandeja nueva para algo que no mueve plata).
+Consequences: un cliente MCP puede poner un viaje en curso por error y etiquetar gastos nuevos; se
+corrige en la bandeja (gastos pendientes) y cambiando el estado. Las fechas de un viaje creado por
+MCP solo se corrigen en `/viajes`.
+
 ## GAP: decisions to document
 
 - Política de rotación de `ACCESS_TOKEN` (hasta su retiro definitivo, ver DEC-009).
