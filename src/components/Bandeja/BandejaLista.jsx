@@ -90,6 +90,7 @@ export function BandejaLista({ gastos, gastosLocales, catalogos, onActualizarGas
         onEliminar={onEliminarGasto}
         onActualizar={onActualizarGasto}
         catalogos={catalogos}
+        seleccionable
       />
     </>
   )

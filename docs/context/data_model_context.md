@@ -36,10 +36,12 @@ Tabla única para gastos sincronizados y manuales.
 | `origen` | TEXT | `manual` (default) \| `mail` \| `chat` (F3, agente conversacional) \| `telefono` (atajo iOS, `POST /api/ingesta/telefono`) \| `mcp` (cliente MCP remoto, `crear_gasto` en `POST /mcp`) — de dónde entró el gasto |
 | `fuente_id` | TEXT | Id externo (p.ej. id de mensaje de Gmail) para idempotencia de ingesta; único (parcial WHERE NOT NULL) |
 | `payload_raw` | JSONB | Mensaje/evento crudo tal como llegó a `/api/ingesta`, preservado siempre aunque el parseo falle |
+| `viaje_id` | TEXT | Viaje al que pertenece el gasto (`viaje.id`, sin FK); NULL si no es de un viaje. Etiqueta ortogonal a la categoría — ver "Viajes" abajo (DEC-024) |
 | `created_at`, `updated_at` | TIMESTAMPTZ | Auditoría |
 
 **Índices:** `ciclo_financiero`, `mes`, `fecha`, `sync_key` (parcial WHERE NOT NULL),
-`fuente_id` (único, parcial WHERE NOT NULL), `estado` (parcial WHERE != 'confirmado').
+`fuente_id` (único, parcial WHERE NOT NULL), `estado` (parcial WHERE != 'confirmado'),
+`viaje_id` (parcial WHERE NOT NULL).
 
 **Reglas de negocio:**
 
@@ -160,6 +162,34 @@ traspaso lo devuelve a pendiente, no a standby.
 
 Borrar en `/tarjeta` el aporte creado por un traspaso borra las filas `traspaso_tc` del lote
 (CASCADE): esos gastos vuelven a quedar pendientes. Tabla creada en `server/db/migrate-fgp.js`.
+
+### Viajes (`viaje`, `gastos.viaje_id`) — DEC-024
+
+Un viaje es una **etiqueta** sobre los gastos, no una categoría: no cambia el presupuesto del ciclo
+ni los cálculos (`montoDelCiclo`, FGP, fondos). Un gasto pertenece a 0 o 1 viaje.
+
+```sql
+viaje(id TEXT PK, nombre, emoji, fecha_desde TEXT YYYY-MM-DD, fecha_hasta TEXT YYYY-MM-DD,
+      presupuesto NUMERIC NULL, estado 'planificado'|'en_curso'|'cerrado', nota, created_at, updated_at)
+```
+
+- **Categoría sugerida** (`sugerirAsignacionViaje`, `src/utils/viajes.js`): con contexto
+  `Polola` (o el histórico `Ale`) → **ALE**; cualquier otro → **VIAJES**. La subcategoría sale
+  del tipo (Viaje→Pasajes, Comida→Comida; en ALE también Transporte, Ocio→Fiesta, Regalo→Regalos);
+  el resto → Otros. Alojamiento se elige a mano.
+- La sugerencia se **escribe como `presupuesto_manual`** al asignar, solo si el gasto no tenía
+  uno. Quitar el viaje limpia `presupuesto_manual` solo si sigue siendo la sugerencia
+  (`esSugerenciaDeViaje`); un override elegido a mano nunca se toca.
+- **Autodetección al crear** (`crearGastoPendiente`): si hay exactamente un viaje `en_curso` cuyo
+  rango cubre la fecha, el gasto nace con ese `viaje_id` y la sugerencia de categoría (pisa la de
+  la memoria de comercios). Sigue naciendo `pendiente`.
+- **Costo del viaje** (`resumirViaje`): `montoPresupuestable` (descuenta `split`), incluye gastos
+  financiados por fondo, excluye descartados; USD puros se suman aparte. Separa "antes" (fecha <
+  `fecha_desde`) y "durante".
+- Borrar un viaje pone `viaje_id = NULL` en sus gastos (misma transacción); el
+  `presupuesto_manual` sugerido queda.
+- El sync n8n (`clave=gastos`) no toca `viaje_id`; `clave=gastos_manuales` lo reescribe desde el
+  cliente como el resto de los campos. Tabla creada en `server/db/migrate-viajes.js`.
 
 ### Catálogos
 

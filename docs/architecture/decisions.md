@@ -512,6 +512,31 @@ ligado a él. Si el ingreso se edita o se borra después, los aportes ya hechos 
 corrigen en `/fondos` o `/tarjeta`. Un fallo a mitad del reparto deja aplicadas las líneas
 anteriores (el panel las pone en 0 para que el reintento no las repita).
 
+## DEC-024 - Viajes como etiqueta ortogonal a la categoría
+
+Date: 2026-10-23
+Context: el usuario quiere saber cuánto costó cada viaje. Hoy el grupo ALE mezcla viajes con la
+polola y gastos del día a día con ella, y los gastos de viajes sin ella quedan repartidos en
+COMIDA, ENTRETENIMIENTO, etc. No quiere cambiar su costumbre de cargar a ALE todo lo que gasta
+viajando con ella.
+Decision:
+- Un viaje es una etiqueta (`gastos.viaje_id` → tabla `viaje`), no una categoría: el presupuesto
+  del ciclo, el FGP y los fondos no cambian. Un gasto pertenece a 0 o 1 viaje.
+- Regla de categoría para gastos de viaje: si va la polola (contexto `Polola`) → ALE, aunque
+  también vayan amigos; si no → VIAJES. Todo lo del viaje (comida, transporte) sale de ese grupo
+  para no inflar las categorías del día a día.
+- La regla se aplica **escribiendo `presupuesto_manual`** al asignar (solo si no había uno), no
+  como regla de lectura en los ~10 lugares que resuelven la categoría. Queda visible y editable,
+  y no toca los cálculos. Quitar el viaje limpia solo la sugerencia.
+- Human in the loop: con un viaje `en_curso`, los gastos nuevos (mail, teléfono, agente, MCP)
+  nacen con el viaje y la categoría sugeridos, pero siguen `pendiente` en la bandeja.
+Alternatives considered: usar `contexto` ("Viaje Japón") — descartada porque contexto alimenta
+`regla_mapeo` y la memoria de comercios; tags muchos-a-muchos — innecesario; regla calculada al
+leer — descartada por tocar todos los call sites y no ser visible para el usuario.
+Consequences: si después cambia el contexto de un gasto, el `presupuesto_manual` sugerido no se
+recalcula solo (se corrige en el modal). Con dos viajes `en_curso` superpuestos no se autodetecta
+ninguno. Vincular un viaje a un fondo de ahorro (ahorrado vs gastado) queda fuera de alcance.
+
 ## GAP: decisions to document
 
 - Política de rotación de `ACCESS_TOKEN` (hasta su retiro definitivo, ver DEC-009).

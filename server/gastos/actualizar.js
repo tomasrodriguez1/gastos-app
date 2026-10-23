@@ -13,6 +13,7 @@ const CAMPOS_EDITABLES = [
   'usd', 'monto_clp_manual', 'split', 'pagado', 'estado',
   'plata_en_cuenta', 'en_presupuesto', 'financiado_por',
   'presupuesto_manual', 'contexto_override', 'monto_presupuesto_manual',
+  'viaje_id',
 ]
 
 export async function actualizarGasto(id, changes) {

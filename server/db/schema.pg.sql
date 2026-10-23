@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS gastos (
   origen                   TEXT NOT NULL DEFAULT 'manual',
   fuente_id                TEXT,
   payload_raw              JSONB,
+  viaje_id                 TEXT,
   created_at               TIMESTAMPTZ DEFAULT NOW(),
   updated_at               TIMESTAMPTZ DEFAULT NOW()
 );
@@ -38,6 +39,25 @@ CREATE INDEX IF NOT EXISTS idx_gastos_sync_key ON gastos(sync_key) WHERE sync_ke
 CREATE UNIQUE INDEX IF NOT EXISTS idx_gastos_fuente_id ON gastos(fuente_id) WHERE fuente_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_gastos_estado ON gastos(estado) WHERE estado != 'confirmado';
 CREATE INDEX IF NOT EXISTS idx_gastos_financiado_por ON gastos(financiado_por) WHERE financiado_por IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_gastos_viaje_id ON gastos(viaje_id) WHERE viaje_id IS NOT NULL;
+
+-- ─── VIAJES ──────────────────────────────────────────────────────────────────
+-- Etiqueta ortogonal a la categoría presupuestaria (gastos.viaje_id, sin FK). Se crea en
+-- server/db/migrate-viajes.js. Ver DEC-024 y docs/context/data_model_context.md.
+
+CREATE TABLE IF NOT EXISTS viaje (
+  id          TEXT PRIMARY KEY,
+  nombre      TEXT NOT NULL,
+  emoji       TEXT,
+  fecha_desde TEXT NOT NULL CHECK (fecha_desde ~ '^\d{4}-\d{2}-\d{2}$'),
+  fecha_hasta TEXT NOT NULL CHECK (fecha_hasta ~ '^\d{4}-\d{2}-\d{2}$'),
+  presupuesto NUMERIC,
+  estado      TEXT NOT NULL DEFAULT 'planificado' CHECK (estado IN ('planificado', 'en_curso', 'cerrado')),
+  nota        TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW(),
+  CHECK (fecha_hasta >= fecha_desde)
+);
 
 -- ─── PRESUPUESTO ─────────────────────────────────────────────────────────────
 

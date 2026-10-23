@@ -193,7 +193,7 @@ export function GastosPage({ gastos, gastosLocales, ciclos, mesesCalendario, onA
         todosTipos={catalogos?.tipos}
         mesesCalendario={mesesCalendario}
       />
-      <TablaGastos gastos={gastosFiltrados} onEliminar={onEliminarGasto} onActualizar={onActualizarGasto} catalogos={catalogos} nombresFondos={nombresFondos} />
+      <TablaGastos gastos={gastosFiltrados} onEliminar={onEliminarGasto} onActualizar={onActualizarGasto} catalogos={catalogos} nombresFondos={nombresFondos} seleccionable />
 
       {mostrarForm && (
         <FormNuevoGasto

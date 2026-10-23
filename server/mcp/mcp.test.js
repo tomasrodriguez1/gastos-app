@@ -55,6 +55,9 @@ const deps = {
   })),
   resumirGastos: mock(async ({ agrupar_por }) => agregarFilas([], { agrupar_por })),
   resumenCiclo: mock(async ({ ciclo }) => resumenFalso(ciclo, 1000)),
+  listarViajes: mock(async () => [
+    { id: 'v-peru', nombre: 'Perú 2026', fecha_desde: '2026-10-01', fecha_hasta: '2026-10-10', estado: 'en_curso', presupuesto: null, total_gastos: 50000, n_gastos: 2 },
+  ]),
   listarAlumnos: mock(async () => [{ id: 1, nombre: 'Cristóbal Mena', precio_hora_default: 25000, activo: true }]),
   buscarClases: mock(async ({ limite, offset }) => ({
     filas: [CLASE],
@@ -169,12 +172,12 @@ describe('auth /mcp', () => {
 })
 
 describe('descubrimiento', () => {
-  test('expone exactamente las 17 tools (6 de gastos + 9 de clases + 2 de ingresos), sin escrituras extra', async () => {
+  test('expone exactamente las 18 tools (7 de gastos + 9 de clases + 2 de ingresos), sin escrituras extra', async () => {
     const client = await conectar()
     const { tools } = await client.listTools()
     expect(tools.map(t => t.name).sort()).toEqual([
       'agendar_clase', 'buscar_clases', 'buscar_gastos', 'cancelar_clase', 'comparar_periodos', 'crear_alumno',
-      'crear_gasto', 'listar_alumnos', 'listar_catalogos', 'marcar_dictada', 'mover_clase', 'registrar_ingreso',
+      'crear_gasto', 'listar_alumnos', 'listar_catalogos', 'listar_viajes', 'marcar_dictada', 'mover_clase', 'registrar_ingreso',
       'registrar_pago', 'resumen_clases', 'resumen_ingresos', 'resumen_presupuesto', 'resumir_gastos',
     ])
     const escrituras = ['crear_gasto', 'crear_alumno', 'agendar_clase', 'mover_clase', 'marcar_dictada', 'cancelar_clase', 'registrar_pago', 'registrar_ingreso']
@@ -670,5 +673,43 @@ describe.skipIf(!URL_TEST_CLASES || URL_TEST_CLASES === process.env.DATABASE_URL
     } finally {
       await db.end({ timeout: 5 })
     }
+  })
+})
+
+describe('viajes', () => {
+  const base = { fecha: '2026-10-06', motivo: 'Ceviche', monto: 18000, usd: 0, banco: 'edwards' }
+
+  test('crear_gasto con viaje por nombre parcial → pasa viaje_id', async () => {
+    const client = await conectar()
+    const r = await llamar(client, 'crear_gasto', { ...base, viaje: 'perú' })
+    expect(r.ok).toBe(true)
+    const [, input] = deps.ejecutarCrearGasto.mock.calls[0]
+    expect(input.viaje_id).toBe('v-peru')
+    await client.close()
+  })
+
+  test('crear_gasto con viaje inexistente → validacion, sin insertar', async () => {
+    const client = await conectar()
+    const r = await llamar(client, 'crear_gasto', { ...base, viaje: 'Japón' })
+    expect(r).toMatchObject({ ok: false, code: 'validacion' })
+    expect(r.error).toContain('Perú 2026')
+    expect(deps.ejecutarCrearGasto).not.toHaveBeenCalled()
+    await client.close()
+  })
+
+  test('crear_gasto sin viaje → no fuerza viaje_id (autodetección en el server)', async () => {
+    const client = await conectar()
+    await llamar(client, 'crear_gasto', base)
+    const [, input] = deps.ejecutarCrearGasto.mock.calls[0]
+    expect('viaje_id' in input).toBe(false)
+    await client.close()
+  })
+
+  test('listar_viajes devuelve nombre, estado y total', async () => {
+    const client = await conectar()
+    const r = await llamar(client, 'listar_viajes', {})
+    expect(r.ok).toBe(true)
+    expect(r.data[0]).toMatchObject({ nombre: 'Perú 2026', estado: 'en_curso', total_gastado: 50000 })
+    await client.close()
   })
 })

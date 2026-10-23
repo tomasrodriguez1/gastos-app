@@ -33,6 +33,7 @@ import {
   obtenerConversacion,
 } from './agente/historial.js'
 import { transcribir } from './agente/transcripcion.js'
+import { listarViajes, buscarViajePorTexto, asignarGastosAViaje, desasignarGastos } from './viajes.js'
 import {
   cargarReservasActivas,
   registrarSaldo,
@@ -116,6 +117,11 @@ function promptSistema(catalogos, hoy, reservas, cicloActual) {
     'gasto — sigue pendiente hasta que la persona lo confirme en su bandeja. Solo podés editar',
     'gastos que sigan pendientes o en error_parseo; si ya fue confirmado, avisale que ya no se',
     'puede tocar desde acá.',
+    '',
+    'Viajes: un gasto puede pertenecer a un viaje (listar_viajes). Si el usuario dice que un gasto es',
+    'de un viaje ("esto fue en Perú"), pasá viaje en crear_gasto o editar_gasto con "viaje" en campos.',
+    'Si hay un viaje en curso, crear_gasto lo asigna solo. El viaje define la categoría sugerida: con la',
+    'polola va a ALE, si no a VIAJES. No crees ni edites viajes: eso se hace en /viajes.',
     '',
     'Preguntas de estado del ciclo (solo lectura, no escribas presupuesto): "¿cómo voy?", "¿cuánto me',
     'queda en comida?", "¿qué categoría está en rojo?", "¿cuánto gasté en Uber?". Usá resumen_ciclo',
@@ -203,6 +209,7 @@ export async function ejecutarCrearGasto(catalogos, {
   tipos = [],
   contexto = '',
   ignorar_duplicado = false,
+  viaje_id = undefined,
 }, { origen = 'chat' } = {}) {
   let tiposValidados = (tipos || []).filter(t => catalogos.tipos.includes(t))
   let contextoValidado = catalogos.contextos.includes(contexto) ? contexto : ''
@@ -234,7 +241,7 @@ export async function ejecutarCrearGasto(catalogos, {
     }
   }
 
-  const { gastoId } = await crearGastoPendiente({
+  const { gastoId, viajeId } = await crearGastoPendiente({
     fecha,
     motivo,
     monto: monto || 0,
@@ -244,13 +251,15 @@ export async function ejecutarCrearGasto(catalogos, {
     contexto: contextoValidado,
     presupuesto_manual: presupuestoManual,
     origen,
+    viaje_id,
   })
 
   const montoTexto = usd ? `US$${usd}` : `$${monto || 0}`
   return {
     gastoId,
     estado: 'pendiente',
-    resumen: `Gasto creado: ${motivo} — ${montoTexto} (${fecha}). Queda pendiente en /bandeja.`,
+    viajeId,
+    resumen: `Gasto creado: ${motivo} — ${montoTexto} (${fecha})${viajeId ? ', asignado al viaje' : ''}. Queda pendiente en /bandeja.`,
   }
 }
 
@@ -268,11 +277,17 @@ function crearGastoToolFactory(catalogos) {
       tipos: z.array(z.string()).default([]).describe('Tipos del gasto — solo valores que existan en el catálogo'),
       contexto: z.string().default('').describe('Contexto del gasto — solo un valor que exista en el catálogo'),
       ignorar_duplicado: z.boolean().default(false).describe('true solo si el usuario insistió en crear aunque haya un posible duplicado'),
+      viaje: z.string().default('').describe('Opcional: nombre del viaje (de listar_viajes) si el usuario dice que el gasto es de un viaje. Vacío = se autodetecta el viaje en curso'),
     }),
     // Filtro duro server-side, igual criterio que clasificarGasto() en
     // server/ingesta/groq.js: el modelo no es el guardián del catálogo, el
     // prompt le pide que no invente valores pero acá se filtra igual.
-    execute: async (input) => ejecutarCrearGasto(catalogos, input),
+    execute: async ({ viaje, ...input }) => {
+      if (!viaje) return ejecutarCrearGasto(catalogos, input)
+      const encontrado = buscarViajePorTexto(await listarViajes(), viaje)
+      if (!encontrado) return { error: `No encontré un viaje "${viaje}". Llamá a listar_viajes y preguntá cuál es.` }
+      return ejecutarCrearGasto(catalogos, { ...input, viaje_id: encontrado.id })
+    },
   })
 }
 
@@ -350,7 +365,7 @@ function editarGastoToolFactory(catalogos) {
       'siendo un acto humano en /bandeja.',
     inputSchema: z.object({
       gastoId: z.string().describe('El id del gasto a editar, obtenido de buscar_gastos_pendientes'),
-      campos: z.array(z.enum(['fecha', 'motivo', 'monto', 'usd', 'banco', 'tipos', 'contexto']))
+      campos: z.array(z.enum(['fecha', 'motivo', 'monto', 'usd', 'banco', 'tipos', 'contexto', 'viaje']))
         .describe('Lista de los campos que EFECTIVAMENTE cambian — solo estos se aplican. Cualquier otro valor presente en esta llamada que no esté listado acá se ignora, así que no completes campos que no cambian.'),
       fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Nueva fecha en formato YYYY-MM-DD — solo se usa si "fecha" está en campos'),
       motivo: z.string().optional().describe('Nuevo comercio o descripción — solo se usa si "motivo" está en campos'),
@@ -359,6 +374,7 @@ function editarGastoToolFactory(catalogos) {
       banco: z.string().optional().describe('Nuevo banco o medio de pago — solo se usa si "banco" está en campos'),
       tipos: z.array(z.string()).optional().describe('Nuevos tipos — solo valores que existan en el catálogo, solo se usa si "tipos" está en campos'),
       contexto: z.string().optional().describe('Nuevo contexto — solo un valor que exista en el catálogo, solo se usa si "contexto" está en campos'),
+      viaje: z.string().optional().describe('Nombre del viaje (de listar_viajes) al que pertenece el gasto, o "" para quitarlo de su viaje — solo se usa si "viaje" está en campos'),
     }),
     // No confiar en "vino un valor no-undefined" como señal de intención de
     // cambio: modelos vía tool calling suelen completar TODOS los campos
@@ -374,10 +390,21 @@ function editarGastoToolFactory(catalogos) {
         return { error: 'Ese gasto ya no está pendiente — no lo puedo editar desde acá, hace falta corregirlo a mano en /bandeja o /log.' }
       }
 
+      // El viaje no es un campo plano: asignar sugiere presupuesto_manual (ALE/VIAJES) y quitar
+      // limpia esa sugerencia — mismo camino que /api/viajes (server/viajes.js).
+      let viajeDestino
+      if ((campos || []).includes('viaje') && cambios.viaje !== undefined) {
+        if (cambios.viaje === '') viajeDestino = null
+        else {
+          viajeDestino = buscarViajePorTexto(await listarViajes(), cambios.viaje)
+          if (!viajeDestino) return { error: `No encontré un viaje "${cambios.viaje}". Llamá a listar_viajes y preguntá cuál es.` }
+        }
+      }
+
       const changes = {}
       for (const campo of campos || []) {
         const valor = cambios[campo]
-        if (valor === undefined) continue
+        if (valor === undefined || campo === 'viaje') continue
         if (campo === 'tipos') {
           const filtrados = valor.filter(t => catalogos.tipos.includes(t))
           if (filtrados.length) changes.tipos = filtrados
@@ -390,19 +417,43 @@ function editarGastoToolFactory(catalogos) {
         changes[campo] = valor
       }
 
-      if (Object.keys(changes).length === 0) return { error: 'No me diste ningún cambio válido para aplicar.' }
+      if (Object.keys(changes).length === 0 && viajeDestino === undefined) return { error: 'No me diste ningún cambio válido para aplicar.' }
 
-      const resultado = await actualizarGasto(gastoId, changes)
-      if (resultado.error) return { error: 'No pude editar el gasto.' }
+      let motivo = actual.motivo
+      if (Object.keys(changes).length) {
+        const resultado = await actualizarGasto(gastoId, changes)
+        if (resultado.error) return { error: 'No pude editar el gasto.' }
+        motivo = resultado.gasto.motivo
+      }
+      if (viajeDestino) await asignarGastosAViaje(viajeDestino.id, [gastoId])
+      else if (viajeDestino === null) await desasignarGastos([gastoId])
 
       return {
         ok: true,
         gastoId,
-        resumen: `Gasto actualizado: ${resultado.gasto.motivo} — sigue pendiente de revisión en /bandeja.`,
+        resumen: `Gasto actualizado: ${motivo}${viajeDestino ? ` (viaje ${viajeDestino.nombre})` : ''} — sigue pendiente de revisión en /bandeja.`,
       }
     },
   })
 }
+
+const listarViajesTool = tool({
+  description:
+    'Lista los viajes (etiqueta que agrupa gastos de un viaje) con fechas, estado y total gastado. ' +
+    'Solo lectura: los viajes se crean y editan en /viajes de la app.',
+  inputSchema: z.object({}),
+  execute: async () => ({
+    viajes: (await listarViajes()).map(v => ({
+      nombre: v.nombre,
+      fecha_desde: v.fecha_desde,
+      fecha_hasta: v.fecha_hasta,
+      estado: v.estado,
+      presupuesto: v.presupuesto,
+      total_gastado: v.total_gastos,
+      n_gastos: v.n_gastos,
+    })),
+  }),
+})
 
 // Reservas F6. crear/editar/registrar escriben directo (sin estado 'pendiente'
 // en DB) — nunca escriben a `gastos` ni a `presupuesto_*`. La garantía de "el
@@ -645,6 +696,7 @@ export function construirAgente({ catalogos, reservas, extraSistema = '' }) {
       registrar_ingreso: registrarIngresoTool,
       resumen_ciclo: resumenCicloTool,
       buscar_gastos: buscarGastosTool,
+      listar_viajes: listarViajesTool,
     },
     stopWhen: stepCountIs(16),
   }

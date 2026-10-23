@@ -33,6 +33,8 @@ import { fondoAhorroRouter } from './fondosAhorro.js'
 import { migrateFGP } from './db/migrate-fgp.js'
 import { migrateTarjetaPago } from './db/migrate-tarjeta-pago.js'
 import { fgpRouter } from './fgp.js'
+import { migrateViajes } from './db/migrate-viajes.js'
+import { viajeRouter } from './viajes.js'
 import { listarComercios, olvidarComercio } from './comercios.js'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
 import { deserializarGasto } from './gastos/serializacion.js'
@@ -60,6 +62,7 @@ await migrateFondoAhorroTipo()
 await migrateFGP()
 await migrateTarjetaPago()
 await migrateTelegramAvisos()
+await migrateViajes()
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()
 }
@@ -109,6 +112,7 @@ app.route('/api/ingresos', ingresoRouter)
 app.route('/api/clases', clasesRouter)
 app.route('/api/fondos-ahorro', fondoAhorroRouter)
 app.route('/api/fgp', fgpRouter)
+app.route('/api/viajes', viajeRouter)
 
 // ─── GASTOS ──────────────────────────────────────────────────────────────────
 
@@ -251,7 +255,7 @@ app.post('/api/datos', async (c) => {
           INSERT INTO gastos (id, sync_key, fecha, mes, ciclo_financiero, motivo, banco, tipos, contexto,
             monto, monto_real, usd, monto_clp_manual, split, presupuesto_manual,
             contexto_override, monto_presupuesto_manual, pagado, plata_en_cuenta,
-            en_presupuesto, financiado_por, es_manual, updated_at)
+            en_presupuesto, financiado_por, viaje_id, es_manual, updated_at)
           VALUES (
             ${id}, NULL,
             ${g.fecha}, ${mesCalendario}, ${cicloFinanciero}, ${g.motivo || ''},
@@ -262,7 +266,7 @@ app.post('/api/datos', async (c) => {
             ${g.contexto_override ?? null}, ${g.monto_presupuesto_manual ?? null},
             ${g.pagado ? true : false}, ${g.plata_en_cuenta ? true : false},
             ${g.en_presupuesto !== false},
-            ${g.financiado_por || null}, true, NOW()
+            ${g.financiado_por || null}, ${g.viaje_id || null}, true, NOW()
           )
           ON CONFLICT(id) DO UPDATE SET
             fecha = EXCLUDED.fecha,
@@ -284,6 +288,7 @@ app.post('/api/datos', async (c) => {
             plata_en_cuenta = EXCLUDED.plata_en_cuenta,
             en_presupuesto = EXCLUDED.en_presupuesto,
             financiado_por = EXCLUDED.financiado_por,
+            viaje_id = EXCLUDED.viaje_id,
             updated_at = NOW()
         `
       }

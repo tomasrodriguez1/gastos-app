@@ -3,6 +3,8 @@ import { GRUPOS_PRESUPUESTO } from '../../utils/categorias'
 import { getSubcategoriaPresupuesto } from '../../utils/mapeo'
 import { formatCLP } from '../../utils/formatters'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../../utils/ciclos'
+import { sugerirAsignacionViaje } from '../../utils/viajes'
+import { useViajesContext } from '../../contexts/ViajesContext'
 
 const CONTEXTOS_DEFAULT = ['Familia', 'Trabajo', 'Amigos', 'Personal', 'Polola']
 const TIPOS_DEFAULT = [
@@ -33,6 +35,8 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos, nombre
   const [plataEnCuenta, setPlataEnCuenta] = useState(!!gasto.plata_en_cuenta)
   const [enPresupuesto, setEnPresupuesto] = useState(gasto.en_presupuesto !== false)
   const [financiadoPor, setFinanciadoPor] = useState(gasto.financiado_por || '')
+  const [viajeId, setViajeId] = useState(gasto.viaje_id || '')
+  const { viajes } = useViajesContext()
 
   // Presupuesto overrides
   const [contextoOverride, setContextoOverride] = useState(gasto.contexto_override ?? '')
@@ -49,6 +53,22 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos, nombre
 
   function toggleTipo(t) {
     setTipos(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+  }
+
+  // Elegir un viaje sugiere la categoría (ALE si va la polola, VIAJES si no) solo si estaba en
+  // automático o en la sugerencia anterior; quitarlo vuelve a automático solo en ese mismo caso.
+  // Un grupo elegido a mano nunca se pisa.
+  function handleViajeChange(nuevo) {
+    const sugerida = sugerirAsignacionViaje({ tipos, contexto: contextoOverride || contexto })
+    const enSugerencia = grupo === sugerida.grupo && subcategoria === sugerida.subcategoria
+    setViajeId(nuevo)
+    if (nuevo && (!grupo || enSugerencia)) {
+      setGrupo(sugerida.grupo)
+      setSubcategoria(sugerida.subcategoria)
+    } else if (!nuevo && enSugerencia) {
+      setGrupo('')
+      setSubcategoria('')
+    }
   }
 
   function handleGrupoChange(g) {
@@ -70,6 +90,7 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos, nombre
       plata_en_cuenta: plataEnCuenta,
       en_presupuesto: enPresupuesto,
       financiado_por: financiadoPor || null,
+      viaje_id: viajeId || null,
       contexto_override: contextoOverride || null,
       presupuesto_manual: grupo && subcategoria ? { grupo, subcategoria } : null,
       monto_presupuesto_manual: Number(montoParcial) > 0 ? Number(montoParcial) : null,
@@ -287,6 +308,23 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos, nombre
                 ))}
               </select>
               <p className="text-xs text-slate-600 mt-1.5">No cuenta contra el sueldo del ciclo; baja el saldo del fondo.</p>
+            </div>
+
+            <div>
+              <label className="text-xs text-slate-500 uppercase tracking-wider block mb-1.5">Viaje</label>
+              <select
+                value={viajeId}
+                onChange={e => handleViajeChange(e.target.value)}
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500"
+              >
+                <option value="">Sin viaje</option>
+                {viajes
+                  .filter(v => v.estado !== 'cerrado' || v.id === viajeId)
+                  .map(v => (
+                    <option key={v.id} value={v.id}>{v.emoji ? `${v.emoji} ` : ''}{v.nombre}</option>
+                  ))}
+              </select>
+              <p className="text-xs text-slate-600 mt-1.5">Con la Ale va a ALE; si no, a VIAJES. Podés cambiar la categoría abajo.</p>
             </div>
 
             {/* Contexto override */}

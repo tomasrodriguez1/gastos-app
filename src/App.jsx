@@ -14,6 +14,8 @@ import { ClasesPage } from './pages/ClasesPage'
 import { IngresosPage } from './pages/IngresosPage'
 import { ClasesAnalisisPage } from './pages/ClasesAnalisisPage'
 import { PasskeysPage } from './pages/PasskeysPage'
+import { ViajesPage } from './pages/ViajesPage'
+import { ViajesProvider } from './contexts/ViajesContext'
 import { AgenteChatProvider } from './contexts/AgenteChatContext'
 import { AgenteFlotante } from './components/Agente/AgenteFlotante'
 import { useGastos } from './hooks/useGastos'
@@ -114,6 +116,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[var(--background)]">
       <AgenteChatProvider onRefetchGastos={refetchGastos}>
+      <ViajesProvider onCambioGastos={refetchGastos}>
         <Sidebar gastos={gastos} gastosLocales={gastosLocales} />
         <AgenteFlotante gastos={gastos} gastosLocales={gastosLocales} />
         <div className="pb-16 md:pb-0 md:pl-64">
@@ -236,12 +239,17 @@ export default function App() {
               path="/fondos"
               element={<FondosPage {...sharedProps} gastos={todoLosGastos} reconciliacion={reconciliacion} fgp={fgp} resumenFGP={resumenFGP} vencimientos={vencimientosTarjeta} />}
             />
+            <Route
+              path="/viajes"
+              element={<ViajesPage {...sharedProps} gastos={todoLosGastos} />}
+            />
             <Route path="/ingresos" element={<IngresosPage ciclos={ciclos} obtenerPresupuesto={obtenerCiclo} reconciliacion={reconciliacion} vencimientos={vencimientosTarjeta} />} />
             <Route path="/clases" element={<ClasesPage ciclos={ciclos} />} />
             <Route path="/clases/analisis" element={<ClasesAnalisisPage />} />
             <Route path="/passkeys" element={<PasskeysPage />} />
           </Routes>
         </div>
+      </ViajesProvider>
       </AgenteChatProvider>
     </div>
   )

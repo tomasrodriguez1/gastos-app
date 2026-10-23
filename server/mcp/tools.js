@@ -1,4 +1,4 @@
-// Tools del servidor MCP: 6 de gastos (acá) + 9 de clases particulares
+// Tools del servidor MCP: 7 de gastos (acá, incluida listar_viajes) + 9 de clases particulares
 // (toolsClases.js) + 2 de ingresos (toolsIngresos.js). Capa fina: validan el input (antes de tocar la DB) y
 // delegan en funciones que ya usa la app — ejecutarCrearGasto (mismo camino que
 // el chat de /agente), resumenCiclo, cargarCatalogos, el read service de
@@ -23,6 +23,7 @@ import { TOOLS_INGRESOS, depsIngresos } from './toolsIngresos.js'
 import { cargarCatalogos } from '../catalogos.js'
 import { ejecutarCrearGasto } from '../agente.js'
 import { obtenerGastoPorId } from '../gastos/actualizar.js'
+import { listarViajes, buscarViajePorTexto } from '../viajes.js'
 import { resumenCiclo } from '../consultas/ciclo.js'
 import { buscarGastos, resumirGastos, MAX_GRUPOS } from '../consultas/gastos.js'
 import {
@@ -134,6 +135,9 @@ const crearGasto = {
     'Si hay un posible duplicado (mismo comercio/monto en fechas cercanas) NO inserta y devuelve',
     'code "duplicado" con los candidatos: mostralos y reintentá con ignorar_duplicado=true solo si el',
     'usuario confirma que es otro gasto.',
+    '`viaje` es opcional: nombre de listar_viajes() si el usuario dice que el gasto es de un viaje; si',
+    'no lo mandás y hay un viaje en curso que cubre la fecha, se asigna solo. Con viaje, la categoría',
+    'sugerida es ALE (si el contexto es la polola) o VIAJES.',
   ].join(' '),
   annotations: { title: 'Crear gasto pendiente', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   schema: z.strictObject({
@@ -145,6 +149,7 @@ const crearGasto = {
     tipos: z.array(z.string()).max(10).default([]).describe('Opcional. Nombres de listar_catalogos().tipos'),
     contexto: z.string().default('').describe('Opcional. Un nombre de listar_catalogos().contextos'),
     ignorar_duplicado: z.boolean().default(false).describe('true solo si el usuario confirmó que no es un duplicado'),
+    viaje: z.string().trim().default('').describe('Opcional. Nombre de un viaje de listar_viajes()'),
   }),
   async handler(input, deps) {
     if (input.fecha > fechaLocal(deps.ahora())) {
@@ -174,6 +179,15 @@ const crearGasto = {
     const contexto = porNombre(catalogos.contextos, input.contexto) || ''
     const contextoDescartado = input.contexto && !contexto ? input.contexto : null
 
+    let viaje = null
+    if (input.viaje) {
+      const viajes = await deps.listarViajes()
+      viaje = buscarViajePorTexto(viajes, input.viaje)
+      if (!viaje) {
+        throw validacion(`viaje "${input.viaje}" no existe o es ambiguo. Viajes: ${viajes.map(v => v.nombre).join(', ') || '(ninguno)'}`)
+      }
+    }
+
     const motivo = input.motivo.trim()
     const resultado = await deps.ejecutarCrearGasto(catalogos, {
       fecha: input.fecha,
@@ -184,6 +198,7 @@ const crearGasto = {
       tipos,
       contexto,
       ignorar_duplicado: input.ignorar_duplicado,
+      ...(viaje ? { viaje_id: viaje.id } : {}),
     }, { origen: 'mcp' })
 
     if (resultado.bloqueado) {
@@ -218,6 +233,7 @@ const crearGasto = {
         tipos: guardado?.tipos ?? tipos,
         contexto: guardado?.contexto ?? contexto,
         ciclo_financiero: guardado?.ciclo_financiero ?? cicloFinanciero,
+        viaje_id: guardado?.viaje_id ?? viaje?.id ?? null,
         mensaje: 'Quedó en la bandeja (/bandeja) como pendiente, esperando aprobación humana. Todavía no está confirmado.',
       },
       meta: {
@@ -479,8 +495,39 @@ const listarCatalogos = {
   },
 }
 
+// ─── 7. listar_viajes ────────────────────────────────────────────────────────
+
+const listarViajesTool = {
+  name: 'listar_viajes',
+  description: [
+    'Lista los viajes: una etiqueta que agrupa los gastos de un viaje (pasajes, comida, transporte…),',
+    'con fechas, estado (planificado | en_curso | cerrado), presupuesto opcional y total gastado.',
+    'Solo lectura; los viajes se crean en /viajes de la app. Usala para saber qué nombre pasar en',
+    'crear_gasto.viaje o para responder cuánto costó un viaje.',
+  ].join(' '),
+  annotations: { title: 'Listar viajes', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  schema: z.strictObject({}),
+  async handler(_input, deps) {
+    const viajes = await deps.listarViajes()
+    return {
+      data: viajes.map(v => ({
+        id: v.id,
+        nombre: v.nombre,
+        fecha_desde: v.fecha_desde,
+        fecha_hasta: v.fecha_hasta,
+        estado: v.estado,
+        presupuesto: v.presupuesto,
+        total_gastado: v.total_gastos,
+        n_gastos: v.n_gastos,
+      })),
+      meta: { total: viajes.length },
+    }
+  },
+}
+
 export const TOOLS = [
   crearGasto,
+  listarViajesTool,
   buscarGastosTool,
   resumirGastosTool,
   compararPeriodos,
@@ -497,6 +544,7 @@ export const depsPorDefecto = {
   buscarGastos,
   resumirGastos,
   resumenCiclo,
+  listarViajes: () => listarViajes(),
   ...depsClases,
   ...depsIngresos,
   ahora: () => new Date(),

@@ -207,15 +207,15 @@ decisión en DEC-018.
 
 `POST /mcp` — servidor MCP (Streamable HTTP, `@modelcontextprotocol/sdk`) para agentes externos,
 en el mismo proceso. Auth propia: `Authorization: Bearer <MCP_TOKEN>`, exento del gate global y
-con 401 siempre sin token, también en dev. Tiene 17 tools. **Ninguna escritura queda confirmada**:
+con 401 siempre sin token, también en dev. Tiene 18 tools. **Ninguna escritura queda confirmada**:
 los gastos quedan pendientes en la bandeja y los ingresos y pagos de clases quedan por aprobar en
 `/ingresos` (human in the loop).
 
-**Gastos (6):**
+**Gastos (7):**
 - `crear_gasto`: la única escritura. Deja el gasto `pendiente` con `origen='mcp'` vía
-  `ejecutarCrearGasto` y nunca lo confirma.
+  `ejecutarCrearGasto` y nunca lo confirma. Acepta `viaje` (nombre) opcional (DEC-024).
 - Lectura: `buscar_gastos`, `resumir_gastos`, `comparar_periodos`, `resumen_presupuesto` (reusa
-  `resumenCiclo`) y `listar_catalogos`.
+  `resumenCiclo`), `listar_catalogos` y `listar_viajes`.
 
 **Clases particulares (9, DEC-019):**
 - Lectura: `listar_alumnos`, `buscar_clases`, `resumen_clases`.
@@ -236,6 +236,19 @@ Implementación en `server/mcp/` (`tools.js`, `toolsClases.js`, `toolsIngresos.j
 `server/consultas/gastos.js`, `server/clases/clases.js`, `server/ingresos.js` e
 `server/ingresosCiclo.js`. Contrato y ejemplos en `docs/architecture/integrations.md`. Decisiones
 en DEC-017 y DEC-019. El agente interno de `/agente` no tiene las tools de clases.
+
+## Viajes (DEC-024)
+
+`/viajes` agrupa los gastos de un viaje con una etiqueta (`gastos.viaje_id`), sin cambiar el
+presupuesto del ciclo. Con la polola (contexto `Polola`) el gasto sale de **ALE**; si no, de
+**VIAJES** — la sugerencia se guarda como `presupuesto_manual` editable. Se asigna desde `/viajes`
+(posibles gastos por fechas y pasajes previos), en bloque desde `/gastos` y `/bandeja` (selección
+múltiple), editando un gasto, o sola al crear un gasto mientras un viaje está `en_curso`. La
+pestaña **Resumen** es el dashboard de todos los viajes (`resumirTodosLosViajes`): KPIs (total,
+promedio por viaje, gasto por día, % desde ALE), costo por viaje apilado ALE/VIAJES/otros,
+comparación, subcategorías sumadas entre grupos y los gastos agrupados por viaje; filtro por año
+de salida. La pestaña **Por viaje** es el detalle de uno. API:
+`/api/viajes` (ver `docs/architecture/integrations.md`). Modelo en `data_model_context.md`.
 
 ## API — Clases particulares
 
