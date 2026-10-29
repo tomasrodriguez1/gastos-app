@@ -65,11 +65,17 @@ export function useViajes({ onCambioGastos } = {}) {
     return resultado
   }, [refrescar, onCambioGastos])
 
+  const descartarSugerencias = useCallback(async (id, gastoIds, activo = true) => {
+    const viaje = await leerJson(await enviar(`/api/viajes/${id}/sugerencias/descartadas`, 'PUT', { gasto_ids: gastoIds, activo }))
+    setViajes(actuales => actuales.map(v => v.id === id ? { ...v, ...viaje } : v))
+    return viaje
+  }, [])
+
   const desasignar = useCallback(async (gastoIds) => {
     const resultado = await leerJson(await enviar('/api/viajes/desasignar', 'POST', { gasto_ids: gastoIds }))
     await Promise.all([refrescar(), onCambioGastos?.()])
     return resultado
   }, [refrescar, onCambioGastos])
 
-  return { viajes, cargando, error, refrescar, crear, editar, eliminar, asignar, desasignar }
+  return { viajes, cargando, error, refrescar, crear, editar, eliminar, asignar, desasignar, descartarSugerencias }
 }

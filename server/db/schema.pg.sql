@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS viaje (
   presupuesto NUMERIC,
   estado      TEXT NOT NULL DEFAULT 'planificado' CHECK (estado IN ('planificado', 'en_curso', 'cerrado')),
   nota        TEXT,
+  sugerencias_descartadas TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW(),
   CHECK (fecha_hasta >= fecha_desde)

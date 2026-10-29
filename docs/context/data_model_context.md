@@ -170,9 +170,11 @@ ni los cálculos (`montoDelCiclo`, FGP, fondos). Un gasto pertenece a 0 o 1 viaj
 
 ```sql
 viaje(id TEXT PK, nombre, emoji, fecha_desde TEXT YYYY-MM-DD, fecha_hasta TEXT YYYY-MM-DD,
-      presupuesto NUMERIC NULL, estado 'planificado'|'en_curso'|'cerrado', nota, created_at, updated_at)
+      presupuesto NUMERIC NULL, estado 'planificado'|'en_curso'|'cerrado', nota,
+      sugerencias_descartadas TEXT[] NOT NULL DEFAULT '{}', created_at, updated_at)
 ```
 
+- **Sugerencias descartadas**: IDs de gastos ocultos solo en los posibles gastos de ese viaje; persistidos en `viaje.sugerencias_descartadas`. Se pueden descartar individualmente o en bloque y volver a mostrar. No cambia el estado ni la categoría del gasto, aplica tanto a sync como manuales y no interviene en presupuesto, duplicados ni sync n8n.
 - **Categoría sugerida** (`sugerirAsignacionViaje`, `src/utils/viajes.js`): con contexto
   `Polola` (o el histórico `Ale`) → **ALE**; cualquier otro → **VIAJES**. La subcategoría sale
   del tipo (Viaje→Pasajes, Comida→Comida; en ALE también Transporte, Ocio→Fiesta, Regalo→Regalos);

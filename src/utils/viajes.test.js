@@ -136,3 +136,17 @@ describe('resumirTodosLosViajes', () => {
     expect(resumirTodosLosViajes([], [])).toMatchObject({ total: 0, promedioPorViaje: 0, promedioDiario: 0, pctAle: 0 })
   })
 })
+
+
+test('descartar sugerencias solo las oculta en ese viaje y permite recuperarlas', () => {
+  const gastos = [
+    { id: 'sync', fecha: '2026-10-02', es_manual: false, monto: 100, tipos: [] },
+    { id: 'manual', fecha: '2026-10-03', es_manual: true, monto: 200, tipos: [] },
+  ]
+  const viaje = { ...PERU, sugerencias_descartadas: ['sync', 'manual'] }
+  expect(sugerirGastosParaViaje(viaje, gastos)).toEqual([])
+  expect(sugerirGastosParaViaje({ ...PERU, id: 'otro' }, gastos)).toHaveLength(2)
+  expect(sugerirGastosParaViaje({ ...viaje, sugerencias_descartadas: [] }, gastos)).toHaveLength(2)
+  const asignados = gastos.map(g => ({ ...g, viaje_id: 'v1' }))
+  expect(resumirViaje(viaje, asignados).total).toBe(resumirViaje(PERU, asignados).total)
+})

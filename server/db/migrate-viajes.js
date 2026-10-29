@@ -22,6 +22,8 @@ export async function migrateViajes() {
       )
     `)
 
+    await tx.unsafe(`ALTER TABLE viaje ADD COLUMN IF NOT EXISTS sugerencias_descartadas TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`)
+
     const [{ gastos_existe: gastosExiste }] = await tx`
       SELECT to_regclass('public.gastos') IS NOT NULL AS gastos_existe
     `

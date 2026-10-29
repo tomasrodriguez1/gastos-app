@@ -62,7 +62,7 @@ function TarjetaViaje({ viaje, total, seleccionado, onClick, privado }) {
 }
 
 export function ViajesPage({ gastos, catalogos, onActualizarGasto }) {
-  const { viajes, cargando, error, crear, editar, eliminar, asignar } = useViajesContext()
+  const { viajes, cargando, error, crear, editar, eliminar, asignar, descartarSugerencias } = useViajesContext()
   const [seleccionadoId, setSeleccionadoId] = useState(null)
   const [form, setForm] = useState(null) // null | { viaje: null | viaje }
   const [errorForm, setErrorForm] = useState(null)
@@ -189,6 +189,7 @@ export function ViajesPage({ gastos, catalogos, onActualizarGasto }) {
                     catalogos={catalogos}
                     onActualizarGasto={onActualizarGasto}
                     onAsignar={asignar}
+                    onDescartarSugerencias={descartarSugerencias}
                   />
                 </section>
               )}

@@ -4,6 +4,8 @@ import {
   buscarViajePorTexto,
   crearViaje,
   desasignarGastos,
+  createViajeRouter,
+  descartarSugerencias,
   editarViaje,
   eliminarViaje,
   listarViajes,
@@ -22,6 +24,16 @@ function dbFalsa({ viajes = [], gastos = [] } = {}) {
       const [id, nombre, emoji, fecha_desde, fecha_hasta, presupuesto, estado, nota] = values
       const row = { id, nombre, emoji, fecha_desde, fecha_hasta, presupuesto, estado, nota }
       state.viajes.push(row)
+      return [row]
+    }
+    if (consulta.includes('UPDATE viaje SET sugerencias_descartadas')) {
+      const [ids, id] = values
+      const row = state.viajes.find(v => v.id === id)
+      if (!row) return []
+      const anteriores = row.sugerencias_descartadas || []
+      row.sugerencias_descartadas = consulta.includes('SELECT DISTINCT')
+        ? [...new Set([...anteriores, ...ids])]
+        : anteriores.filter(x => !ids.includes(x))
       return [row]
     }
     if (consulta.includes('UPDATE viaje SET')) {
@@ -175,4 +187,35 @@ test('buscarViajePorTexto: exacto, parcial único, ambiguo', () => {
   expect(buscarViajePorTexto(viajes, 'jap')?.id).toBe('v3')
   expect(buscarViajePorTexto(viajes, 'perú')).toBeNull()
   expect(buscarViajePorTexto(viajes, '')).toBeNull()
+})
+
+
+describe('descartar sugerencias del viaje', () => {
+  test('persiste por viaje, es reversible e idempotente y conserva gastos sync/manuales', async () => {
+    const gastos = [
+      { id: 'sync', es_manual: false, estado: 'confirmado', monto: 12000 },
+      { id: 'manual', es_manual: true, estado: 'confirmado', monto: 5000 },
+    ]
+    const { db, state } = dbFalsa({ viajes: [PERU, { ...PERU, id: 'v2' }], gastos })
+    const router = createViajeRouter({ db })
+    const enviar = (gasto_ids, activo) => router.request('/v1/sugerencias/descartadas', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gasto_ids, activo }),
+    })
+    expect((await enviar(['sync'], true)).status).toBe(200)
+    await enviar(['manual', 'sync'], true)
+    const viaje = (await listarViajes(db)).find(v => v.id === 'v1')
+    expect(viaje.sugerencias_descartadas.sort()).toEqual(['manual', 'sync'])
+    expect(state.viajes[1].sugerencias_descartadas).toBeUndefined()
+    expect(state.gastos).toEqual(gastos)
+    const restaurado = await (await enviar(['sync', 'manual'], false)).json()
+    expect(restaurado.sugerencias_descartadas).toEqual([])
+  })
+
+  test('rechaza entradas inválidas y viaje inexistente', async () => {
+    const { db } = dbFalsa({ viajes: [PERU] })
+    expect((await descartarSugerencias('v1', [], true, db)).status).toBe(400)
+    expect((await descartarSugerencias('v1', ['g1'], 'true', db)).status).toBe(400)
+    expect((await descartarSugerencias('inexistente', ['g1'], true, db)).status).toBe(404)
+  })
 })

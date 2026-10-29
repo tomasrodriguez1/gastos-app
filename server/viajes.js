@@ -27,6 +27,7 @@ export function serializarViaje(row) {
     presupuesto: toMonto(row.presupuesto),
     estado: row.estado,
     nota: row.nota || null,
+    sugerencias_descartadas: row.sugerencias_descartadas || [],
   }
 }
 
@@ -248,6 +249,26 @@ export async function desasignarGastos(gastoIds, db = sql) {
   })
 }
 
+// Solo oculta sugerencias de este viaje; no modifica gastos ni sus categorías.
+// La unión se hace en SQL para conservar descartes simultáneos desde otros dispositivos.
+export async function descartarSugerencias(viajeId, gastoIds, activo, db = sql) {
+  const ids = idsValidos(gastoIds)
+  if (ids.length === 0) return { error: 'Faltan gasto_ids', status: 400 }
+  if (typeof activo !== 'boolean') return { error: 'activo debe ser booleano', status: 400 }
+  const [row] = activo
+    ? await db`
+      UPDATE viaje SET sugerencias_descartadas = ARRAY(
+        SELECT DISTINCT unnest(sugerencias_descartadas || ${ids}::text[])
+      ), updated_at = NOW() WHERE id = ${viajeId} RETURNING *
+    `
+    : await db`
+      UPDATE viaje SET sugerencias_descartadas = ARRAY(
+        SELECT x FROM unnest(sugerencias_descartadas) AS x WHERE NOT (x = ANY(${ids}::text[]))
+      ), updated_at = NOW() WHERE id = ${viajeId} RETURNING *
+    `
+  return row ? { viaje: serializarViaje(row) } : { error: 'Viaje no encontrado', status: 404 }
+}
+
 export function createViajeRouter({ db = sql } = {}) {
   const router = new Hono()
 
@@ -264,6 +285,11 @@ export function createViajeRouter({ db = sql } = {}) {
   router.post('/desasignar', async (c) => {
     const body = await c.req.json()
     return responder(c, await desasignarGastos(body?.gasto_ids, db), null)
+  })
+
+  router.put('/:id/sugerencias/descartadas', async (c) => {
+    const body = await c.req.json()
+    return responder(c, await descartarSugerencias(c.req.param('id'), body?.gasto_ids, body?.activo, db), 'viaje')
   })
 
   router.patch('/:id', async (c) => responder(c, await editarViaje(c.req.param('id'), await c.req.json(), db), 'viaje'))

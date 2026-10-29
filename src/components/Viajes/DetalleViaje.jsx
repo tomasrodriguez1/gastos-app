@@ -48,16 +48,16 @@ function DesgloseGrupos({ porGrupo, total, privado }) {
   )
 }
 
-function Sugerencias({ sugeridos, onAsignar, privado }) {
+function Sugerencias({ sugeridos, descartados, onAsignar, onDescartar, privado }) {
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState(null)
-  if (sugeridos.length === 0) return null
+  if (sugeridos.length === 0 && descartados.length === 0) return null
 
-  async function asignar(ids) {
+  async function ejecutar(accion) {
     setOcupado(true)
     setError(null)
     try {
-      await onAsignar(ids)
+      await accion()
     } catch (e) {
       setError(e.message)
     } finally {
@@ -74,12 +74,29 @@ function Sugerencias({ sugeridos, onAsignar, privado }) {
         </div>
         <button
           type="button"
-          disabled={ocupado}
-          onClick={() => asignar(sugeridos.map(g => g.id))}
+          disabled={ocupado || sugeridos.length === 0}
+          onClick={() => ejecutar(() => onAsignar(sugeridos.map(g => g.id)))}
           className="text-xs px-3 py-1.5 rounded-lg border font-medium text-teal-300 border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 disabled:opacity-40"
         >
           Asignar todos ({sugeridos.length})
         </button>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <p className="text-xs text-slate-500">Descartar solo oculta la sugerencia; el gasto se conserva.</p>
+        {sugeridos.length > 0 && (
+          <button type="button" disabled={ocupado}
+            onClick={() => ejecutar(() => onDescartar(sugeridos.map(g => g.id), true))}
+            className="text-xs text-slate-400 hover:text-slate-200 disabled:opacity-40">
+            Descartar todos ({sugeridos.length})
+          </button>
+        )}
+        {descartados.length > 0 && (
+          <button type="button" disabled={ocupado}
+            onClick={() => ejecutar(() => onDescartar(descartados, false))}
+            className="text-xs text-slate-400 hover:text-slate-200 disabled:opacity-40">
+            Volver a mostrar descartados ({descartados.length})
+          </button>
+        )}
       </div>
       {error && <p className="mt-2 text-xs text-rose-400">{error}</p>}
       <ul className="mt-3 divide-y divide-slate-700/30">
@@ -93,10 +110,19 @@ function Sugerencias({ sugeridos, onAsignar, privado }) {
             <button
               type="button"
               disabled={ocupado}
-              onClick={() => asignar([g.id])}
+              onClick={() => ejecutar(() => onAsignar([g.id]))}
               className="shrink-0 text-xs px-2 py-0.5 rounded-full border text-teal-300 border-teal-500/30 hover:bg-teal-500/10 disabled:opacity-40"
             >
               Asignar
+            </button>
+            <button
+              type="button"
+              disabled={ocupado}
+              onClick={() => ejecutar(() => onDescartar([g.id], true))}
+              aria-label={`Descartar sugerencia de ${g.motivo}`}
+              className="shrink-0 text-xs px-2 py-0.5 rounded-full border text-slate-400 border-slate-600/50 hover:bg-slate-700/50 disabled:opacity-40"
+            >
+              Descartar
             </button>
           </li>
         ))}
@@ -105,7 +131,7 @@ function Sugerencias({ sugeridos, onAsignar, privado }) {
   )
 }
 
-export function DetalleViaje({ viaje, gastos, catalogos, onActualizarGasto, onAsignar }) {
+export function DetalleViaje({ viaje, gastos, catalogos, onActualizarGasto, onAsignar, onDescartarSugerencias }) {
   const { isPrivacyModeEnabled: privado } = usePrivacyMode()
   const r = resumirViaje(viaje, gastos)
   const sugeridos = sugerirGastosParaViaje(viaje, gastos)
@@ -136,7 +162,14 @@ export function DetalleViaje({ viaje, gastos, catalogos, onActualizarGasto, onAs
 
       <DesgloseGrupos porGrupo={r.porGrupo} total={r.total} privado={privado} />
 
-      <Sugerencias sugeridos={sugeridos} onAsignar={ids => onAsignar(viaje.id, ids)} privado={privado} />
+      <Sugerencias
+        key={viaje.id}
+        sugeridos={sugeridos}
+        descartados={viaje.sugerencias_descartadas || []}
+        onAsignar={ids => onAsignar(viaje.id, ids)}
+        onDescartar={(ids, activo) => onDescartarSugerencias(viaje.id, ids, activo)}
+        privado={privado}
+      />
 
       <section className="space-y-2">
         <h3 className="text-sm font-semibold text-slate-300">Gastos del viaje</h3>

@@ -17,6 +17,7 @@ const SIN_PROVIDER = {
   eliminar: async () => {},
   asignar: async () => {},
   desasignar: async () => {},
+  descartarSugerencias: async () => {},
 }
 
 export function ViajesProvider({ onCambioGastos, children }) {

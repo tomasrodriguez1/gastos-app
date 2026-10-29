@@ -128,9 +128,10 @@ export function sugerirGastosParaViaje(viaje, gastos) {
   const limite = new Date(`${viaje.fecha_desde}T00:00:00Z`)
   limite.setUTCMonth(limite.getUTCMonth() - 6)
   const desdePasajes = limite.toISOString().slice(0, 10)
+  const descartados = new Set(viaje.sugerencias_descartadas || [])
 
   return (gastos || [])
-    .filter(g => !g.viaje_id && g.estado !== 'descartado' && g.id)
+    .filter(g => !g.viaje_id && g.estado !== 'descartado' && g.id && !descartados.has(g.id))
     .filter(g => {
       if (fechaEnViaje(g.fecha, viaje)) return true
       if (g.fecha < desdePasajes || g.fecha >= viaje.fecha_desde) return false
