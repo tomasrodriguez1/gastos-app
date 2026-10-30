@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { formatFecha, privacyFormat } from '../../utils/formatters'
 import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 import { formatHoras } from './estilos'
@@ -17,10 +18,116 @@ function ChipCobro({ clase }) {
   return <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">No cobrado</span>
 }
 
+function opcionesDe(clase) {
+  const cancelada = clase.estado === 'cancelada'
+  const sinPagar = (clase.cobro === 'pendiente' || clase.cobro === 'cobrado') && !clase.pago_id
+  const opciones = []
+  if (clase.estado === 'programada' && clase.cobro === 'pendiente') {
+    opciones.push({ id: 'mover', label: 'Mover', titulo: 'Cambiar fecha, hora, duración, modalidad o precio' })
+  }
+  if (clase.estado === 'dictada' && clase.cobro === 'pendiente' && !clase.pago_id) {
+    opciones.push({ id: 'cobrar', label: 'Marcar cobrada', titulo: 'Ya pediste la plata; sigue sin pagar y no crea ingreso', tono: 'text-violet-300' })
+  }
+  if (clase.estado === 'dictada' && clase.cobro === 'cobrado' && !clase.pago_id) {
+    opciones.push({ id: 'desmarcar', label: 'Desmarcar', titulo: 'Vuelve a no cobrada' })
+  }
+  if (!cancelada && sinPagar) {
+    opciones.push({ id: 'cancelar', label: 'Cancelar', titulo: 'Queda en la lista como cancelada', tono: 'text-amber-300' })
+  }
+  if (sinPagar) {
+    opciones.push({ id: 'eliminar', label: 'Eliminar', titulo: 'Borrarla del todo', tono: 'text-red-400' })
+  }
+  return opciones
+}
+
+function MenuFila({ clase, abierto, onAbrir, onCerrar, onElegir }) {
+  const botonRef = useRef(null)
+  const menuRef = useRef(null)
+  const [pos, setPos] = useState(null)
+  const opciones = opcionesDe(clase)
+
+  useEffect(() => {
+    if (!abierto) return undefined
+    function colocar() {
+      const rect = botonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const ancho = 176
+      const alto = opciones.length * 36 + 8
+      let top = rect.bottom + 4
+      if (top + alto > window.innerHeight - 8) top = Math.max(8, rect.top - alto - 4)
+      let left = rect.right - ancho
+      if (left < 8) left = 8
+      setPos({ top, left })
+    }
+    colocar()
+    function fuera(e) {
+      if (menuRef.current?.contains(e.target) || botonRef.current?.contains(e.target)) return
+      onCerrar()
+    }
+    function tecla(e) {
+      if (e.key === 'Escape') onCerrar()
+    }
+    document.addEventListener('mousedown', fuera)
+    document.addEventListener('keydown', tecla)
+    window.addEventListener('scroll', colocar, true)
+    window.addEventListener('resize', colocar)
+    return () => {
+      document.removeEventListener('mousedown', fuera)
+      document.removeEventListener('keydown', tecla)
+      window.removeEventListener('scroll', colocar, true)
+      window.removeEventListener('resize', colocar)
+    }
+  }, [abierto, onCerrar, opciones.length])
+
+  if (opciones.length === 0) return null
+
+  return (
+    <>
+      <button
+        ref={botonRef}
+        type="button"
+        aria-label={`Acciones de ${clase.alumno}`}
+        aria-haspopup="menu"
+        aria-expanded={abierto}
+        onClick={() => (abierto ? onCerrar() : onAbrir())}
+        className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-700/70 hover:text-slate-100"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <circle cx="8" cy="3" r="1.25" />
+          <circle cx="8" cy="8" r="1.25" />
+          <circle cx="8" cy="13" r="1.25" />
+        </svg>
+      </button>
+      {abierto && pos && (
+        <div
+          ref={menuRef}
+          role="menu"
+          style={{ top: pos.top, left: pos.left }}
+          className="fixed z-50 w-44 rounded-lg border border-slate-600/70 bg-slate-800 py-1 shadow-xl"
+        >
+          {opciones.map(op => (
+            <button
+              key={op.id}
+              type="button"
+              role="menuitem"
+              title={op.titulo}
+              onClick={() => onElegir(op.id)}
+              className={`block w-full px-3 py-2 text-left text-xs hover:bg-slate-700/70 ${op.tono || 'text-slate-200'}`}
+            >
+              {op.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
 // Misma vista que la base de Notion: una fila por clase. El checkbox "dictada" solo pasa
 // programada → dictada (no se desmarca). Pie: cantidad, suma de precios y lo ya dictado
 // ("$ till now"); las canceladas no suman.
 export function TablaClases({ clases, onMarcarDictada, onMarcarCobrada, onDesmarcarCobrada, onEditar, onCancelar, onEliminar }) {
+  const [menuId, setMenuId] = useState(null)
   const { isPrivacyModeEnabled } = usePrivacyMode()
   const vigentes = clases.filter(c => c.estado !== 'cancelada')
   const totalPrecio = vigentes.reduce((s, c) => s + c.monto, 0)
@@ -50,8 +157,6 @@ export function TablaClases({ clases, onMarcarDictada, onMarcarCobrada, onDesmar
         <tbody>
           {clases.map(c => {
             const cancelada = c.estado === 'cancelada'
-            const sinPagar = (c.cobro === 'pendiente' || c.cobro === 'cobrado') && !c.pago_id
-            const editable = c.estado === 'programada' && c.cobro === 'pendiente'
             return (
               <tr key={c.id} className={`border-b border-slate-700/30 ${cancelada ? 'opacity-40' : ''}`}>
                 <td className={`py-2 pr-3 text-slate-200 ${cancelada ? 'line-through' : ''}`}>{c.alumno}</td>
@@ -75,22 +180,21 @@ export function TablaClases({ clases, onMarcarDictada, onMarcarCobrada, onDesmar
                 </td>
                 <td className="py-2 pr-3 text-right font-mono-numbers text-slate-200">{privacyFormat(c.monto, isPrivacyModeEnabled)}</td>
                 <td className="py-2 pr-3 text-right font-mono-numbers text-slate-400">{formatHoras(c.horas)}</td>
-                <td className="py-2 text-right whitespace-nowrap">
-                  {editable && (
-                    <button type="button" onClick={() => onEditar(c)} title="Cambiar fecha, hora, duración, modalidad o precio" className="text-xs text-slate-500 hover:text-emerald-400 mr-3">Mover</button>
-                  )}
-                  {c.estado === 'dictada' && c.cobro === 'pendiente' && !c.pago_id && (
-                    <button type="button" onClick={() => onMarcarCobrada(c)} title="Ya pediste la plata; sigue sin pagar y no crea ingreso" className="text-xs text-violet-300 hover:text-violet-200 mr-3">Marcar cobrada</button>
-                  )}
-                  {c.estado === 'dictada' && c.cobro === 'cobrado' && !c.pago_id && (
-                    <button type="button" onClick={() => onDesmarcarCobrada(c)} title="Vuelve a no cobrada" className="text-xs text-slate-500 hover:text-violet-300 mr-3">Desmarcar</button>
-                  )}
-                  {!cancelada && sinPagar && (
-                    <button type="button" onClick={() => onCancelar(c)} title="Queda en la lista como cancelada" className="text-xs text-slate-500 hover:text-amber-400 mr-3">Cancelar</button>
-                  )}
-                  {sinPagar && (
-                    <button type="button" onClick={() => onEliminar(c)} title="Borrarla del todo" className="text-xs text-slate-500 hover:text-red-400">Eliminar</button>
-                  )}
+                <td className="py-2 text-right">
+                  <MenuFila
+                    clase={c}
+                    abierto={menuId === c.id}
+                    onAbrir={() => setMenuId(c.id)}
+                    onCerrar={() => setMenuId(abierto => (abierto === c.id ? null : abierto))}
+                    onElegir={(id) => {
+                      setMenuId(null)
+                      if (id === 'mover') onEditar(c)
+                      if (id === 'cobrar') onMarcarCobrada(c)
+                      if (id === 'desmarcar') onDesmarcarCobrada(c)
+                      if (id === 'cancelar') onCancelar(c)
+                      if (id === 'eliminar') onEliminar(c)
+                    }}
+                  />
                 </td>
               </tr>
             )

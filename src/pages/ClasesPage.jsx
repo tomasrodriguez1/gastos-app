@@ -72,6 +72,7 @@ export function ClasesPage({ ciclos }) {
   const datos = useClases({ desde, hasta, ciclo })
   const { clases, alumnos, familias, resumen, pagos, cargando, error } = datos
   const visibles = clases.filter(FILTROS.find(f => f.id === filtro).aplica)
+  const porMarcarCobro = clases.filter(c => c.estado === 'dictada' && c.cobro === 'pendiente' && !c.pago_id)
   const fmt = (n) => privacyFormat(n, isPrivacyModeEnabled)
 
   async function accion(fn, ...args) {
@@ -86,6 +87,16 @@ export function ClasesPage({ ciclos }) {
   function cancelar(clase) {
     if (window.confirm(`¿Cancelar la clase de ${clase.alumno} del ${clase.fecha} a las ${clase.hora_inicio}?`)) {
       accion(datos.cancelar, clase.id)
+    }
+  }
+
+  function marcarTodasCobradas() {
+    const n = porMarcarCobro.length
+    const texto = n === 1
+      ? '¿Marcar como cobrada la clase dictada de este mes que todavía no pediste?'
+      : `¿Marcar como cobradas las ${n} clases dictadas de este mes que todavía no pediste?`
+    if (window.confirm(`${texto} Siguen en la deuda y no se crea un ingreso.`)) {
+      accion(datos.marcarCobro, porMarcarCobro.map(c => c.id), 'cobrado')
     }
   }
 
@@ -140,13 +151,24 @@ export function ClasesPage({ ciclos }) {
         <div className={CARD}>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <SelectorMes mes={mes} meses={meses} onChange={setMes} />
-            <button
-              type="button"
-              onClick={() => setFormClase(formClase ? null : { clase: null })}
-              className="text-xs px-3 py-1.5 rounded-lg border transition-colors font-medium bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
-            >
-              + Agendar clase
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {porMarcarCobro.length > 0 && (
+                <button
+                  type="button"
+                  onClick={marcarTodasCobradas}
+                  className="text-xs px-3 py-1.5 rounded-lg border transition-colors font-medium bg-violet-500/10 text-violet-300 border-violet-500/30 hover:bg-violet-500/20"
+                >
+                  Marcar todas cobradas
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setFormClase(formClase ? null : { clase: null })}
+                className="text-xs px-3 py-1.5 rounded-lg border transition-colors font-medium bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
+              >
+                + Agendar clase
+              </button>
+            </div>
           </div>
           <div className="flex flex-wrap gap-1.5 mb-4">
             {FILTROS.map(f => (
