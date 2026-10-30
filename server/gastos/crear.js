@@ -15,6 +15,7 @@
 
 import sql from '../db/client.js'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../../src/utils/ciclos.js'
+import { resolverPagado } from '../../src/utils/medioPago.js'
 import { sugerirAsignacionViaje, viajeEnCursoParaFecha } from '../../src/utils/viajes.js'
 
 // Best-effort: un fallo al buscar viajes nunca debe impedir registrar el gasto.
@@ -55,15 +56,17 @@ export async function crearGastoPendiente({
   const cicloFinanciero = obtenerCicloFinanciero(fecha)
   const gastoId = crypto.randomUUID()
 
+  const pagado = resolverPagado(banco, false)
+
   await sql`
     INSERT INTO gastos (
       id, fecha, mes, ciclo_financiero, motivo, banco, tipos, contexto,
       monto, monto_real, usd, es_manual, estado, origen, fuente_id, payload_raw,
-      presupuesto_manual, viaje_id, updated_at
+      presupuesto_manual, viaje_id, pagado, updated_at
     ) VALUES (
       ${gastoId}, ${fecha}, ${mes}, ${cicloFinanciero}, ${motivo}, ${banco}, ${tipos}, ${contexto},
       ${monto}, ${monto}, ${usd}, false, ${estado}, ${origen}, ${fuente_id}, ${payload_raw},
-      ${presupuesto_manual}, ${viajeId}, NOW()
+      ${presupuesto_manual}, ${viajeId}, ${pagado}, NOW()
     )
   `
 

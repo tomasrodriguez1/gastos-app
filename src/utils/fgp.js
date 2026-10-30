@@ -46,7 +46,9 @@ export function sumarMovimientosFGP(movimientos) {
 
 // standby: ids de gastos que se dejan sin mover al fondo TC por ahora. Salen de `pendientesTC`
 // y quedan en `enStandby`; el saldo FGP no cambia.
-export function calcularFondoFGP({ gastos = [], presupuestos = {}, movimientos = [], standby = [], cicloActual }) {
+// saldoRealCiclo: ingresos − gastos del ciclo actual (calcularSaldosCiclo), o null si no se
+// conoce. Un FGP en rojo que ese saldo alcanza a cubrir no pide cobertura: la plata existe.
+export function calcularFondoFGP({ gastos = [], presupuestos = {}, movimientos = [], standby = [], cicloActual, saldoRealCiclo = null }) {
   const ciclos = ciclosFGP(presupuestos, cicloActual)
   const setCiclos = new Set(ciclos)
   const lineasPorCiclo = Object.fromEntries(ciclos.map(c => [c, lineasFGP(presupuestos[c])]))
@@ -123,6 +125,10 @@ export function calcularFondoFGP({ gastos = [], presupuestos = {}, movimientos =
     if (paga >= cicloActual) compromisos[paga] = (compromisos[paga] || 0) + (m.monto || 0)
   }
 
+  const saldo = aportes - gastado + tot.cobertura + tot.deficit + tot.ajuste
+  const faltante = Math.max(0, -saldo)
+  const cubiertoPorCiclo = saldoRealCiclo == null ? 0 : Math.min(faltante, Math.max(0, saldoRealCiclo))
+
   return {
     desde: ciclos[0] || null,
     ciclos: detalleCiclos,
@@ -131,7 +137,10 @@ export function calcularFondoFGP({ gastos = [], presupuestos = {}, movimientos =
     coberturas: tot.cobertura,
     deficits: tot.deficit,
     ajustes: tot.ajuste,
-    saldo: aportes - gastado + tot.cobertura + tot.deficit + tot.ajuste,
+    saldo,
+    faltante,
+    cubiertoPorCiclo,
+    faltantePorCubrir: faltante - cubiertoPorCiclo,
     pendientesTC,
     totalPendienteTC: pendientesTC.reduce((s, p) => s + p.monto, 0),
     enStandby,

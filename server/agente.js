@@ -101,6 +101,8 @@ function promptSistema(catalogos, hoy, reservas, cicloActual) {
     'El gasto siempre nace "pendiente" al crearse — vos NUNCA lo confirmás ni lo das por aprobado, eso',
     'lo hace la persona en su bandeja de revisión, incluso después de que ya te confirmó el resumen y',
     'creaste el gasto. Tampoco ofrezcas confirmar en bloque: eso se hace en /bandeja.',
+    'Si el medio de pago es efectivo, transferencia o débito, el gasto queda marcado como pagado',
+    '(la plata ya salió). Las tarjetas siguen pendientes hasta que se pague el resumen.',
     '',
     'Si algo queda ambiguo y el usuario no te lo aclara cuando le preguntás, usá tu mejor criterio,',
     'avisá qué asumiste en el resumen, y esperá igual su confirmación antes de crear — total el gasto',

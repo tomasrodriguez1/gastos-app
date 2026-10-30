@@ -5,6 +5,7 @@
 
 import sql from '../db/client.js'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../../src/utils/ciclos.js'
+import { esMedioYaPagado } from '../../src/utils/medioPago.js'
 import { deserializarGasto, serializarCampoGasto } from './serializacion.js'
 import { aprenderComercio } from '../comercios.js'
 
@@ -22,6 +23,16 @@ export async function actualizarGasto(id, changes) {
 
   const updates = {}
   for (const f of fields) updates[f] = serializarCampoGasto(f, changes[f])
+
+  // Efectivo, transferencia y débito ya salieron de la cuenta: quedan pagados
+  // aunque el cliente mande pagado=false o solo cambie el banco.
+  let bancoParaPagado = fields.includes('banco') ? changes.banco : undefined
+  if (bancoParaPagado === undefined && updates.pagado === false) {
+    const [actual] = await sql`SELECT banco FROM gastos WHERE id = ${id} OR sync_key = ${id}`
+    bancoParaPagado = actual?.banco
+  }
+  if (bancoParaPagado !== undefined && esMedioYaPagado(bancoParaPagado)) updates.pagado = true
+
   if (fields.includes('fecha')) {
     try {
       updates.mes = obtenerMesCalendario(changes.fecha)

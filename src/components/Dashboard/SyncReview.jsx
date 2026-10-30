@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { getSubcategoriaPresupuesto } from '../../utils/mapeo'
 import { formatCLP, formatFecha } from '../../utils/formatters'
 import { GRUPOS_PRESUPUESTO } from '../../utils/categorias'
+import { esMedioYaPagado } from '../../utils/medioPago'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../../utils/ciclos'
 
 const TIPOS_DEFAULT = [
@@ -55,6 +56,13 @@ function EditPanel({ gasto, catalogos, onGuardar, onCancelar }) {
     setTipos(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
   }
 
+  function handleBanco(valor) {
+    const anterior = banco
+    setBanco(valor)
+    if (esMedioYaPagado(valor)) setPagado(true)
+    else if (esMedioYaPagado(anterior)) setPagado(false)
+  }
+
   function handleGrupoChange(g) {
     setGrupo(g)
     setSubcategoria(gruposPresupuesto[g]?.[0] ?? '')
@@ -65,7 +73,7 @@ function EditPanel({ gasto, catalogos, onGuardar, onCancelar }) {
     const changes = {
       fecha, motivo: motivo.trim(), banco, tipos, contexto,
       monto: montoNum, monto_real: montoNum,
-      pagado,
+      pagado: esMedioYaPagado(banco) || pagado,
       contexto_override: contextoOverride || null,
       presupuesto_manual: grupo && subcategoria ? { grupo, subcategoria } : null,
       monto_presupuesto_manual: Number(montoParcial) > 0 ? Number(montoParcial) : null,
@@ -121,7 +129,7 @@ function EditPanel({ gasto, catalogos, onGuardar, onCancelar }) {
         )}
         <div>
           <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Banco</label>
-          <select value={banco} onChange={e => setBanco(e.target.value)} className={inputCls}>
+          <select value={banco} onChange={e => handleBanco(e.target.value)} className={inputCls}>
             <option value="">Sin banco</option>
             {todosBancos.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
@@ -159,9 +167,9 @@ function EditPanel({ gasto, catalogos, onGuardar, onCancelar }) {
           </div>
         </div>
         <div className="pt-5">
-          <button type="button" onClick={() => setPagado(p => !p)}
-            className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${pagado ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/10 text-amber-500/70 border-amber-500/20'}`}>
-            {pagado ? 'Pagado' : 'Pendiente'}
+          <button type="button" disabled={esMedioYaPagado(banco)} onClick={() => setPagado(p => !p)}
+            className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium disabled:cursor-default ${(esMedioYaPagado(banco) || pagado) ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/10 text-amber-500/70 border-amber-500/20'}`}>
+            {esMedioYaPagado(banco) || pagado ? 'Pagado' : 'Pendiente'}
           </button>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { TODOS_LOS_TIPOS, BANCOS, GRUPOS_PRESUPUESTO } from '../../utils/categorias'
+import { esMedioYaPagado } from '../../utils/medioPago'
 // Los valores hardcodeados se usan como fallback si no se pasan catalogos como prop
 import { formatCLP } from '../../utils/formatters'
 
@@ -36,6 +37,10 @@ export function FormNuevoGasto({ onGuardar, onCerrar, catalogos }) {
     setForm(f => {
       const next = { ...f, [field]: val }
       if (field === 'grupo') next.subcategoria = gruposPresupuesto[val]?.[0] ?? ''
+      if (field === 'banco') {
+        if (esMedioYaPagado(val)) next.pagado = true
+        else if (esMedioYaPagado(f.banco)) next.pagado = false
+      }
       return next
     })
     setError('')
@@ -87,7 +92,7 @@ export function FormNuevoGasto({ onGuardar, onCerrar, catalogos }) {
       presupuesto_manual: form.grupo && form.subcategoria
         ? { grupo: form.grupo, subcategoria: form.subcategoria }
         : null,
-      pagado: form.pagado,
+      pagado: esMedioYaPagado(form.banco) || form.pagado,
     })
     setForm(INIT)
   }
@@ -313,14 +318,17 @@ export function FormNuevoGasto({ onGuardar, onCerrar, catalogos }) {
           </div>
 
           {/* Pagado */}
-          <label className="flex items-center gap-2 cursor-pointer select-none">
+          <label className={`flex items-center gap-2 select-none ${esMedioYaPagado(form.banco) ? '' : 'cursor-pointer'}`}>
             <input
               type="checkbox"
-              checked={form.pagado}
+              checked={esMedioYaPagado(form.banco) || form.pagado}
+              disabled={esMedioYaPagado(form.banco)}
               onChange={e => set('pagado', e.target.checked)}
               className="w-4 h-4 rounded accent-sky-500"
             />
-            <span className="text-sm text-slate-400">Marcado como pagado</span>
+            <span className="text-sm text-slate-400">
+              {esMedioYaPagado(form.banco) ? 'Pagado: efectivo, transferencia o débito' : 'Marcado como pagado'}
+            </span>
           </label>
 
           {error && <p className="text-xs text-red-400">{error}</p>}

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { GRUPOS_PRESUPUESTO } from '../../utils/categorias'
+import { esMedioYaPagado } from '../../utils/medioPago'
 import { getSubcategoriaPresupuesto } from '../../utils/mapeo'
 import { formatCLP } from '../../utils/formatters'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../../utils/ciclos'
@@ -71,6 +72,13 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos, nombre
     }
   }
 
+  function handleBanco(valor) {
+    const anterior = banco
+    setBanco(valor)
+    if (esMedioYaPagado(valor)) setPagado(true)
+    else if (esMedioYaPagado(anterior)) setPagado(false)
+  }
+
   function handleGrupoChange(g) {
     setGrupo(g)
     setSubcategoria(gruposPresupuesto[g]?.[0] ?? '')
@@ -86,7 +94,7 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos, nombre
       contexto,
       monto: montoNum,
       monto_real: montoNum,
-      pagado,
+      pagado: esMedioYaPagado(banco) || pagado,
       plata_en_cuenta: plataEnCuenta,
       en_presupuesto: enPresupuesto,
       financiado_por: financiadoPor || null,
@@ -177,7 +185,7 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos, nombre
               <label className="text-xs text-slate-500 uppercase tracking-wider block mb-1.5">Banco</label>
               <select
                 value={banco}
-                onChange={e => setBanco(e.target.value)}
+                onChange={e => handleBanco(e.target.value)}
                 className="w-full bg-slate-700/50 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500"
               >
                 <option value="">Sin banco</option>
@@ -244,14 +252,15 @@ export function EditarAsignacion({ gasto, onGuardar, onCerrar, catalogos, nombre
             <span className="text-sm text-slate-400">Estado</span>
             <button
               type="button"
+              disabled={esMedioYaPagado(banco)}
               onClick={() => setPagado(p => !p)}
-              className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${
-                pagado
+              className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium disabled:cursor-default ${
+                (esMedioYaPagado(banco) || pagado)
                   ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
                   : 'bg-amber-500/10 text-amber-500/70 border-amber-500/20'
               }`}
             >
-              {pagado ? 'Pagado' : 'Pendiente'}
+              {esMedioYaPagado(banco) || pagado ? 'Pagado' : 'Pendiente'}
             </button>
           </div>
 

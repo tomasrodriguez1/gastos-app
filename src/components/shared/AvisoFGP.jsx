@@ -15,7 +15,8 @@ export function AvisoFGP({ resumen, vencimientos }) {
   const { pathname } = useLocation()
   if (pathname === '/fondos') return null
   const venc = vencimientos?.aviso || null
-  const enRojo = !!resumen && resumen.saldo < 0
+  // Un rojo que el saldo real del ciclo cubre no avisa.
+  const enRojo = !!resumen && resumen.faltantePorCubrir > 0
   if (!venc && !enRojo) return null
 
   const vencido = venc?.nivel === 'vencido'
@@ -38,7 +39,7 @@ export function AvisoFGP({ resumen, vencimientos }) {
       )}
       {enRojo && (
         <span className="text-red-300">
-          FGP en rojo: faltan <span className="font-mono-numbers font-semibold">{formatCLP(Math.abs(resumen.saldo))}</span>
+          FGP en rojo: faltan <span className="font-mono-numbers font-semibold">{formatCLP(resumen.faltantePorCubrir)}</span>
         </span>
       )}
       <Link to={venc ? '/tarjeta' : '/fondos#fgp'} className="ml-auto text-xs font-medium text-amber-100 underline underline-offset-2 hover:text-white">

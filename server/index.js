@@ -34,9 +34,11 @@ import { migrateFGP } from './db/migrate-fgp.js'
 import { migrateTarjetaPago } from './db/migrate-tarjeta-pago.js'
 import { fgpRouter } from './fgp.js'
 import { migrateViajes } from './db/migrate-viajes.js'
+import { migratePagadoContado } from './db/migrate-pagado-contado.js'
 import { viajeRouter } from './viajes.js'
 import { listarComercios, olvidarComercio } from './comercios.js'
 import { obtenerCicloFinanciero, obtenerMesCalendario } from '../src/utils/ciclos.js'
+import { PATRON_MEDIO_YA_PAGADO, resolverPagado } from '../src/utils/medioPago.js'
 import { deserializarGasto } from './gastos/serializacion.js'
 import { actualizarGasto } from './gastos/actualizar.js'
 import { leerPresupuestoCiclo } from './presupuesto/leer.js'
@@ -63,6 +65,7 @@ await migrateFGP()
 await migrateTarjetaPago()
 await migrateTelegramAvisos()
 await migrateViajes()
+await migratePagadoContado()
 if (process.env.RUN_SCHEMA_INIT === 'true' || process.env.NODE_ENV !== 'production') {
   await initSchema()
 }
@@ -210,7 +213,7 @@ app.post('/api/datos', async (c) => {
             ${g.monto_clp_manual ?? null}, ${g.split || 0},
             ${g.presupuesto_manual ?? null},
             ${g.contexto_override ?? null}, ${g.monto_presupuesto_manual ?? null},
-            ${g.pagado ? true : false}, ${g.plata_en_cuenta ? true : false},
+            ${resolverPagado(g.banco, g.pagado)}, ${g.plata_en_cuenta ? true : false},
             ${g.en_presupuesto !== false},
             ${g.financiado_por || null}, false, NOW()
           )
@@ -231,6 +234,7 @@ app.post('/api/datos', async (c) => {
             monto_clp_manual = COALESCE(gastos.monto_clp_manual, EXCLUDED.monto_clp_manual),
             monto_presupuesto_manual = COALESCE(gastos.monto_presupuesto_manual, EXCLUDED.monto_presupuesto_manual),
             financiado_por = COALESCE(gastos.financiado_por, EXCLUDED.financiado_por),
+            pagado = CASE WHEN EXCLUDED.banco ~* ${PATRON_MEDIO_YA_PAGADO} THEN TRUE ELSE gastos.pagado END,
             updated_at = NOW()
         `
       }
@@ -264,7 +268,7 @@ app.post('/api/datos', async (c) => {
             ${g.monto_clp_manual ?? null}, ${g.split || 0},
             ${g.presupuesto_manual ?? null},
             ${g.contexto_override ?? null}, ${g.monto_presupuesto_manual ?? null},
-            ${g.pagado ? true : false}, ${g.plata_en_cuenta ? true : false},
+            ${resolverPagado(g.banco, g.pagado)}, ${g.plata_en_cuenta ? true : false},
             ${g.en_presupuesto !== false},
             ${g.financiado_por || null}, ${g.viaje_id || null}, true, NOW()
           )

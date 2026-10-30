@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Gastos de efectivo, transferencia o débito quedan marcados como pagados al crearlos, al cambiar el medio de pago y en los que ya estaban cargados.
 - Viajes: descartar posibles gastos individualmente o todos, con persistencia por viaje y opción para volver a mostrarlos, sin alterar gastos ni presupuesto.
 
 - Fix: el FGP solo propone mover al fondo TC los gastos confirmados e impagos del ciclo financiero actual; excluye ciclos ya cerrados y cargos ya pagados también en la API.

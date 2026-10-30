@@ -400,7 +400,7 @@ export function FondoFGPPanel({ resumen, fgp, cicloActual, fondosPresupuesto = {
             </p>
           </div>
           <div className="text-right">
-            <div className={`font-mono-numbers text-2xl font-bold ${resumen.saldo >= 0 ? 'text-sky-400' : 'text-red-400'}`}>{formatCLP(resumen.saldo)}</div>
+            <div className={`font-mono-numbers text-2xl font-bold ${resumen.saldo >= 0 ? 'text-sky-400' : resumen.faltantePorCubrir > 0 ? 'text-red-400' : 'text-amber-300'}`}>{formatCLP(resumen.saldo)}</div>
             <div className="text-xs text-slate-600">saldo acumulado</div>
           </div>
         </div>
@@ -436,14 +436,20 @@ export function FondoFGPPanel({ resumen, fgp, cicloActual, fondosPresupuesto = {
           </div>
         )}
 
-        {resumen.saldo < 0 ? (
+        {resumen.faltantePorCubrir > 0 ? (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 space-y-3">
             <div className="text-sm text-red-300">
-              El FGP está <span className="font-mono-numbers font-semibold">{formatCLP(Math.abs(resumen.saldo))}</span> en rojo.
+              El FGP está <span className="font-mono-numbers font-semibold">{formatCLP(resumen.faltante)}</span> en rojo
+              {resumen.cubiertoPorCiclo > 0 && <> y el saldo real del ciclo cubre <span className="font-mono-numbers">{formatCLP(resumen.cubiertoPorCiclo)}</span></>}.
               {excesosActual.length > 0 && <span className="text-red-300/80"> Se pasaron: {excesosActual.map(l => `${l.sub} +${formatCLP(l.exceso)}`).join(', ')}.</span>}
-              {' '}¿De dónde sale la diferencia?
+              {' '}¿De dónde salen los <span className="font-mono-numbers font-semibold">{formatCLP(resumen.faltantePorCubrir)}</span> que faltan?
             </div>
-            <FormCobertura key={Math.round(resumen.saldo)} faltante={Math.abs(resumen.saldo)} cicloActual={cicloActual} fondosManuales={fondosManuales} onRegistrar={registrar} />
+            <FormCobertura key={Math.round(resumen.faltantePorCubrir)} faltante={resumen.faltantePorCubrir} cicloActual={cicloActual} fondosManuales={fondosManuales} onRegistrar={registrar} />
+          </div>
+        ) : resumen.faltante > 0 ? (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
+            El FGP está <span className="font-mono-numbers font-semibold">{formatCLP(resumen.faltante)}</span> en rojo, pero el saldo real del ciclo lo cubre: no hace falta sacar plata de otro lado.
+            {excesosActual.length > 0 && <span className="text-amber-200/70"> Se pasaron: {excesosActual.map(l => `${l.sub} +${formatCLP(l.exceso)}`).join(', ')}.</span>}
           </div>
         ) : excesosActual.length > 0 && (
           <div className="rounded-lg border border-slate-600/40 bg-slate-900/30 px-4 py-2.5 text-xs text-slate-400">

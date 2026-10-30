@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { getGastoId } from '../../utils/gastosIds'
 import { formatCLP, formatFecha } from '../../utils/formatters'
 import { COLOR_CATEGORIA } from '../../utils/categorias'
+import { esMedioYaPagado } from '../../utils/medioPago'
 import { getSubcategoriaPresupuesto } from '../../utils/mapeo'
 import { EditarAsignacion } from './EditarAsignacion'
 import { useViajesContext } from '../../contexts/ViajesContext'
@@ -329,14 +330,15 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, desta
                         )}
                         {onActualizar && (
                           <button
+                            disabled={esMedioYaPagado(g.banco)}
                             onClick={() => onActualizar(g.id, { pagado: !g.pagado })}
-                            className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
-                              g.pagado
-                                ? 'text-emerald-400 border-emerald-500/30 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30'
+                            className={`text-xs px-2 py-0.5 rounded-full border transition-colors disabled:cursor-default ${
+                              (esMedioYaPagado(g.banco) || g.pagado)
+                                ? 'text-emerald-400 border-emerald-500/30 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 disabled:hover:bg-transparent disabled:hover:text-emerald-400 disabled:hover:border-emerald-500/30'
                                 : 'text-amber-500/70 border-amber-500/20 hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/30'
                             }`}
                           >
-                            {g.pagado ? 'Pagado' : 'Pend.'}
+                            {esMedioYaPagado(g.banco) || g.pagado ? 'Pagado' : 'Pend.'}
                           </button>
                         )}
                         {onActualizar && (
@@ -459,18 +461,19 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, desta
                   <td className="px-4 py-2.5 text-center">
                     {onActualizar ? (
                       <button
+                        disabled={esMedioYaPagado(g.banco)}
                         onClick={() => onActualizar(g.id, { pagado: g.pagado ? 0 : 1 })}
-                        className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
-                          g.pagado
-                            ? 'text-emerald-400 border-emerald-500/30 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30'
+                        className={`text-xs px-2 py-0.5 rounded-full border transition-colors disabled:cursor-default ${
+                          (esMedioYaPagado(g.banco) || g.pagado)
+                            ? 'text-emerald-400 border-emerald-500/30 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 disabled:hover:bg-transparent disabled:hover:text-emerald-400 disabled:hover:border-emerald-500/30'
                             : 'text-amber-500/70 border-amber-500/20 hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/30'
                         }`}
-                        title={g.pagado ? 'Marcar como pendiente' : 'Marcar como pagado'}
+                        title={esMedioYaPagado(g.banco) ? 'Efectivo, transferencia o débito queda pagado' : (g.pagado ? 'Marcar como pendiente' : 'Marcar como pagado')}
                       >
-                        {g.pagado ? 'Pagado' : 'Pendiente'}
+                        {esMedioYaPagado(g.banco) || g.pagado ? 'Pagado' : 'Pendiente'}
                       </button>
                     ) : (
-                      g.pagado
+                      (esMedioYaPagado(g.banco) || g.pagado)
                         ? <span className="text-xs text-emerald-500/70">Pagado</span>
                         : <span className="text-xs text-amber-500/70">Pendiente</span>
                     )}

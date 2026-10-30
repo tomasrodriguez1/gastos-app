@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { FiltrosGastos } from '../components/Gastos/FiltrosGastos'
 import { TablaGastos } from '../components/Gastos/TablaGastos'
 import { getGastoId } from '../utils/gastosIds'
+import { esMedioYaPagado } from '../utils/medioPago'
 
 const FILTROS_INIT = {
   banco: '',
@@ -72,7 +73,7 @@ export function LogPage({ gastos, gastosLocales, catalogos, onActualizarGasto, o
         if (!filtros.tipos.length) return true
         return (g.tipos || []).some(t => filtros.tipos.includes(t))
       })
-      .filter(g => !filtros.soloNoPagados || !g.pagado)
+      .filter(g => !filtros.soloNoPagados || !(g.pagado || esMedioYaPagado(g.banco)))
       .filter(g => {
         if (!filtros.busqueda) return true
         return g.motivo?.toLowerCase().includes(filtros.busqueda.toLowerCase())

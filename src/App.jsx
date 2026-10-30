@@ -25,10 +25,12 @@ import { useSyncN8n } from './hooks/useSyncN8n'
 import { useCatalogos } from './hooks/useCatalogos'
 import { useReconciliacionTarjeta } from './hooks/useReconciliacionTarjeta'
 import { useFGP } from './hooks/useFGP'
+import { useResumenIngresos } from './hooks/useIngresos'
 import { AvisoFGP } from './components/shared/AvisoFGP'
 import { calcularFondoFGP } from './utils/fgp'
 import { calcularVencimientosTarjeta } from './utils/vencimientosTarjeta'
 import { cargarReglas } from './utils/mapeo'
+import { calcularSaldosCiclo, calcularTotalMes } from './utils/calculos'
 import { obtenerCicloActual } from './utils/ciclos'
 
 // Pre-cargar reglas de mapeo al iniciar la app
@@ -55,6 +57,7 @@ export default function App() {
   const { presupuesto: presupuestos, obtenerCiclo, guardar, copiarCicloAnterior, cargado: presupuestoCargado, errorGuardado } = usePresupuesto()
   const reconciliacion = useReconciliacionTarjeta()
   const fgp = useFGP({ onCambioExterno: reconciliacion.refrescar })
+  const { resumen: resumenIngresos, error: errorIngresos } = useResumenIngresos(obtenerCicloActual())
 
   function setGastosYRefrescarTarjeta(nuevosGastos) {
     setGastos(nuevosGastos)
@@ -89,8 +92,12 @@ export default function App() {
   const mesesCalendario = [...new Set([...mesesCalendarioDisponibles, ...mesesCalendarioLocales])].sort().reverse()
 
   const todoLosGastos = [...gastos, ...gastosLocales]
-  const resumenFGP = fgp.cargando ? null : calcularFondoFGP({
-    gastos: todoLosGastos, presupuestos, movimientos: fgp.movimientos, standby: fgp.standby, cicloActual: obtenerCicloActual(),
+  // El saldo real del ciclo decide si un FGP en rojo pide cobertura; mientras carga no se calcula
+  // para no mostrar un "en rojo" falso. Si falla, el FGP pide cobertura por el total.
+  const cicloActual = obtenerCicloActual()
+  const saldoRealCiclo = calcularSaldosCiclo(resumenIngresos, calcularTotalMes(todoLosGastos, cicloActual))?.saldoReal ?? null
+  const resumenFGP = fgp.cargando || (resumenIngresos == null && !errorIngresos) ? null : calcularFondoFGP({
+    gastos: todoLosGastos, presupuestos, movimientos: fgp.movimientos, standby: fgp.standby, cicloActual, saldoRealCiclo,
   })
 
   // Sin la conciliación cargada el fondo TC aparece en 0 y avisaría un faltante falso.

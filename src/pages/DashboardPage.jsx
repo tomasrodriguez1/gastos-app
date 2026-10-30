@@ -349,7 +349,7 @@ export function DashboardPage({ gastos, obtenerPresupuesto, resumenFGP, vencimie
               to="/fondos#fgp"
               label="Gastos previstos"
               value={resumenFGP == null ? '…' : privacyFormat(resumenFGP.saldo, isPrivacyModeEnabled)}
-              tone={resumenFGP && resumenFGP.saldo < 0 ? 'text-rose-400' : 'text-slate-200'}
+              tone={resumenFGP?.faltantePorCubrir > 0 ? 'text-rose-400' : resumenFGP?.saldo < 0 ? 'text-amber-300' : 'text-slate-200'}
               detail={resumenFGP?.totalPendienteTC > 0 ? `${dinero(resumenFGP.totalPendienteTC)} por mover a la tarjeta` : 'Saldo acumulado'}
             />
           )}
@@ -542,11 +542,11 @@ function armarAcciones({ gastos, resumenIngresos, vencimientos, resumenFGP, cicl
     })
   }
 
-  if (resumenFGP && resumenFGP.saldo < 0) {
+  if (resumenFGP?.faltantePorCubrir > 0) {
     acciones.push({
       tono: 'rose',
       to: '/fondos#fgp',
-      titulo: isPrivacyModeEnabled ? 'Fondo de gastos previstos en rojo' : `FGP en rojo: faltan ${formatCLP(Math.abs(resumenFGP.saldo))}`,
+      titulo: isPrivacyModeEnabled ? 'Fondo de gastos previstos en rojo' : `FGP en rojo: faltan ${formatCLP(resumenFGP.faltantePorCubrir)}`,
       detalle: 'Hay que cubrir la diferencia',
     })
   }

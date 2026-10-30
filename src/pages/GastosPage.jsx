@@ -10,6 +10,7 @@ import { DuplicadosReview } from '../components/Gastos/DuplicadosReview'
 import { SyncReview } from '../components/Dashboard/SyncReview'
 import { useDuplicados } from '../hooks/useDuplicados'
 import { obtenerCicloActual } from '../utils/ciclos'
+import { esMedioYaPagado } from '../utils/medioPago'
 
 const FILTROS_INIT = {
   banco: '',
@@ -68,7 +69,7 @@ export function GastosPage({ gastos, gastosLocales, ciclos, mesesCalendario, onA
         if (!filtros.tipos.length) return true
         return (g.tipos || []).some(t => filtros.tipos.includes(t))
       })
-      .filter(g => !filtros.soloNoPagados || !g.pagado)
+      .filter(g => !filtros.soloNoPagados || !(g.pagado || esMedioYaPagado(g.banco)))
       .filter(g => {
         if (!filtros.busqueda) return true
         return g.motivo?.toLowerCase().includes(filtros.busqueda.toLowerCase())

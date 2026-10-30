@@ -92,6 +92,23 @@ describe('calcularFondoFGP', () => {
     expect(r.compromisos).toEqual({ '2026-11': 30000 })
   })
 
+  test('el saldo real del ciclo cubre un FGP en rojo antes de pedir cobertura', () => {
+    const gastos = [gasto('a', '2026-10', 'Regalos', 237000)] // saldo FGP = 160000 − 237000 = −77000
+    const conPlata = calcularFondoFGP({ gastos, presupuestos, movimientos: [], cicloActual: '2026-10', saldoRealCiclo: 500000 })
+    expect(conPlata.faltante).toBe(77000)
+    expect(conPlata.cubiertoPorCiclo).toBe(77000)
+    expect(conPlata.faltantePorCubrir).toBe(0)
+
+    const parcial = calcularFondoFGP({ gastos, presupuestos, movimientos: [], cicloActual: '2026-10', saldoRealCiclo: 50000 })
+    expect(parcial.faltantePorCubrir).toBe(27000)
+
+    const negativo = calcularFondoFGP({ gastos, presupuestos, movimientos: [], cicloActual: '2026-10', saldoRealCiclo: -10000 })
+    expect(negativo.faltantePorCubrir).toBe(77000)
+
+    const sinDato = calcularFondoFGP({ gastos, presupuestos, movimientos: [], cicloActual: '2026-10' })
+    expect(sinDato.faltantePorCubrir).toBe(77000)
+  })
+
   test('sin líneas FGP no hay fondo', () => {
     const r = calcularFondoFGP({ gastos: [], presupuestos: {}, movimientos: [], cicloActual: '2026-10' })
     expect(r.desde).toBeNull()
