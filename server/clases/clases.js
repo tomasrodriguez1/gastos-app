@@ -1,8 +1,8 @@
 // Clases particulares (DEC-019): familias, alumnos, clases y pagos. Módulo propio, separado de gastos y
 // presupuesto. Único contacto con las finanzas: registrarPago crea un `ingreso` real
 // (fuente "Clases particulares", origen 'clases') en la misma transacción que marca las clases
-// pagadas; deshacerPago lo borra. La deuda no se persiste: Σ monto de clases dictadas y
-// pendientes de cobro.
+// pagadas; deshacerPago lo borra. La deuda no se persiste: Σ monto de clases dictadas con
+// cobro pendiente o cobrado (cobrado = ya se pidió la plata, todavía no hay ingreso).
 //
 // Todo el SQL del módulo vive acá (la UI y las tools MCP delegan). Cada función recibe `db`
 // para poder correr contra otra conexión en tests y devuelve el resultado o
@@ -15,7 +15,7 @@ import { obtenerCicloFinanciero, cicloIngresoDeClase, mesClasesDeCiclo } from '.
 export const FUENTE_INGRESO_CLASES = FUENTE_CLASES
 export const MODALIDADES = ['presencial', 'online']
 export const ESTADOS = ['programada', 'dictada', 'cancelada']
-export const COBROS = ['pendiente', 'pagado']
+export const COBROS = ['pendiente', 'cobrado', 'pagado']
 export const PRECIO_HORA_NORMAL = 25000
 
 const HORA_RE = /^([01]\d|2[0-3]):[0-5]\d$/
@@ -494,12 +494,13 @@ export async function marcarDictada(id, db = sql) {
   return { clase: serializarClase(actual) }
 }
 
-// → cancelada, solo si no está pagada. No se borra.
+// → cancelada, si no está pagada (pendiente o cobrada). No se borra. Una con pago por
+// confirmar tampoco: primero se descarta el pago.
 export async function cancelarClase(id, db = sql) {
   if (!idValido(id)) return validacion('Id inválido')
   const [row] = await db`
     UPDATE clase SET estado = 'cancelada', updated_at = NOW()
-    WHERE id = ${Number(id)} AND cobro = 'pendiente' AND estado <> 'cancelada'
+    WHERE id = ${Number(id)} AND cobro IN ('pendiente', 'cobrado') AND estado <> 'cancelada'
       AND NOT EXISTS (SELECT 1 FROM pago_clase pc WHERE pc.clase_id = clase.id)
     RETURNING id
   `
@@ -513,9 +514,9 @@ export async function cancelarClase(id, db = sql) {
   return { clase: serializarClase(actual) }
 }
 
-// Borra una clase sin cobrar (cualquier estado). Una pagada no se borra: primero se deshace el
-// pago. Si vino del import, su notion_id queda en clase_import_descartada para que reimportar no
-// la reviva. Solo desde la UI: no hay tool MCP que borre.
+// Borra una clase que no está pagada (pendiente o cobrada). Una pagada no se borra: primero se
+// deshace el pago. Si vino del import, su notion_id queda en clase_import_descartada para que
+// reimportar no la reviva. Solo desde la UI: no hay tool MCP que borre.
 export async function eliminarClase(id, db = sql) {
   if (!idValido(id)) return validacion('Id inválido')
   return db.begin(async (tx) => {
@@ -531,6 +532,53 @@ export async function eliminarClase(id, db = sql) {
       await tx`INSERT INTO clase_import_descartada (notion_id) VALUES (${actual.notion_id}) ON CONFLICT DO NOTHING`
     }
     return { ok: true, id: actual.id }
+  })
+}
+
+// pendiente ↔ cobrado. Solo clases dictadas y sin pago (ni confirmado ni por confirmar).
+// No crea ingreso: cobrado significa que ya se pidió la plata y todavía no llegó (DEC-027).
+export async function marcarCobro({ claseIds, cobro } = {}, db = sql) {
+  if (cobro !== 'pendiente' && cobro !== 'cobrado') return validacion('cobro debe ser pendiente o cobrado')
+  const lista = Array.isArray(claseIds) ? claseIds : []
+  if (lista.length === 0) return validacion('Faltan las clases')
+  if (!lista.every(idValido)) return validacion('Ids de clase inválidos')
+  const ids = [...new Set(lista.map(Number))]
+  const origen = cobro === 'cobrado' ? 'pendiente' : 'cobrado'
+
+  return db.begin(async (tx) => {
+    const rows = await tx`SELECT id, estado, cobro FROM clase WHERE id = ANY(${ids}) FOR UPDATE`
+    const encontradas = new Set(rows.map(r => r.id))
+    const faltan = ids.filter(id => !encontradas.has(id))
+    if (faltan.length) return noEncontrado(`No existen las clases: ${faltan.join(', ')}`)
+
+    const invalidas = rows.filter(r => r.estado !== 'dictada' || r.cobro !== origen)
+    if (invalidas.length) {
+      const detalle = invalidas.map(r => {
+        if (r.cobro === 'pagado') return `${r.id} (ya pagada)`
+        if (r.estado !== 'dictada') return `${r.id} (${r.estado})`
+        return `${r.id} (${r.cobro === 'cobrado' ? 'ya cobrada' : 'no cobrada'})`
+      }).join(', ')
+      return conflicto(
+        cobro === 'cobrado'
+          ? `Solo se marcan cobradas las clases dictadas y sin cobrar. No se pueden marcar: ${detalle}`
+          : `Solo se desmarcan clases ya cobradas y sin pagar. No se pueden desmarcar: ${detalle}`,
+      )
+    }
+
+    const conPago = await tx`SELECT clase_id, pago_id FROM pago_clase WHERE clase_id = ANY(${ids})`
+    if (conPago.length) {
+      return conflicto(
+        `Estas clases tienen un pago por confirmar: ${conPago.map(c => `${c.clase_id} (pago ${c.pago_id})`).join(', ')}. Confirmalo o descartalo antes.`,
+      )
+    }
+
+    await tx`
+      UPDATE clase SET cobro = ${cobro}, updated_at = NOW()
+      WHERE id = ANY(${ids}) AND estado = 'dictada' AND cobro = ${origen}
+    `
+    const clases = []
+    for (const id of ids) clases.push(serializarClase(await leerClase(id, tx)))
+    return { clases }
   })
 }
 
@@ -562,8 +610,8 @@ function agruparPorCicloIngreso(rows) {
   return conMonto
 }
 
-// Un pago cubre N clases dictadas y pendientes de un mismo alumno o de hermanos de una misma
-// familia (cuenta de cobro); monto = Σ clase.monto (sin parciales). En una transacción: ingreso →
+// Un pago cubre N clases dictadas y sin pagar (pendiente o cobrada) de un mismo alumno o de
+// hermanos de una misma familia (cuenta de cobro); monto = Σ clase.monto (sin parciales). En una transacción: ingreso →
 // pago → pago_clase → clases pagadas. Si algo falla no queda nada escrito. `monto` es opcional: si
 // viene y no coincide con la suma, se rechaza.
 //
@@ -573,8 +621,9 @@ function agruparPorCicloIngreso(rows) {
 // (ordenados por ciclo) y `pago` / `ingreso` el primero.
 //
 // porConfirmar (pagos que registra una IA por MCP, DEC-020): el pago y su ingreso nacen
-// 'pendiente' y las clases siguen sin cobrar (siguen en la deuda) hasta que un humano lo confirma
-// con confirmarPago. Mientras tanto no se pueden volver a pagar, mover, cancelar ni eliminar.
+// 'pendiente' y las clases no cambian de cobro (una cobrada sigue cobrada) hasta que un humano
+// lo confirma con confirmarPago. Mientras tanto no se pueden volver a pagar, mover, cancelar,
+// eliminar ni marcar el cobro.
 export async function registrarPago({ claseIds, fecha, monto, porConfirmar = false, hoy = hoyLocal() } = {}, db = sql) {
   const lista = Array.isArray(claseIds) ? claseIds : []
   if (lista.length === 0) return validacion('Faltan las clases a pagar')
@@ -602,10 +651,10 @@ export async function registrarPago({ claseIds, fecha, monto, porConfirmar = fal
         `Un pago es de un solo alumno o de hermanos de una misma familia; estas clases son de ${[...new Set(rows.map(r => r.alumno))].join(', ')}`,
       )
     }
-    const noPagables = rows.filter(r => r.estado !== 'dictada' || r.cobro !== 'pendiente')
+    const noPagables = rows.filter(r => r.estado !== 'dictada' || (r.cobro !== 'pendiente' && r.cobro !== 'cobrado'))
     if (noPagables.length) {
       const detalle = noPagables.map(r => `${r.id} (${r.cobro === 'pagado' ? 'ya pagada' : r.estado})`).join(', ')
-      return conflicto(`Solo se pagan clases dictadas y sin cobrar. No se pueden pagar: ${detalle}`)
+      return conflicto(`Solo se pagan clases dictadas y sin pagar. No se pueden pagar: ${detalle}`)
     }
 
     const conPago = await tx`SELECT clase_id, pago_id FROM pago_clase WHERE clase_id = ANY(${ids})`
@@ -673,7 +722,7 @@ export async function confirmarPago(id, db = sql) {
 
     const ids = (await tx`SELECT clase_id FROM pago_clase WHERE pago_id = ${pago.id}`).map(c => c.clase_id)
     const clases = await tx`SELECT id, estado, cobro FROM clase WHERE id = ANY(${ids}) FOR UPDATE`
-    const invalidas = clases.filter(c => c.estado !== 'dictada' || c.cobro !== 'pendiente')
+    const invalidas = clases.filter(c => c.estado !== 'dictada' || (c.cobro !== 'pendiente' && c.cobro !== 'cobrado'))
     if (invalidas.length) {
       return conflicto(`Las clases ${invalidas.map(c => c.id).join(', ')} cambiaron desde que se registró el pago: descartalo y vuelve a cobrar`)
     }
@@ -764,10 +813,12 @@ export async function resumenClases({ desde, hasta } = {}, db = sql) {
       SELECT a.id AS alumno_id, a.nombre AS alumno, a.familia_id, f.nombre AS familia,
         f.apoderado_nombre, f.apoderado_telefono,
         SUM(c.monto)::bigint AS deuda, MIN(c.fecha) AS desde, COUNT(*)::int AS clases,
+        COALESCE(SUM(c.monto) FILTER (WHERE c.cobro = 'pendiente'), 0)::bigint AS sin_pedir,
+        COALESCE(SUM(c.monto) FILTER (WHERE c.cobro = 'cobrado'), 0)::bigint AS ya_cobrado,
         COALESCE(SUM(c.monto) FILTER (WHERE pg.estado = 'pendiente'), 0)::bigint AS por_confirmar
       FROM clase c JOIN alumno a ON a.id = c.alumno_id LEFT JOIN familia f ON f.id = a.familia_id
         LEFT JOIN pago_clase pc ON pc.clase_id = c.id LEFT JOIN pago pg ON pg.id = pc.pago_id
-      WHERE c.estado = 'dictada' AND c.cobro = 'pendiente'
+      WHERE c.estado = 'dictada' AND c.cobro IN ('pendiente', 'cobrado')
       GROUP BY a.id, a.nombre, f.id
       ORDER BY deuda DESC, a.nombre
     `,
@@ -779,6 +830,8 @@ export async function resumenClases({ desde, hasta } = {}, db = sql) {
     familia_id: d.familia_id ?? null,
     familia: d.familia ?? null,
     deuda: Number(d.deuda),
+    sin_pedir: Number(d.sin_pedir),
+    ya_cobrado: Number(d.ya_cobrado),
     por_confirmar: Number(d.por_confirmar),
     desde: d.desde,
     clases: d.clases,
@@ -793,13 +846,19 @@ export async function resumenClases({ desde, hasta } = {}, db = sql) {
       nombre: d.familia_id != null ? `Familia ${d.familia}` : d.alumno,
       apoderado_nombre: d.apoderado_nombre ?? null,
       apoderado_telefono: d.apoderado_telefono ?? null,
-      deuda: 0, por_confirmar: 0, desde: d.desde, clases: 0, alumnos: [],
+      deuda: 0, sin_pedir: 0, ya_cobrado: 0, por_confirmar: 0, desde: d.desde, clases: 0, alumnos: [],
     }
     cuenta.deuda += Number(d.deuda)
+    cuenta.sin_pedir += Number(d.sin_pedir)
+    cuenta.ya_cobrado += Number(d.ya_cobrado)
     cuenta.por_confirmar += Number(d.por_confirmar)
     cuenta.clases += d.clases
     if (d.desde < cuenta.desde) cuenta.desde = d.desde
-    cuenta.alumnos.push({ alumno_id: d.alumno_id, alumno: d.alumno, deuda: Number(d.deuda), por_confirmar: Number(d.por_confirmar), clases: d.clases })
+    cuenta.alumnos.push({
+      alumno_id: d.alumno_id, alumno: d.alumno, deuda: Number(d.deuda),
+      sin_pedir: Number(d.sin_pedir), ya_cobrado: Number(d.ya_cobrado),
+      por_confirmar: Number(d.por_confirmar), clases: d.clases,
+    })
     cuentas.set(clave, cuenta)
   }
   for (const cuenta of cuentas.values()) cuenta.alumnos.sort((a, b) => a.alumno.localeCompare(b.alumno))
@@ -814,6 +873,8 @@ export async function resumenClases({ desde, hasta } = {}, db = sql) {
     cobrado: Number(cobrado.total),
     pagos: cobrado.pagos,
     deuda_total: deudaPorAlumno.reduce((s, d) => s + d.deuda, 0),
+    deuda_sin_pedir: deudaPorAlumno.reduce((s, d) => s + d.sin_pedir, 0),
+    deuda_ya_cobrado: deudaPorAlumno.reduce((s, d) => s + d.ya_cobrado, 0),
     por_confirmar_total: deudaPorAlumno.reduce((s, d) => s + d.por_confirmar, 0),
     deuda_por_alumno: deudaPorAlumno,
     deuda_por_familia: deudaPorFamilia,
@@ -826,11 +887,20 @@ export async function deudaClasesDelMes(mes, db = sql) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes || '')) return validacion('mes debe ser YYYY-MM')
   const [row] = await db`
     SELECT COALESCE(SUM(c.monto), 0)::bigint AS deuda, COUNT(*)::int AS clases,
+      COALESCE(SUM(c.monto) FILTER (WHERE c.cobro = 'pendiente'), 0)::bigint AS sin_pedir,
+      COALESCE(SUM(c.monto) FILTER (WHERE c.cobro = 'cobrado'), 0)::bigint AS ya_cobrado,
       COALESCE(SUM(c.monto) FILTER (WHERE EXISTS (SELECT 1 FROM pago_clase pc WHERE pc.clase_id = c.id)), 0)::bigint AS por_confirmar
     FROM clase c
-    WHERE c.estado = 'dictada' AND c.cobro = 'pendiente' AND substr(c.fecha, 1, 7) = ${mes}
+    WHERE c.estado = 'dictada' AND c.cobro IN ('pendiente', 'cobrado') AND substr(c.fecha, 1, 7) = ${mes}
   `
-  return { mes, deuda: Number(row.deuda), clases: row.clases, por_confirmar: Number(row.por_confirmar) }
+  return {
+    mes,
+    deuda: Number(row.deuda),
+    clases: row.clases,
+    por_confirmar: Number(row.por_confirmar),
+    sin_pedir: Number(row.sin_pedir),
+    ya_cobrado: Number(row.ya_cobrado),
+  }
 }
 
 // Ingreso automático de un mes de clases (DEC-021): las clases dictadas y ya cobradas que no tienen

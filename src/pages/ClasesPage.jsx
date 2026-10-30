@@ -18,6 +18,7 @@ const FILTROS = [
   { id: 'programada', label: 'Programadas', aplica: c => c.estado === 'programada' },
   { id: 'dictada', label: 'Dictadas', aplica: c => c.estado === 'dictada' },
   { id: 'no_cobrado', label: 'No cobradas', aplica: c => c.estado !== 'cancelada' && c.cobro === 'pendiente' },
+  { id: 'cobrado', label: 'Cobradas', aplica: c => c.estado !== 'cancelada' && c.cobro === 'cobrado' },
   { id: 'pagado', label: 'Pagadas', aplica: c => c.cobro === 'pagado' },
   { id: 'cancelada', label: 'Canceladas', aplica: c => c.estado === 'cancelada' },
 ]
@@ -99,8 +100,9 @@ export function ClasesPage({ ciclos }) {
       <div>
         <h1 className="font-heading text-3xl text-white">Clases</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Agenda y cobro de clases particulares. Al registrar un pago se crea un ingreso real
-          "Clases particulares" en el ciclo del mes siguiente a las clases (las de octubre son ingreso de noviembre).
+          Agenda y cobro de clases particulares. "Cobrada" es haber pedido la plata: sigue en la deuda y
+          no crea ingreso. El ingreso real "Clases particulares" se crea al registrar el pago, en el ciclo
+          del mes siguiente a las clases (las de octubre son ingreso de noviembre).
         </p>
       </div>
 
@@ -109,7 +111,13 @@ export function ClasesPage({ ciclos }) {
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kpi titulo="Deuda" valor={fmt(resumen?.deuda_total ?? 0)} detalle="Dictado y no cobrado" />
+        <Kpi
+          titulo="Deuda"
+          valor={fmt(resumen?.deuda_total ?? 0)}
+          detalle={resumen?.deuda_ya_cobrado > 0
+            ? `${fmt(resumen.deuda_ya_cobrado)} ya pedido · ${fmt(resumen.deuda_sin_pedir)} sin pedir`
+            : 'Dictado y sin pagar'}
+        />
         <Kpi titulo="Dictado del mes" valor={fmt(resumen?.monto_dictado ?? 0)} detalle={`${resumen?.clases_dictadas ?? 0} clases`} />
         <Kpi titulo="Horas dictadas" valor={formatHoras(resumen?.horas_dictadas ?? 0)} detalle={`${formatHoras(resumen?.horas_programadas ?? 0)} programadas`} />
         <Kpi titulo="Ingresos del ciclo" valor={fmt(resumen?.ingresos_ciclo?.total ?? 0)} detalle="De las clases del mes anterior, ya cobradas">
@@ -123,6 +131,7 @@ export function ClasesPage({ ciclos }) {
           cuenta={cobrando}
           cargarClases={datos.clasesPagables}
           onRegistrar={datos.registrarPago}
+          onMarcar={(ids) => datos.marcarCobro(ids, 'cobrado')}
           onCerrar={() => setCobrando(null)}
         />
       )}
@@ -172,6 +181,8 @@ export function ClasesPage({ ciclos }) {
             <TablaClases
               clases={visibles}
               onMarcarDictada={(c) => accion(datos.marcarDictada, c.id)}
+              onMarcarCobrada={(c) => accion(datos.marcarCobro, [c.id], 'cobrado')}
+              onDesmarcarCobrada={(c) => accion(datos.marcarCobro, [c.id], 'pendiente')}
               onEditar={(c) => setFormClase({ clase: c })}
               onCancelar={cancelar}
               onEliminar={eliminar}

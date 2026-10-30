@@ -348,6 +348,7 @@ Confirmar sigue siendo un acto humano en `/bandeja`.
 ## DEC-019 - Módulo de clases particulares separado; el pago crea el ingreso en una transacción
 
 Date: 2026-10-16
+Update 2026-10-30: DEC-027 suma `marcar_cobro` (10 tools) y el cobro `cobrado`.
 Context: las clases particulares se agendaban y cobraban en una base de Notion (una fila = una
 clase, sin ficha de alumno). Se quiere dejar Notion y que el agente externo que sincroniza el
 calendario lea y escriba las clases por MCP.
@@ -587,6 +588,32 @@ Consequences: el saldo FGP negativo se arrastra al ciclo siguiente; si ese ciclo
 real suficiente, ahí sí vuelve a pedir cobertura. El saldo real usa el ciclo actual, así que una
 plata que sobra ya comprometida en otra cosa del ciclo igual cuenta como disponible. No cambia
 "Mover a fondo TC".
+
+## DEC-027 - Cobro intermedio en clases: pedido de plata sin ingreso
+
+Date: 2026-10-30
+Context: al pedir la plata de una clase dictada había un salto de `cobro='pendiente'` a
+`pagado`. El pago crea el ingreso en el mismo momento, pero entre el mensaje de cobro y que
+la plata llegue pasa un tiempo.
+Decision:
+- `clase.cobro` acepta `cobrado` entre `pendiente` y `pagado`. Significa que ya se pidió la
+  plata. Sigue en la deuda (`sin_pedir` / `ya_cobrado`) y en el "por cobrar" del ciclo. No crea
+  `ingreso`.
+- Se marca desde la tabla, desde el panel de cobro (`POST /api/clases/cobro`) o por MCP
+  (`marcar_cobro`). Solo clases `dictada` sin pago. Se puede desmarcar a `pendiente`.
+- Registrar o confirmar un pago acepta `pendiente` o `cobrado` y deja `pagado`. Un pago por
+  confirmar no baja una clase ya cobrada. Deshacer el pago la devuelve a `pendiente`.
+- Cancelar y eliminar siguen vedados si está pagada o tiene un pago por confirmar, y valen
+  también con `cobrado`.
+- En el análisis, "Pagado" es `cobro='pagado'` (lo que antes se llamaba Cobrado), "Cobrado" es
+  el pedido sin pagar y "Sin cobrar" es solo `pendiente`. La deuda del ranking suma los dos
+  impagos.
+Alternatives considered: crear el ingreso al marcar cobrada y dejarlo pendiente (descartada:
+mezcla el pedido con plata que todavía no entró y duplica el flujo de pagos por confirmar);
+obligar a pasar por cobrado antes de pagar (descartada: si pagan de una, el salto directo sigue
+siendo válido).
+Consequences: lo ya pagado no se reescribe. Marcar cobrada no mueve el saldo del ciclo. El campo
+`cobrado` del resumen de clases sigue siendo la plata que entró por fecha de pago, no este estado.
 
 ## GAP: decisions to document
 

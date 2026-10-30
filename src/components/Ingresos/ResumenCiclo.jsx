@@ -30,7 +30,7 @@ export function ResumenCiclo({ resumen }) {
           {f.fuera_catalogo && <span className="ml-1 text-[10px] text-slate-500">(fuera del catálogo)</span>}
           {f.automatica && f.por_cobrar != null && (
             <p className="text-xs text-slate-500">
-              Clases de {formatMesLargo(f.mes_clases)}: por cobrar {fmt(f.por_cobrar)}{f.por_confirmar > 0 && ` · pagos por confirmar ${fmt(f.por_confirmar)}`}
+              Clases de {formatMesLargo(f.mes_clases)}: por cobrar {fmt(f.por_cobrar)}{f.ya_cobrado > 0 && ` · ya pedido ${fmt(f.ya_cobrado)}`}{f.por_confirmar > 0 && ` · pagos por confirmar ${fmt(f.por_confirmar)}`}
             </p>
           )}
           {f.automatica && f.real_automatico > 0 && (

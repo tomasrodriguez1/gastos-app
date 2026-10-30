@@ -4,10 +4,11 @@ import { cicloIngresoDeClase, formatCiclo, mesClasesDeCiclo } from '../../utils/
 import { armarMensajeCobro, linkWhatsApp } from '../../utils/mensajeCobro'
 import { BOTON_PRIMARIO, BOTON_SECUNDARIO, INPUT, formatHoras } from './estilos'
 
-// Cobro de una cuenta (familia o alumno sin familia): clases dictadas y pendientes, todas
-// marcadas. Arma el mensaje para WhatsApp con las clases elegidas y, cuando llega la plata,
-// registra el pago (monto = suma). El ingreso cae en el ciclo del mes siguiente a las clases (DEC-021).
-export function RegistrarPago({ cuenta, cargarClases, onRegistrar, onCerrar }) {
+// Cobro de una cuenta (familia o alumno sin familia): clases dictadas sin pagar (no cobradas o
+// ya cobradas), todas marcadas. Arma el mensaje para WhatsApp. "Marcar como cobradas" deja
+// pedido el pago sin crear ingreso. Cuando llega la plata, se registra el pago (monto = suma)
+// y el ingreso cae en el ciclo del mes siguiente a las clases (DEC-021).
+export function RegistrarPago({ cuenta, cargarClases, onRegistrar, onMarcar, onCerrar }) {
   const [clases, setClases] = useState(null)
   const [elegidas, setElegidas] = useState(new Set())
   const [fecha, setFecha] = useState(() => new Date().toLocaleDateString('en-CA'))
@@ -29,6 +30,7 @@ export function RegistrarPago({ cuenta, cargarClases, onRegistrar, onCerrar }) {
   }, [cuenta, cargarClases])
 
   const seleccion = useMemo(() => (clases || []).filter(c => elegidas.has(c.id)), [clases, elegidas])
+  const porMarcar = seleccion.filter(c => c.cobro !== 'cobrado')
   const total = seleccion.reduce((s, c) => s + c.monto, 0)
   const mensajeGenerado = useMemo(
     () => (seleccion.length ? armarMensajeCobro({ apoderado: cuenta.apoderado_nombre, clases: seleccion }) : ''),
@@ -75,6 +77,19 @@ export function RegistrarPago({ cuenta, cargarClases, onRegistrar, onCerrar }) {
     }
   }
 
+  async function marcar() {
+    setError(null)
+    setGuardando(true)
+    try {
+      await onMarcar(porMarcar.map(c => c.id))
+      onCerrar()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
   async function confirmar() {
     setError(null)
     setGuardando(true)
@@ -107,7 +122,7 @@ export function RegistrarPago({ cuenta, cargarClases, onRegistrar, onCerrar }) {
           {clases === null ? (
             <p className="text-sm text-slate-500">Cargando…</p>
           ) : clases.length === 0 ? (
-            <p className="text-sm text-slate-500">No hay clases dictadas sin cobrar.</p>
+            <p className="text-sm text-slate-500">No hay clases dictadas sin pagar.</p>
           ) : (
             <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
               {porAlumno.map(([alumno, lista]) => (
@@ -118,6 +133,7 @@ export function RegistrarPago({ cuenta, cargarClases, onRegistrar, onCerrar }) {
                       <input type="checkbox" checked={elegidas.has(c.id)} onChange={() => alternar(c.id)} className="w-4 h-4 accent-emerald-500" />
                       <span className="flex-1 text-slate-300">
                         {formatFecha(c.fecha)} · {c.hora_inicio} · {formatHoras(c.horas)}
+                        {c.cobro === 'cobrado' && <span className="ml-2 text-xs text-violet-300">Cobrada</span>}
                       </span>
                       <span className="font-mono-numbers text-slate-200">{formatCLP(c.monto)}</span>
                     </label>
@@ -154,6 +170,9 @@ export function RegistrarPago({ cuenta, cargarClases, onRegistrar, onCerrar }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-700/50">
+        <button type="button" onClick={marcar} disabled={guardando || porMarcar.length === 0} title="Queda pedido el pago. Sigue en la deuda y no crea ingreso." className={BOTON_SECUNDARIO}>
+          Marcar como cobradas
+        </button>
         <span className="text-xs text-slate-500">¿Ya te pagaron?</span>
         <label className="text-xs text-slate-500">
           Fecha del pago <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className={`${INPUT} ml-1`} />

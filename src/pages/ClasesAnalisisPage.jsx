@@ -25,7 +25,7 @@ const COLUMNAS_RANKING = [
   { id: 'clases', label: 'Clases' },
   { id: 'horas', label: 'Horas' },
   { id: 'porClase', label: '$/clase' },
-  { id: 'sinCobrar', label: 'Sin cobrar' },
+  { id: 'sinCobrar', label: 'Sin pagar' },
   { id: 'modalidad', label: 'Modalidad', alinear: 'left' },
   { id: 'desde', label: 'Desde' },
 ]
@@ -95,15 +95,16 @@ export function ClasesAnalisisPage() {
         <h1 className="font-heading text-3xl text-white">Análisis de clases</h1>
         <p className="mt-1 text-sm text-slate-500">
           {kpis.clases} clases dictadas desde {nombreMes(a.meses[0].mes)}. "Facturado" es el valor de cada clase dictada
-          por su fecha, esté cobrada o no.
+          por su fecha. "Cobrado" es plata pedida y todavía no pagada; "Pagado" es la que ya entró.
         </p>
       </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Tile valor={fmt(kpis.facturado)} etiqueta="Facturado" />
-        <Tile valor={fmt(kpis.cobrado)} etiqueta="Cobrado" tono="text-emerald-400" />
-        <Tile valor={fmt(kpis.sinCobrar)} etiqueta="Sin cobrar" detalle={`${String(kpis.pctPendiente).replace('.', ',')}% pendiente`} tono="text-amber-400" />
+        <Tile valor={fmt(kpis.pagado)} etiqueta="Pagado" tono="text-emerald-400" />
+        <Tile valor={fmt(kpis.cobrado)} etiqueta="Cobrado" tono="text-violet-300" />
+        <Tile valor={fmt(kpis.sinCobrar)} etiqueta="Sin cobrar" detalle={`${String(kpis.pctPendiente).replace('.', ',')}% sin pedir`} tono="text-amber-400" />
         <Tile valor={fmt(kpis.porClase)} etiqueta="$/clase" tono="text-sky-300" />
         <Tile valor={kpis.clases} etiqueta="Clases" />
         <Tile valor={fmtHoras(kpis.horas)} etiqueta="Horas" />
@@ -414,7 +415,7 @@ export function ClasesAnalisisPage() {
                 <p className="mt-1 text-xs uppercase tracking-wider text-slate-500">Familia {f.nombre}</p>
                 <p className="text-xs text-slate-500">
                   {f.clases} clases · {f.alumnos.length} hermanos · {Math.round((f.ingreso / kpis.facturado) * 100)}% del total
-                  {f.sinCobrar > 0 && <span className="text-amber-400"> · {fmt(f.sinCobrar)} sin cobrar</span>}
+                  {f.sinCobrar > 0 && <span className="text-amber-400"> · {fmt(f.sinCobrar)} sin pagar</span>}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {f.alumnos.map(n => <span key={n} className="text-xs rounded-md bg-slate-800 px-2 py-0.5 text-slate-300">{n}</span>)}

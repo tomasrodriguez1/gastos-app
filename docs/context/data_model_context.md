@@ -46,6 +46,7 @@ Tabla única para gastos sincronizados y manuales.
 **Reglas de negocio:**
 
 - Monto efectivo siempre vía `montoReal()` en `src/utils/calculos.js`; el impacto presupuestario usa `montoPresupuestable()` para aplicar `en_presupuesto` y `split` sin alterar ese monto base.
+- Un gasto con banco efectivo, transferencia o débito (`src/utils/medioPago.js`) queda `pagado=true` al crearse, al cambiar el banco y en el arranque del servidor. Las tarjetas (Edwards, BICE, TC Papa) siguen pendientes hasta el pago del resumen.
 - Un gasto con `financiado_por` sigue visible en análisis de categorías (`incluirFinanciados: true`) pero no come el sobre del ciclo: `montoDelCiclo()` lo trata como 0 (la plata ya se apartó en aportes al fondo).
 - Sync UPSERT preserva overrides manuales con `COALESCE`.
 - Filas pure-USD excluidas de totales agregados.
@@ -484,7 +485,7 @@ alumno(id, nombre UNIQUE + UNIQUE lower(nombre), precio_hora_default INTEGER > 0
        familia_id → familia NULL, created_at, updated_at)
 clase(id, alumno_id → alumno, fecha 'YYYY-MM-DD', hora_inicio 'HH:MM', duracion_minutos > 0,
       modalidad 'presencial'|'online', precio_hora INTEGER, monto INTEGER,
-      estado 'programada'|'dictada'|'cancelada', cobro 'pendiente'|'pagado',
+      estado 'programada'|'dictada'|'cancelada', cobro 'pendiente'|'cobrado'|'pagado',
       notion_id UNIQUE NULL, notion_status NULL, nota, created_at, updated_at,
       CHECK NOT (estado='cancelada' AND cobro='pagado'))
 pago(id, alumno_id → alumno NULL, familia_id → familia NULL, fecha, monto INTEGER > 0,
@@ -507,17 +508,21 @@ clase_import_descartada(notion_id PK, eliminada_at)  -- clases importadas que se
   nombres.
 - **Estados de una clase:**
   - `programada` → `dictada` (marcar dictada; no toca el cobro);
-  - `programada` o `dictada` → `cancelada`, solo con `cobro='pendiente'`; no se borra;
-  - `pendiente` → `pagado`, solo por un pago y solo si la clase está `dictada`;
-  - `pagado` → `pendiente`, solo deshaciendo el pago desde la UI.
+  - `programada` o `dictada` → `cancelada`, con `cobro` `pendiente` o `cobrado` y sin pago por
+    confirmar; no se borra;
+  - `pendiente` → `cobrado` (DEC-027): ya se pidió la plata. Sigue en la deuda y no crea ingreso.
+    Solo si está `dictada` y no tiene pago. Vuelve a `pendiente` desmarcando;
+  - `pendiente` o `cobrado` → `pagado`, solo por un pago confirmado y solo si la clase está `dictada`;
+  - `pagado` → `pendiente`, solo deshaciendo el pago desde la UI (hay que volver a marcarla cobrada
+    si corresponde).
   - Mover (fecha, hora, duración, modalidad o precio) solo con `programada` + `pendiente`.
   - Eliminar (borrado real, solo desde la UI: `DELETE /api/clases/:id`) cualquier clase con
-    `cobro='pendiente'`. Una pagada no se elimina: primero se deshace el pago. Si la clase vino del
-    import, su `notion_id` queda en `clase_import_descartada` y reimportar no la revive. No hay tool
-    MCP que borre.
+    `cobro` `pendiente` o `cobrado` y sin pago. Una pagada no se elimina: primero se deshace el
+    pago. Si la clase vino del import, su `notion_id` queda en `clase_import_descartada` y
+    reimportar no la revive. No hay tool MCP que borre.
   - Una clase `cancelada` no cuenta en deuda, horas dictadas ni pagos.
 - **Pago:** cubre N clases de un mismo alumno **o de hermanos de una misma familia**, todas
-  `dictada` + `pendiente`, y `monto = Σ clase.monto`. Pago de un solo alumno: `alumno_id` (más
+  `dictada` y sin pagar (`pendiente` o `cobrado`), y `monto = Σ clase.monto`. Pago de un solo alumno: `alumno_id` (más
   `familia_id` si tiene familia). Pago de varios hermanos: `alumno_id = NULL` y `familia_id`; la
   nota del ingreso queda como `"Familia Mena — Cristobal Mena: <fechas>; Luciano Mena: <fechas>"`.
   No hay pagos parciales ni por adelantado, y la fecha no puede ser futura. Todo pasa en una sola
@@ -530,18 +535,19 @@ clase_import_descartada(notion_id PK, eliminada_at)  -- clases importadas que se
   4. las clases pasan a `cobro='pagado'`.
   Si algo falla no queda nada escrito. `pago_clase.clase_id UNIQUE` impide pagar una clase dos veces.
 - **Pago por confirmar (MCP, DEC-020):** `registrar_pago` del MCP pasa `porConfirmar`: el `pago` y
-  su `ingreso` nacen `pendiente`, se insertan los `pago_clase` y las clases **siguen** `dictada` +
-  `pendiente` (siguen en la deuda, que muestra `por_confirmar`). Mientras tanto esas clases no se
-  pueden volver a pagar, cancelar ni eliminar (conflicto). Un humano lo aprueba en `/ingresos` (o
-  con "Confirmar" en `/clases`): `confirmarPago` pasa pago e ingreso a `confirmado` y las clases a
-  `pagado`, todo en una transacción. Descartarlo es `deshacerPago` (borra pago, `pago_clase` e
-  ingreso). `cobrado` del resumen y el KPI de ingresos de `/clases` solo cuentan pagos
-  confirmados. Desde la UI el pago nace confirmado, como antes.
+  su `ingreso` nacen `pendiente`, se insertan los `pago_clase` y las clases **no cambian de cobro**
+  (una `cobrado` sigue cobrada; siguen en la deuda, que muestra `por_confirmar`). Mientras tanto
+  esas clases no se pueden volver a pagar, cancelar, eliminar ni marcar el cobro (conflicto). Un
+  humano lo aprueba en `/ingresos` (o con "Confirmar" en `/clases`): `confirmarPago` pasa pago e
+  ingreso a `confirmado` y las clases a `pagado`, todo en una transacción. Descartarlo es
+  `deshacerPago` (borra pago, `pago_clase` e ingreso). `cobrado` del resumen (plata que entró por
+  `pago.fecha`) y el KPI de ingresos de `/clases` solo cuentan pagos confirmados. Desde la UI el
+  pago nace confirmado, como antes.
 - **Deshacer pago** (`DELETE /api/clases/pagos/:id`, no existe como tool MCP): las clases vuelven a
   `pendiente` y se borran el pago, sus `pago_clase` y el `ingreso`.
 - **Derivados, no persistidos:**
-  - Deuda por alumno: `Σ monto` con `estado='dictada'` y `cobro='pendiente'`; "desde" es la fecha
-    de la clase impaga más vieja.
+  - Deuda por alumno: `Σ monto` con `estado='dictada'` y `cobro` `pendiente` o `cobrado`.
+    `sin_pedir` / `ya_cobrado` parten ese total. "desde" es la fecha de la clase impaga más vieja.
   - El "$ till now" de Notion: `Σ monto` de las dictadas del rango.
   - Horas y clases dictadas se cuentan por la fecha de la clase. "Cobrado" (plata que entró en un
     rango) se cuenta por `pago.fecha`.
@@ -556,12 +562,13 @@ clase_import_descartada(notion_id PK, eliminada_at)  -- clases importadas que se
     monto (un pago no puede ser $0). `deudaClasesDelMes(mes)` da lo que deben las clases de un mes.
 - **Clases importadas ya pagadas** (`Pagado` en Notion): `cobro='pagado'` sin fila en `pago` ni
   `ingreso`. No suman a "cobrado" (no tienen fecha de pago) y no se pueden "deshacer", pero **sí son
-  ingreso automático** (DEC-021): las clases dictadas y ya cobradas de un mes que no tienen un
+  ingreso automático** (DEC-021): las clases dictadas y ya pagadas de un mes que no tienen un
   `pago_clase` se asumen como ingreso del ciclo siguiente sin registrar nada
   (`ingresoAutomaticoClases(mes)`). Entra en `real` de Clases particulares en el resumen del ciclo
   (`real_automatico`, `clases_automaticas`) y en el KPI de `/clases` (`ingresosClasesCiclo`:
   `total = registrado + automatico`). No se duplica: una clase pagada con un pago registrado ya
-  tiene su `ingreso`; una con pago por confirmar sigue sin cobrar. Si no queda nada por cobrar
+  tiene su `ingreso`; una con pago por confirmar sigue sin pagar. Una `cobrado` no es ingreso
+  automático. Si no queda nada por cobrar
   en un mes con clases dictadas, todo ese mes es ingreso real sin que haya que hacer nada.
 
 #### Import desde Notion
@@ -653,8 +660,9 @@ La tarjeta usa el estado `pagado`; el registro de pago es atómico y también cr
 de tarjetas.
 
 Clases particulares: `clase.estado` (`programada` → `dictada`; → `cancelada` si no está pagada) y
-`clase.cobro` (`pendiente` → `pagado` solo vía un pago; vuelve a `pendiente` solo deshaciendo el
-pago desde la UI). Detalle en la sección de clases. Duplicados tienen confianza (alta/media/baja) calculada, no persistida.
+`clase.cobro` (`pendiente` → `cobrado` al pedir la plata, sin ingreso; `pendiente` o `cobrado` →
+`pagado` solo vía un pago; vuelve a `pendiente` solo deshaciendo el pago desde la UI). Detalle en
+la sección de clases. Duplicados tienen confianza (alta/media/baja) calculada, no persistida.
 
 ## Permisos / RLS
 
@@ -690,6 +698,7 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | — | `ingreso.origen` acepta `'clases'` y `'mcp'` (PG-only, `server/db/migrate-ingresos.js` reemplaza el CHECK `ingreso_origen_check`) |
 | — | `ingreso.estado` (`pendiente`/`confirmado`), `ingreso.fondo`, tabla `fuente_ingreso` con seed y rename del previsto (`Zalantos`→`Sueldo Zalantos`, `Clases Particulares`→`Clases particulares`) (PG-only, `server/db/migrate-ingresos.js`) — ingresos con catálogo y aprobación humana (DEC-020) |
 | — | `pago.estado` (`pendiente`/`confirmado`) (PG-only, `server/db/migrate-clases.js`) — pagos de clases por confirmar (DEC-020) |
+| — | `clase.cobro` acepta `cobrado` (PG-only, `server/db/migrate-clases.js` reemplaza el CHECK) — pedido de plata sin ingreso (DEC-027) |
 | — | `familia`, `alumno.familia_id`, `pago.familia_id` (y `pago.alumno_id` pasa a NULL-able) (PG-only, `server/db/migrate-clases.js`) — cobro por familia |
 | — | `alumno`, `clase`, `pago`, `pago_clase`, `clase_import_descartada` (PG-only, `server/db/migrate-clases.js`, después de `migrateIngresos`) — clases particulares (DEC-019) |
 

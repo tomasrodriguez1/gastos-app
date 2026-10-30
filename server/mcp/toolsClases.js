@@ -1,4 +1,4 @@
-// Las 9 tools MCP de clases particulares (DEC-019). Mismas convenciones que tools.js: Zod
+// Las 10 tools MCP de clases particulares (DEC-019, DEC-027). Mismas convenciones que tools.js: Zod
 // estricto, sin SQL (delegan en server/clases/clases.js vía deps), errores con ErrorTool.
 //
 // Pueden crear alumnos y clases y cambiar estados: mover, marcar dictada, cancelar y registrar
@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { ErrorTool } from './errores.js'
 import {
   listarAlumnos, buscarClases, resumenClases, crearAlumno, agendarClase, moverClase,
-  marcarDictada, cancelarClase, registrarPago, hoyLocal, PRECIO_HORA_NORMAL,
+  marcarDictada, marcarCobro, cancelarClase, registrarPago, hoyLocal, PRECIO_HORA_NORMAL,
 } from '../clases/clases.js'
 
 const fechaSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'debe ser YYYY-MM-DD')
@@ -32,7 +32,8 @@ const minutos = (horas) => Math.round(horas * 60)
 
 const NOTA_CLASES =
   'Clases particulares en pesos chilenos (CLP, enteros). Cada clase tiene estado (programada | ' +
-  'dictada | cancelada) y cobro (pendiente | pagado). `monto` = precio_hora × horas, congelado en la ' +
+  'dictada | cancelada) y cobro (pendiente | cobrado | pagado). `cobrado` es haber pedido la plata, ' +
+  'sin ingreso todavía. `monto` = precio_hora × horas, congelado en la ' +
   'clase. Fechas YYYY-MM-DD y horas HH:MM según la hora local del servidor (Chile).'
 
 // ─── Lectura ─────────────────────────────────────────────────────────────────
@@ -72,7 +73,7 @@ const buscarClasesTool = {
     desde: fechaSchema.optional().describe('Fecha de la clase desde, inclusive'),
     hasta: fechaSchema.optional().describe('Fecha de la clase hasta, inclusive'),
     estado: z.enum(['programada', 'dictada', 'cancelada']).optional(),
-    cobro: z.enum(['pendiente', 'pagado']).optional(),
+    cobro: z.enum(['pendiente', 'cobrado', 'pagado']).optional(),
     actualizada_desde: z.string().trim().min(1).optional().describe('Fecha-hora ISO 8601 (ej. "2026-10-16T09:00:00-03:00")'),
     limite: z.number().int().min(1).max(100).default(50).describe('Filas por página, 1–100 (default 50)'),
     offset: z.number().int().min(0).default(0),
@@ -87,8 +88,9 @@ const resumenClasesTool = {
   name: 'resumen_clases',
   description: [
     'Resumen de clases en un rango: horas y clases dictadas y programadas (por fecha de la clase),',
-    'total cobrado (por fecha del pago) y la deuda actual por alumno con la fecha de su clase impaga',
-    'más vieja. La deuda es la suma de clases dictadas y todavía sin cobrar; no depende del rango.',
+    'total cobrado (por fecha del pago: plata que entró) y la deuda actual por alumno con la fecha de',
+    'su clase impaga más vieja. La deuda suma clases dictadas con cobro pendiente o cobrado; no',
+    'depende del rango. `sin_pedir` es lo que todavía no se pidió y `ya_cobrado` lo pedido sin pagar.',
     '`deuda_por_familia` agrupa por cuenta de cobro (hermanos juntos, con apoderado y teléfono);',
     'un alumno sin familia aparece solo.',
     'Sin desde/hasta usa el mes calendario actual. Las clases importadas de Notion ya pagadas no',
@@ -212,6 +214,25 @@ const marcarDictadaTool = {
   },
 }
 
+const marcarCobroTool = {
+  name: 'marcar_cobro',
+  description: [
+    'Marca clases dictadas como cobradas (ya les pediste la plata) o las devuelve a pendiente.',
+    '`cobro: "cobrado"` solo desde pendiente; `cobro: "pendiente"` solo desde cobrado. No crea ingreso',
+    'ni las saca de la deuda: siguen sin pagar hasta registrar_pago. Rechaza programadas, canceladas,',
+    'pagadas o con un pago por confirmar (code "conflicto").',
+  ].join(' '),
+  annotations: { title: 'Marcar cobro de clases', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  schema: z.strictObject({
+    clase_ids: z.array(claseIdSchema).min(1).max(50),
+    cobro: z.enum(['cobrado', 'pendiente']).describe('cobrado = ya se pidió la plata; pendiente = desmarcar'),
+  }),
+  async handler(input, deps) {
+    const r = resultado(await deps.marcarCobro({ claseIds: input.clase_ids, cobro: input.cobro }))
+    return { data: { clases: r.clases } }
+  },
+}
+
 const cancelarClaseTool = {
   name: 'cancelar_clase',
   description: [
@@ -229,12 +250,13 @@ const registrarPagoTool = {
   name: 'registrar_pago',
   description: [
     'Registra que se pagaron una o más clases. Todas tienen que ser del mismo alumno o de hermanos de',
-    'una misma familia (un solo pago por la transferencia del apoderado), estar dictadas y sin cobrar;',
-    'el monto del pago es la suma de sus montos (no hay pagos parciales ni por adelantado).',
-    'El pago queda POR CONFIRMAR: crea el pago y un ingreso "Clases particulares" PENDIENTES y las',
-    'clases siguen como no cobradas hasta que una persona lo apruebe en /ingresos. No digas que ya',
-    'quedó cobrado. Mientras esté por confirmar, esas clases no se pueden volver a pagar, mover ni',
-    'cancelar. El ingreso se atribuye al ciclo del MES SIGUIENTE a las clases (las clases de octubre',
+    'una misma familia (un solo pago por la transferencia del apoderado), estar dictadas y sin pagar',
+    '(cobro pendiente o cobrado); el monto del pago es la suma de sus montos (no hay pagos parciales',
+    'ni por adelantado). El pago queda POR CONFIRMAR: crea el pago y un ingreso "Clases particulares"',
+    'PENDIENTES y las clases no pasan a pagadas (una cobrada sigue cobrada) hasta que una persona lo',
+    'apruebe en /ingresos. No digas que ya quedó pagado. Mientras esté por confirmar, esas clases no',
+    'se pueden volver a pagar, mover, cancelar ni cambiar de cobro. El ingreso se atribuye al ciclo',
+    'del MES SIGUIENTE a las clases (las clases de octubre',
     'son ingreso del ciclo de noviembre), no al de la fecha del pago; si las clases son de meses',
     'distintos se crea un pago con su ingreso por cada ciclo (`pagos` / `ingresos` los traen todos).',
     '`monto` es opcional: si lo pasás y no coincide con la suma, no se registra nada.',
@@ -262,8 +284,8 @@ const registrarPagoTool = {
         pagos: r.pagos,
         ingresos: r.ingresos,
         mensaje: r.pagos.length > 1
-          ? `Quedaron ${r.pagos.length} pagos por confirmar en /ingresos (uno por ciclo de ingreso). Las clases siguen como no cobradas hasta que se aprueben.`
-          : 'El pago quedó por confirmar en /ingresos. Las clases siguen como no cobradas hasta que se apruebe.',
+          ? `Quedaron ${r.pagos.length} pagos por confirmar en /ingresos (uno por ciclo de ingreso). Las clases siguen sin pagarse hasta que se aprueben.`
+          : 'El pago quedó por confirmar en /ingresos. Las clases siguen sin pagarse hasta que se apruebe.',
       },
       meta: { por_confirmar: true },
     }
@@ -278,6 +300,7 @@ export const TOOLS_CLASES = [
   agendarClaseTool,
   moverClaseTool,
   marcarDictadaTool,
+  marcarCobroTool,
   cancelarClaseTool,
   registrarPagoTool,
 ]
@@ -290,6 +313,7 @@ export const depsClases = {
   agendarClase,
   moverClase,
   marcarDictada,
+  marcarCobro,
   cancelarClase,
   registrarPago,
 }

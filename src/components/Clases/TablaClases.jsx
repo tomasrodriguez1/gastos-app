@@ -13,13 +13,14 @@ function ChipCobro({ clase }) {
   if (clase.estado === 'cancelada') return <span className="text-xs text-slate-500">Cancelada</span>
   if (clase.pago_estado === 'pendiente') return <span className="text-xs px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20" title="Un pago registrado por el agente o el MCP espera tu aprobación en Ingresos">Pago por confirmar</span>
   if (clase.cobro === 'pagado') return <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Pagado</span>
+  if (clase.cobro === 'cobrado') return <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20">Cobrado</span>
   return <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">No cobrado</span>
 }
 
 // Misma vista que la base de Notion: una fila por clase. El checkbox "dictada" solo pasa
 // programada → dictada (no se desmarca). Pie: cantidad, suma de precios y lo ya dictado
 // ("$ till now"); las canceladas no suman.
-export function TablaClases({ clases, onMarcarDictada, onEditar, onCancelar, onEliminar }) {
+export function TablaClases({ clases, onMarcarDictada, onMarcarCobrada, onDesmarcarCobrada, onEditar, onCancelar, onEliminar }) {
   const { isPrivacyModeEnabled } = usePrivacyMode()
   const vigentes = clases.filter(c => c.estado !== 'cancelada')
   const totalPrecio = vigentes.reduce((s, c) => s + c.monto, 0)
@@ -49,6 +50,7 @@ export function TablaClases({ clases, onMarcarDictada, onEditar, onCancelar, onE
         <tbody>
           {clases.map(c => {
             const cancelada = c.estado === 'cancelada'
+            const sinPagar = (c.cobro === 'pendiente' || c.cobro === 'cobrado') && !c.pago_id
             const editable = c.estado === 'programada' && c.cobro === 'pendiente'
             return (
               <tr key={c.id} className={`border-b border-slate-700/30 ${cancelada ? 'opacity-40' : ''}`}>
@@ -77,10 +79,16 @@ export function TablaClases({ clases, onMarcarDictada, onEditar, onCancelar, onE
                   {editable && (
                     <button type="button" onClick={() => onEditar(c)} title="Cambiar fecha, hora, duración, modalidad o precio" className="text-xs text-slate-500 hover:text-emerald-400 mr-3">Mover</button>
                   )}
-                  {!cancelada && c.cobro === 'pendiente' && (
+                  {c.estado === 'dictada' && c.cobro === 'pendiente' && !c.pago_id && (
+                    <button type="button" onClick={() => onMarcarCobrada(c)} title="Ya pediste la plata; sigue sin pagar y no crea ingreso" className="text-xs text-violet-300 hover:text-violet-200 mr-3">Marcar cobrada</button>
+                  )}
+                  {c.estado === 'dictada' && c.cobro === 'cobrado' && !c.pago_id && (
+                    <button type="button" onClick={() => onDesmarcarCobrada(c)} title="Vuelve a no cobrada" className="text-xs text-slate-500 hover:text-violet-300 mr-3">Desmarcar</button>
+                  )}
+                  {!cancelada && sinPagar && (
                     <button type="button" onClick={() => onCancelar(c)} title="Queda en la lista como cancelada" className="text-xs text-slate-500 hover:text-amber-400 mr-3">Cancelar</button>
                   )}
-                  {c.cobro === 'pendiente' && (
+                  {sinPagar && (
                     <button type="button" onClick={() => onEliminar(c)} title="Borrarla del todo" className="text-xs text-slate-500 hover:text-red-400">Eliminar</button>
                   )}
                 </td>

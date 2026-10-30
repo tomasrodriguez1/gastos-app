@@ -70,8 +70,10 @@ export function useClases({ desde, hasta, ciclo }) {
     // Clases cobrables de una cuenta (familia completa o alumno sin familia).
     clasesPagables: useCallback((cuenta) => {
       const filtro = cuenta.familia_id != null ? `familia_id=${cuenta.familia_id}` : `alumno_id=${cuenta.alumno_id}`
-      // sin_pago: las clases que ya tienen un pago por confirmar no se vuelven a cobrar.
-      return fetch(`/api/clases?${filtro}&estado=dictada&cobro=pendiente&sin_pago=1`).then(leerJson).then(r => r.filas)
+      // sin_pago: las que ya tienen un pago por confirmar no se vuelven a cobrar.
+      // Entran las no cobradas y las ya cobradas; las pagadas (también las de Notion, sin pago) no.
+      return fetch(`/api/clases?${filtro}&estado=dictada&sin_pago=1`).then(leerJson)
+        .then(r => r.filas.filter(c => c.cobro !== 'pagado'))
     }, []),
     crearFamilia: conRefresco((datos) => enviar('/api/clases/familias', 'POST', datos)),
     editarFamilia: conRefresco((id, cambios) => enviar(`/api/clases/familias/${id}`, 'PATCH', cambios)),
@@ -81,6 +83,7 @@ export function useClases({ desde, hasta, ciclo }) {
     agendar: conRefresco((datos) => enviar('/api/clases', 'POST', datos)),
     mover: conRefresco((id, cambios) => enviar(`/api/clases/${id}`, 'PATCH', cambios)),
     marcarDictada: conRefresco((id) => enviar(`/api/clases/${id}/dictada`, 'POST')),
+    marcarCobro: conRefresco((claseIds, cobro) => enviar('/api/clases/cobro', 'POST', { clase_ids: claseIds, cobro })),
     cancelar: conRefresco((id) => enviar(`/api/clases/${id}/cancelar`, 'POST')),
     eliminar: conRefresco((id) => enviar(`/api/clases/${id}`, 'DELETE')),
     // Los pagos mueven ingresos (crean, confirman o borran uno): se avisa al resto de la app.

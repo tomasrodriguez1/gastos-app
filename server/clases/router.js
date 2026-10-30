@@ -5,7 +5,7 @@ import { Hono } from 'hono'
 import sql from '../db/client.js'
 import {
   listarAlumnos, crearAlumno, editarAlumno, listarFamilias, crearFamilia, editarFamilia, eliminarFamilia,
-  buscarClases, agendarClase, moverClase, marcarDictada, cancelarClase, eliminarClase,
+  buscarClases, agendarClase, moverClase, marcarDictada, marcarCobro, cancelarClase, eliminarClase,
   registrarPago, confirmarPago, deshacerPago, listarPagos, resumenClases, ingresosClasesCiclo, clasesParaAnalisis,
 } from './clases.js'
 import { obtenerCicloActual } from '../../src/utils/ciclos.js'
@@ -55,6 +55,10 @@ export function createClasesRouter({ db = sql } = {}) {
   })
 
   router.post('/', async (c) => responder(c, await agendarClase(await cuerpo(c), db), 'clase', 201))
+  router.post('/cobro', async (c) => {
+    const body = await cuerpo(c)
+    return responder(c, await marcarCobro({ claseIds: body.clase_ids, cobro: body.cobro }, db))
+  })
   router.patch('/:id', async (c) => responder(c, await moverClase(c.req.param('id'), await cuerpo(c), db), 'clase'))
   router.post('/:id/dictada', async (c) => responder(c, await marcarDictada(c.req.param('id'), db), 'clase'))
   router.delete('/:id', async (c) => responder(c, await eliminarClase(c.req.param('id'), db)))

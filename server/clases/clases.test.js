@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test'
 import postgres from 'postgres'
 import {
-  calcularMonto, crearAlumno, editarAlumno, agendarClase, moverClase, marcarDictada, cancelarClase,
+  calcularMonto, crearAlumno, editarAlumno, agendarClase, moverClase, marcarDictada, marcarCobro, cancelarClase,
   registrarPago, confirmarPago, deshacerPago, eliminarClase, resumenClases, deudaClasesDelMes, ingresoAutomaticoClases, crearFamilia, editarFamilia, eliminarFamilia, listarFamilias, listarAlumnos, buscarClases, ingresosClasesCiclo, listarPagos,
   FUENTE_INGRESO_CLASES,
 } from './clases.js'
@@ -30,6 +30,12 @@ describe('validaciones sin DB', () => {
     expect((await agendarClase({ ...base, duracion_minutos: 0 }, dbProhibida)).code).toBe('validacion')
     expect((await agendarClase({ ...base, modalidad: 'Zoom' }, dbProhibida)).code).toBe('validacion')
     expect((await agendarClase({ ...base, precio_hora: 2500.5 }, dbProhibida)).code).toBe('validacion')
+  })
+
+  test('marcar cobro rechaza lista vacía, ids inválidos o un cobro que no es el intermedio', async () => {
+    expect((await marcarCobro({ claseIds: [], cobro: 'cobrado' }, dbProhibida)).code).toBe('validacion')
+    expect((await marcarCobro({ claseIds: ['a'], cobro: 'cobrado' }, dbProhibida)).code).toBe('validacion')
+    expect((await marcarCobro({ claseIds: [1], cobro: 'pagado' }, dbProhibida)).code).toBe('validacion')
   })
 
   test('registrar pago rechaza sin clases, ids inválidos, fecha inválida o futura', async () => {
@@ -270,9 +276,11 @@ describe.skipIf(!usarDb)('clases contra Postgres', () => {
       await agendarClase({ alumno: 'Cristóbal Mena', fecha: '2026-10-20', hora_inicio: '19:00' }, db) // programada: no cuenta
       await registrarPago({ claseIds: [a.id], fecha: HOY, porConfirmar: true, hoy: HOY }, db)
 
-      expect(await deudaClasesDelMes('2026-10', db)).toEqual({ mes: '2026-10', deuda: 50000, clases: 2, por_confirmar: 25000 })
-      expect(await deudaClasesDelMes('2026-09', db)).toMatchObject({ deuda: 25000, clases: 1, por_confirmar: 0 })
-      expect(await deudaClasesDelMes('2026-11', db)).toMatchObject({ deuda: 0, clases: 0 })
+      expect(await deudaClasesDelMes('2026-10', db)).toEqual({
+        mes: '2026-10', deuda: 50000, clases: 2, por_confirmar: 25000, sin_pedir: 50000, ya_cobrado: 0,
+      })
+      expect(await deudaClasesDelMes('2026-09', db)).toMatchObject({ deuda: 25000, clases: 1, por_confirmar: 0, sin_pedir: 25000, ya_cobrado: 0 })
+      expect(await deudaClasesDelMes('2026-11', db)).toMatchObject({ deuda: 0, clases: 0, ya_cobrado: 0 })
       expect((await deudaClasesDelMes('mal', db)).code).toBe('validacion')
     })
   })
@@ -482,15 +490,51 @@ describe.skipIf(!usarDb)('clases contra Postgres', () => {
 
     const r = await resumenClases({ desde: '2026-10-01', hasta: '2026-10-31' }, db)
     expect(r.deuda_por_alumno).toEqual([
-      { alumno_id: 1, alumno: 'Cristóbal Mena', familia_id: null, familia: null, deuda: 37500, por_confirmar: 0, desde: '2026-10-01', clases: 2 },
-      { alumno_id: 2, alumno: 'Rafaela Moraga', familia_id: null, familia: null, deuda: 20000, por_confirmar: 0, desde: '2026-10-03', clases: 1 },
+      { alumno_id: 1, alumno: 'Cristóbal Mena', familia_id: null, familia: null, deuda: 37500, sin_pedir: 37500, ya_cobrado: 0, por_confirmar: 0, desde: '2026-10-01', clases: 2 },
+      { alumno_id: 2, alumno: 'Rafaela Moraga', familia_id: null, familia: null, deuda: 20000, sin_pedir: 20000, ya_cobrado: 0, por_confirmar: 0, desde: '2026-10-03', clases: 1 },
     ])
     // Sin familias, cada alumno es su propia cuenta de cobro.
     expect(r.deuda_por_familia.map(c => [c.nombre, c.alumno_id, c.deuda])).toEqual([['Cristóbal Mena', 1, 37500], ['Rafaela Moraga', 2, 20000]])
     expect(r.deuda_total).toBe(57500)
+    expect(r.deuda_sin_pedir).toBe(57500)
+    expect(r.deuda_ya_cobrado).toBe(0)
     expect(r).toMatchObject({ horas_dictadas: 2.5, clases_dictadas: 3, monto_dictado: 57500, clases_programadas: 1, cobrado: 0 })
     // Cobrado por fecha de pago (septiembre), no por fecha de clase.
     expect((await resumenClases({ desde: '2026-09-01', hasta: '2026-09-30' }, db)).cobrado).toBe(25000)
+  })
+
+  test('cobrado: sigue en la deuda, no crea ingreso, y el pago la pasa a pagada', async () => {
+    await alumno()
+    const pedida = await claseDictada('Cristóbal Mena', '2026-10-01')
+    const otra = await claseDictada('Cristóbal Mena', '2026-10-08')
+    const { clase: programada } = await agendarClase({ alumno: 'Cristóbal Mena', fecha: '2026-10-20', hora_inicio: '19:00' }, db)
+
+    expect((await marcarCobro({ claseIds: [programada.id], cobro: 'cobrado' }, db)).code).toBe('conflicto')
+    const marcado = await marcarCobro({ claseIds: [pedida.id, otra.id], cobro: 'cobrado' }, db)
+    expect(marcado.error).toBeUndefined()
+    expect(marcado.clases.every(c => c.cobro === 'cobrado')).toBe(true)
+    expect(await contar('ingreso')).toBe(0)
+
+    const deuda = await resumenClases({}, db)
+    expect(deuda).toMatchObject({ deuda_total: 50000, deuda_sin_pedir: 0, deuda_ya_cobrado: 50000 })
+    expect(await deudaClasesDelMes('2026-10', db)).toMatchObject({ deuda: 50000, ya_cobrado: 50000, sin_pedir: 0 })
+
+    expect((await marcarCobro({ claseIds: [pedida.id], cobro: 'cobrado' }, db)).code).toBe('conflicto')
+    const desmarcado = await marcarCobro({ claseIds: [otra.id], cobro: 'pendiente' }, db)
+    expect(desmarcado.clases[0].cobro).toBe('pendiente')
+    expect((await resumenClases({}, db))).toMatchObject({ deuda_total: 50000, deuda_sin_pedir: 25000, deuda_ya_cobrado: 25000 })
+
+    await marcarCobro({ claseIds: [otra.id], cobro: 'cobrado' }, db)
+    const pago = await registrarPago({ claseIds: [pedida.id, otra.id], fecha: HOY, hoy: HOY }, db)
+    expect(pago.error).toBeUndefined()
+    expect(pago.ingreso.monto).toBe(50000)
+    expect((await db`SELECT DISTINCT cobro FROM clase WHERE id = ANY(${[pedida.id, otra.id]})`).map(c => c.cobro)).toEqual(['pagado'])
+    expect((await resumenClases({}, db)).deuda_total).toBe(0)
+
+    await cancelarClase(programada.id, db)
+    const cobrada = await claseDictada('Cristóbal Mena', '2026-10-15')
+    await marcarCobro({ claseIds: [cobrada.id], cobro: 'cobrado' }, db)
+    expect((await cancelarClase(cobrada.id, db)).clase).toMatchObject({ estado: 'cancelada', cobro: 'cobrado' })
   })
 
   test('familias: alta, apoderado, asignar hermanos, nombre único y borrado solo si está vacía', async () => {

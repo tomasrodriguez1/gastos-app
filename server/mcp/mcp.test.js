@@ -74,6 +74,7 @@ const deps = {
   agendarClase: mock(async () => ({ clase: CLASE })),
   moverClase: mock(async () => ({ clase: CLASE })),
   marcarDictada: mock(async () => ({ clase: { ...CLASE, estado: 'dictada', dictada: true } })),
+  marcarCobro: mock(async ({ cobro }) => ({ clases: [{ ...CLASE, estado: 'dictada', dictada: true, cobro }] })),
   cancelarClase: mock(async () => ({ error: 'La clase 10 ya está pagada: no se puede cancelar', code: 'conflicto', status: 409 })),
   buscarIngresosSimilares: mock(async () => []),
   crearIngreso: mock(async (d) => ({
@@ -176,15 +177,15 @@ describe('auth /mcp', () => {
 })
 
 describe('descubrimiento', () => {
-  test('expone exactamente las 21 tools (6 de gastos + 4 de viajes + 9 de clases + 2 de ingresos), sin escrituras extra', async () => {
+  test('expone exactamente las 22 tools (6 de gastos + 4 de viajes + 10 de clases + 2 de ingresos), sin escrituras extra', async () => {
     const client = await conectar()
     const { tools } = await client.listTools()
     expect(tools.map(t => t.name).sort()).toEqual([
       'agendar_clase', 'buscar_clases', 'buscar_gastos', 'cambiar_estado_viaje', 'cancelar_clase', 'comparar_periodos', 'crear_alumno',
-      'crear_gasto', 'crear_viaje', 'listar_alumnos', 'listar_catalogos', 'listar_viajes', 'marcar_dictada', 'mover_clase', 'registrar_ingreso',
+      'crear_gasto', 'crear_viaje', 'listar_alumnos', 'listar_catalogos', 'listar_viajes', 'marcar_cobro', 'marcar_dictada', 'mover_clase', 'registrar_ingreso',
       'registrar_pago', 'resumen_clases', 'resumen_ingresos', 'resumen_presupuesto', 'resumen_viaje', 'resumir_gastos',
     ])
-    const escrituras = ['crear_gasto', 'crear_viaje', 'cambiar_estado_viaje', 'crear_alumno', 'agendar_clase', 'mover_clase', 'marcar_dictada', 'cancelar_clase', 'registrar_pago', 'registrar_ingreso']
+    const escrituras = ['crear_gasto', 'crear_viaje', 'cambiar_estado_viaje', 'crear_alumno', 'agendar_clase', 'mover_clase', 'marcar_dictada', 'marcar_cobro', 'cancelar_clase', 'registrar_pago', 'registrar_ingreso']
     for (const t of tools) {
       expect(t.inputSchema.type).toBe('object')
       expect(t.description.length).toBeGreaterThan(80)
@@ -529,6 +530,15 @@ describe('tools de clases', () => {
     await client.close()
   })
 
+  test('marcar_cobro delega clase_ids y cobro; pagado no es un cobro válido acá', async () => {
+    const client = await conectar()
+    const r = await llamar(client, 'marcar_cobro', { clase_ids: [10, 11], cobro: 'cobrado' })
+    expect(r).toMatchObject({ ok: true, data: { clases: [{ cobro: 'cobrado' }] } })
+    expect(deps.marcarCobro.mock.calls.at(-1)[0]).toEqual({ claseIds: [10, 11], cobro: 'cobrado' })
+    expect(await llamar(client, 'marcar_cobro', { clase_ids: [10], cobro: 'pagado' })).toMatchObject({ code: 'validacion' })
+    await client.close()
+  })
+
   test('registrar_pago con clases de meses distintos informa que quedan varios pagos por confirmar', async () => {
     const p1 = { id: 5, monto: 25000, ciclo_financiero: '2026-10' }
     const p2 = { id: 6, monto: 25000, ciclo_financiero: '2026-11' }
@@ -653,7 +663,10 @@ describe.skipIf(!URL_TEST_CLASES || URL_TEST_CLASES === process.env.DATABASE_URL
         expect((await llamar(client, 'marcar_dictada', { clase_id: r.data.id })).ok).toBe(true)
       }
       const resumen = await llamar(client, 'resumen_clases')
-      expect(resumen.data.deuda_por_alumno).toEqual([{ alumno_id: 1, alumno: 'Julieta Chinetti', familia_id: null, familia: null, deuda: 50000, por_confirmar: 0, desde: '2026-10-01', clases: 2 }])
+      expect(resumen.data.deuda_por_alumno).toEqual([{
+        alumno_id: 1, alumno: 'Julieta Chinetti', familia_id: null, familia: null,
+        deuda: 50000, sin_pedir: 50000, ya_cobrado: 0, por_confirmar: 0, desde: '2026-10-01', clases: 2,
+      }])
       expect(resumen.data.deuda_por_familia[0]).toMatchObject({ nombre: 'Julieta Chinetti', deuda: 50000 })
 
       const pago = await llamar(client, 'registrar_pago', { clase_ids: ids, fecha: '2026-10-06', monto: 50000 })

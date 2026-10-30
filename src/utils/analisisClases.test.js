@@ -20,9 +20,9 @@ const CLASES = [
 describe('análisis de clases', () => {
   const a = analizarClases(CLASES, { hoy: '2026-06-10' })
 
-  test('KPIs: facturado, cobrado, pendiente, alumnos', () => {
+  test('KPIs: facturado, pagado, cobrado y sin cobrar', () => {
     expect(a.kpis).toMatchObject({
-      facturado: 166000, cobrado: 126000, sinCobrar: 40000, clases: 8, horas: 8.5, alumnos: 4, porClase: 20750,
+      facturado: 166000, pagado: 126000, cobrado: 0, sinCobrar: 40000, clases: 8, horas: 8.5, alumnos: 4, porClase: 20750,
     })
     expect(a.kpis.pctPendiente).toBe(24.1)
   })
@@ -66,7 +66,18 @@ describe('análisis de clases', () => {
     expect(titulos).toContain('Concentración')
     expect(titulos).toContain('Riesgo de cliente') // familia Mena = 60%
     expect(a.insights.find(i => i.titulo === 'Concentración').texto).toContain('familia Mena = 60%')
-    expect(a.insights.find(i => i.titulo === 'Sin cobrar').texto).toContain('Luciano Mena $20k')
+    expect(a.insights.find(i => i.titulo === 'Sin pagar').texto).toContain('Luciano Mena $20k')
+  })
+
+  test('cobrado no se mezcla con pagado ni con sin cobrar', () => {
+    const b = analizarClases([
+      clase('Ana', '2026-06-01', { cobro: 'pagado', monto: 10000, precio_hora: 10000 }),
+      clase('Ana', '2026-06-02', { cobro: 'cobrado', monto: 20000, precio_hora: 20000 }),
+      clase('Ana', '2026-06-03', { cobro: 'pendiente', monto: 30000, precio_hora: 30000 }),
+    ], { hoy: '2026-06-10' })
+    expect(b.kpis).toMatchObject({ facturado: 60000, pagado: 10000, cobrado: 20000, sinCobrar: 30000 })
+    expect(b.ranking[0].sinCobrar).toBe(50000)
+    expect(b.insights.find(i => i.titulo === 'Sin pagar').texto).toContain('83,3%')
   })
 
   test('mes sin historia: proyección proporcional a los días', () => {

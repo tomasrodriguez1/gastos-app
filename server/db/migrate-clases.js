@@ -5,7 +5,8 @@ import sql from './client.js'
 // registrado en la app crea un `ingreso` (origen='clases') en la misma transacción. RESTRICT en
 // esa FK para que el ingreso no se pueda borrar suelto: se saca deshaciendo el pago.
 //
-// La deuda no se persiste: es Σ clase.monto con estado='dictada' y cobro='pendiente'.
+// La deuda no se persiste: es Σ clase.monto con estado='dictada' y cobro pendiente o cobrado
+// (DEC-027: cobrado = ya se pidió la plata, todavía no se pagó).
 // notion_id es la clave del import (id real de Notion o clave sintética), UNIQUE para que
 // reimportar no duplique. Va después de migrateIngresos() (FK a ingreso), por eso no está en
 // schema.pg.sql. Idempotente — corre en cada arranque.
@@ -48,7 +49,7 @@ export async function migrateClases(db = sql) {
         precio_hora      INTEGER NOT NULL CHECK (precio_hora >= 0),
         monto            INTEGER NOT NULL CHECK (monto >= 0),
         estado           TEXT NOT NULL DEFAULT 'programada' CHECK (estado IN ('programada', 'dictada', 'cancelada')),
-        cobro            TEXT NOT NULL DEFAULT 'pendiente' CHECK (cobro IN ('pendiente', 'pagado')),
+        cobro            TEXT NOT NULL DEFAULT 'pendiente' CHECK (cobro IN ('pendiente', 'cobrado', 'pagado')),
         notion_id        TEXT UNIQUE,
         notion_status    TEXT,
         nota             TEXT,
@@ -57,6 +58,25 @@ export async function migrateClases(db = sql) {
         CHECK (NOT (estado = 'cancelada' AND cobro = 'pagado'))
       )
     `)
+    // CREATE TABLE IF NOT EXISTS no reescribe un CHECK ya creado. Se dropea el de `cobro`
+    // (no el de cancelada+pagada) y se vuelve a poner con el estado intermedio.
+    await tx.unsafe(`
+      DO $$
+      DECLARE r record;
+      BEGIN
+        FOR r IN
+          SELECT con.conname
+          FROM pg_constraint con
+          JOIN pg_class rel ON rel.oid = con.conrelid
+          WHERE rel.relname = 'clase' AND con.contype = 'c'
+            AND pg_get_constraintdef(con.oid) ILIKE '%cobro%'
+            AND pg_get_constraintdef(con.oid) NOT ILIKE '%cancelada%'
+        LOOP
+          EXECUTE format('ALTER TABLE clase DROP CONSTRAINT %I', r.conname);
+        END LOOP;
+      END $$
+    `)
+    await tx.unsafe(`ALTER TABLE clase ADD CONSTRAINT clase_cobro_check CHECK (cobro IN ('pendiente', 'cobrado', 'pagado'))`)
     await tx.unsafe('CREATE INDEX IF NOT EXISTS idx_clase_alumno_fecha ON clase(alumno_id, fecha)')
     await tx.unsafe('CREATE INDEX IF NOT EXISTS idx_clase_fecha ON clase(fecha)')
     await tx.unsafe('CREATE INDEX IF NOT EXISTS idx_clase_updated_at ON clase(updated_at)')

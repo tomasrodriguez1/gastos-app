@@ -166,6 +166,7 @@ export async function resumenIngresosCiclo(ciclo = obtenerCicloActual(), { hoy =
         ...(esClases
           ? {
               por_cobrar: porCobrar,
+              ya_cobrado: deudaClases.ya_cobrado || 0,
               por_confirmar: f.por_aprobar,
               mes_clases: mesClases,
               real_automatico: automatico,

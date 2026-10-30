@@ -1,4 +1,4 @@
-// Tools del servidor MCP: 6 de gastos + 4 de viajes (acá) + 9 de clases particulares
+// Tools del servidor MCP: 6 de gastos + 4 de viajes (acá) + 10 de clases particulares
 // (toolsClases.js) + 2 de ingresos (toolsIngresos.js). Capa fina: validan el input (antes de tocar la DB) y
 // delegan en funciones que ya usa la app — ejecutarCrearGasto (mismo camino que
 // el chat de /agente), resumenCiclo, cargarCatalogos, el read service de
@@ -162,7 +162,8 @@ const crearGasto = {
     'devuelve error con la lista válida. `tipos` y `contexto` son opcionales y solo valen nombres del',
     'catálogo (lo que no exista se descarta); si no los mandás se completan con la memoria de',
     'comercios, y si el comercio es nuevo queda sin clasificar para que la persona lo clasifique.',
-    'Si hay un posible duplicado (mismo comercio/monto en fechas cercanas) NO inserta y devuelve',
+    'Si el banco es efectivo, transferencia o débito, el gasto queda pagado (la plata ya salió);',
+    'una tarjeta queda pendiente de pago. Si hay un posible duplicado (mismo comercio/monto en fechas cercanas) NO inserta y devuelve',
     'code "duplicado" con los candidatos: mostralos y reintentá con ignorar_duplicado=true solo si el',
     'usuario confirma que es otro gasto.',
     '`viaje` es opcional: nombre de listar_viajes() si el usuario dice que el gasto es de un viaje; si',

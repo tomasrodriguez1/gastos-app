@@ -2,8 +2,9 @@
 // (GET /api/clases/analisis), así se testea sin UI.
 //
 // "Ingreso" acá es lo facturado: el monto de cada clase dictada, por la fecha de la clase,
-// esté cobrada o no. Lo cobrado y lo pendiente se muestran aparte. No usa la tabla `ingreso`
-// (que solo tiene los pagos registrados en la app, no la historia importada de Notion).
+// esté pagada o no. Pagado, cobrado (pedido y sin pagar) y sin cobrar se muestran aparte.
+// No usa la tabla `ingreso` (que solo tiene los pagos registrados en la app, no la historia
+// importada de Notion).
 
 export const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 export const DIAS_CORTOS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -54,11 +55,16 @@ export function analizarClases(clases, { hoy }) {
   // ─── KPIs ───
   const facturado = suma(clases, c => c.monto)
   const sinCobrar = suma(clases.filter(c => c.cobro === 'pendiente'), c => c.monto)
+  const cobrado = suma(clases.filter(c => c.cobro === 'cobrado'), c => c.monto)
+  const pagado = suma(clases.filter(c => c.cobro === 'pagado'), c => c.monto)
+  const impago = sinCobrar + cobrado
   const kpis = {
     facturado,
-    cobrado: facturado - sinCobrar,
+    pagado,
+    cobrado,
     sinCobrar,
     pctPendiente: facturado ? redondear1((sinCobrar / facturado) * 100) : 0,
+    pctImpago: facturado ? redondear1((impago / facturado) * 100) : 0,
     clases: clases.length,
     horas: suma(clases, c => c.horas),
     alumnos: new Set(clases.map(c => c.alumno_id)).size,
@@ -148,7 +154,7 @@ export function analizarClases(clases, { hoy }) {
       nombre: lista[0].familia,
       alumnos: [...new Set(lista.map(c => c.alumno))].sort(),
       ...acumular(lista),
-      sinCobrar: suma(lista.filter(c => c.cobro === 'pendiente'), c => c.monto),
+      sinCobrar: suma(lista.filter(c => c.cobro === 'pendiente' || c.cobro === 'cobrado'), c => c.monto),
     }))
     .filter(f => f.alumnos.length > 1)
     .sort((a, b) => b.ingreso - a.ingreso)
@@ -163,7 +169,7 @@ export function analizarClases(clases, { hoy }) {
         familia: lista[0].familia,
         ...total,
         porClase: Math.round(total.ingreso / total.clases),
-        sinCobrar: suma(lista.filter(c => c.cobro === 'pendiente'), c => c.monto),
+        sinCobrar: suma(lista.filter(c => c.cobro === 'pendiente' || c.cobro === 'cobrado'), c => c.monto),
         modalidad: online > lista.length / 2 ? 'Online' : 'Presencial',
         desde: lista.map(c => c.fecha).sort()[0].slice(0, 7),
         ultima: lista.map(c => c.fecha).sort().at(-1),
@@ -234,12 +240,12 @@ export function analizarClases(clases, { hoy }) {
       })
     }
   }
-  if (sinCobrar > 0) {
+  if (impago > 0) {
     const deudas = ranking.filter(r => r.sinCobrar > 0).sort((a, b) => b.sinCobrar - a.sinCobrar).slice(0, 3)
     insights.push({
       tipo: 'alerta',
-      titulo: 'Sin cobrar',
-      texto: `${String(kpis.pctPendiente).replace('.', ',')}% de lo facturado. Mayores deudas: ${deudas.map(d => `${d.alumno} ${formatoCorto(d.sinCobrar)}`).join(', ')}.`,
+      titulo: 'Sin pagar',
+      texto: `${String(kpis.pctImpago).replace('.', ',')}% de lo facturado. Mayores deudas: ${deudas.map(d => `${d.alumno} ${formatoCorto(d.sinCobrar)}`).join(', ')}.`,
     })
   }
   if (horaData.length) {
