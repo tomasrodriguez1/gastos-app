@@ -40,6 +40,26 @@ export function esGastoUsdPuro(g) {
   return g.usd > 0 && !g.monto && !g.monto_clp_manual
 }
 
+// Pesos que muestra cada fila de la tabla de gastos. Un USD con tipo de cambio
+// entra por `monto_clp_manual`; sin conversión aporta 0 (el dólar no se mezcla
+// con el total en pesos). No usa `montoPresupuestable`: el pie suma lo que se ve,
+// sin descontar split ni excluir lo que está fuera de presupuesto.
+export function montoEnTabla(g) {
+  if (g?.usd > 0 && !g.monto) return Number(g.monto_clp_manual) || 0
+  const monto = Number(g?.monto_real ?? g?.monto)
+  return Number.isFinite(monto) ? monto : 0
+}
+
+export function sumarTablaGastos(gastos) {
+  let total = 0
+  let usd = 0
+  for (const g of gastos || []) {
+    if (esGastoUsdPuro(g)) usd += Number(g.usd) || 0
+    else total += montoEnTabla(g)
+  }
+  return { total, usd }
+}
+
 export function grupoDeGasto(g) {
   const ctx = g.contexto_override || g.contexto || ''
   return g.presupuesto_manual?.grupo

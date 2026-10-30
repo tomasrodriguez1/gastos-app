@@ -82,6 +82,16 @@ describe('resumirViaje', () => {
     expect(r.usd).toBe(0)
   })
 
+  test('USD convertido a CLP entra al total del viaje', () => {
+    const r = resumirViaje(PERU, [{
+      id: 'x', viaje_id: 'v1', fecha: '2026-10-02',
+      monto: 0, monto_real: 0, usd: 25, monto_clp_manual: 24000, tipos: [],
+    }])
+    expect(r.total).toBe(24000)
+    expect(r.durante).toBe(24000)
+    expect(r.usd).toBe(0)
+  })
+
   test('incluye gastos financiados por un fondo', () => {
     const r = resumirViaje(PERU, [{ ...gastos[1], financiado_por: 'Vacaciones' }])
     expect(r.total).toBe(30000)

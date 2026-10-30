@@ -11,6 +11,7 @@ import {
   calcularTendenciasCategorias,
   montoDelCiclo,
   montoPresupuestable,
+  sumarTablaGastos,
   SIN_CLASIFICAR,
 } from './calculos'
 
@@ -41,6 +42,16 @@ describe('cálculos por ciclo financiero', () => {
     expect(serie[0].acumulado).toBe(200)
     expect(serie.at(-1).acumulado).toBe(500)
     expect(serie.at(-1).pace).toBe(3100)
+  })
+
+  test('el pie de la tabla suma el CLP de un USD convertido y deja aparte el que no tiene tipo de cambio', () => {
+    const { total, usd } = sumarTablaGastos([
+      { monto: 10000, monto_real: 10000 },
+      { monto: 0, monto_real: 0, usd: 20, monto_clp_manual: 19000 },
+      { monto: 0, monto_real: 0, usd: 5 },
+    ])
+    expect(total).toBe(29000)
+    expect(usd).toBe(5)
   })
 
   test('montoPresupuestable excluye, resta split y respeta el override manual', () => {

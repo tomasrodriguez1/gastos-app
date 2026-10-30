@@ -3,6 +3,7 @@ import { getGastoId } from '../../utils/gastosIds'
 import { formatCLP, formatFecha } from '../../utils/formatters'
 import { COLOR_CATEGORIA } from '../../utils/categorias'
 import { esMedioYaPagado } from '../../utils/medioPago'
+import { sumarTablaGastos } from '../../utils/calculos'
 import { getSubcategoriaPresupuesto } from '../../utils/mapeo'
 import { EditarAsignacion } from './EditarAsignacion'
 import { useViajesContext } from '../../contexts/ViajesContext'
@@ -226,9 +227,7 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, desta
     )
   }
 
-  const total = gastos
-    .filter(g => !(g.usd > 0 && !g.monto))
-    .reduce((s, g) => s + (g.monto_real ?? g.monto), 0)
+  const { total, usd: usdSinConvertir } = sumarTablaGastos(gastos)
 
   function handleGuardar(gasto, changes) {
     onActualizar?.(gasto.id, changes)
@@ -373,6 +372,9 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, desta
           <span className="text-xs text-slate-500">{gastos.length} movimientos</span>
           <span className={`font-mono-numbers font-bold text-sm ${total < 0 ? 'text-emerald-400' : 'text-slate-200'}`}>
             {formatCLP(total)}
+            {usdSinConvertir > 0 && (
+              <span className="ml-1.5 text-xs font-normal text-sky-300">+ USD {usdSinConvertir.toFixed(2)}</span>
+            )}
           </span>
         </div>
       </div>
@@ -536,6 +538,9 @@ export function TablaGastos({ gastos, onEliminar, onActualizar, catalogos, desta
                 </td>
                 <td className={`px-4 py-3 text-right font-mono-numbers font-bold ${total < 0 ? 'text-emerald-400' : 'text-slate-200'}`}>
                   {formatCLP(total)}
+                  {usdSinConvertir > 0 && (
+                    <span className="ml-1.5 text-xs font-normal text-sky-300">+ USD {usdSinConvertir.toFixed(2)}</span>
+                  )}
                 </td>
                 <td colSpan={2} />
               </tr>
