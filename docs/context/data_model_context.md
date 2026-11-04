@@ -305,7 +305,7 @@ fondo_tarjeta_movimiento(id SERIAL PK, fecha TEXT YYYY-MM-DD, tipo 'aporte'|'aju
 |------|-------|--------|
 | `aporte` | + | Manual desde `/tarjeta` ("+ Aportar") — `POST /api/tarjeta/fondo/aportes` |
 | `ajuste` | ± | Corrección manual del saldo a un valor absoluto; se guarda la diferencia — `PUT /api/tarjeta/fondo/saldo` |
-| `pago` | − | Automático dentro de la transacción de `POST /api/tarjeta/pagar` (con `banco`). Los pagos nuevos, incluso los de consumos USD, se registran en CLP; para USD usa `monto_clp_manual` por gasto o el `tipo_cambio` enviado por la vista |
+| `pago` | − | Automático dentro de la transacción de `POST /api/tarjeta/pagar` (con `banco`). Los pagos nuevos, incluso los de consumos USD, se registran en CLP; para USD usa `monto_clp_manual` por gasto o el `tipo_cambio` enviado por la vista. Un pago directo (`desde_fondo: false`, p. ej. abono en USD hecho en el banco) no genera fila: solo marca los gastos `pagado` y no deja rastro en este libro |
 
 **Saldo = `SUM(monto)` por moneda, derivado, nunca persistido.** En `/tarjeta` se presenta el saldo
 CLP y su destino: deuda CLP + equivalente de la deuda USD; no se presenta el saldo USD histórico

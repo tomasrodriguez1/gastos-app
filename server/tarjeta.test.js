@@ -300,6 +300,42 @@ describe('operaciones transaccionales de tarjeta', () => {
     expect(movimientos).toHaveLength(0)
   })
 
+  test('un pago directo en USD marca pagado sin tocar el fondo ni pedir tipo de cambio', async () => {
+    const { db, filas, movimientos } = dbFalsa([gasto({ id: 'usd-1', monto: 0, usd: 12.5 })])
+    const router = createTarjetaRouter({ db })
+    const respuesta = await post(router, '/pagar', {
+      banco: 'Edwards', moneda: 'USD', gasto_ids: ['usd-1'], total_pagado: 12.5, desde_fondo: false,
+    })
+
+    expect(respuesta.status).toBe(200)
+    expect(await respuesta.json()).toMatchObject({ total: 12.5, total_fondo_clp: 0, desde_fondo: false })
+    expect(filas[0].pagado).toBe(true)
+    expect(movimientos).toHaveLength(0)
+  })
+
+  test('un pago directo en CLP marca pagado sin registrar movimiento en el fondo', async () => {
+    const { db, filas, movimientos } = dbFalsa([gasto({ id: 'g-1', monto: 1000 })])
+    const router = createTarjetaRouter({ db })
+    const respuesta = await post(router, '/pagar', {
+      banco: 'Edwards', moneda: 'CLP', gasto_ids: ['g-1'], total_pagado: 1000, desde_fondo: false,
+    })
+
+    expect(respuesta.status).toBe(200)
+    expect(filas[0].pagado).toBe(true)
+    expect(movimientos).toHaveLength(0)
+  })
+
+  test('un pago directo igual valida que el total cuadre', async () => {
+    const { db, filas } = dbFalsa([gasto({ id: 'usd-1', monto: 0, usd: 12.5 })])
+    const router = createTarjetaRouter({ db })
+    const respuesta = await post(router, '/pagar', {
+      banco: 'Edwards', moneda: 'USD', gasto_ids: ['usd-1'], total_pagado: 10, desde_fondo: false,
+    })
+
+    expect(respuesta.status).toBe(409)
+    expect(filas[0].pagado).toBe(false)
+  })
+
   test('rechaza volver a pagar un movimiento ya pagado', async () => {
     const { db } = dbFalsa([gasto({ id: 'g-1', monto: 1000, pagado: true })])
     const router = createTarjetaRouter({ db })

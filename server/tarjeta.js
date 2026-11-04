@@ -181,7 +181,9 @@ function validarPago(body) {
   if (totalUnidades == null) return { error: 'Total inválido' }
   const tipoCambio = body?.tipo_cambio == null || body.tipo_cambio === '' ? null : Number(body.tipo_cambio)
   if (tipoCambio != null && (!Number.isFinite(tipoCambio) || tipoCambio <= 0)) return { error: 'Tipo de cambio inválido' }
-  return { banco, moneda, ids, totalUnidades, tipoCambio }
+  // Por defecto el pago sale del fondo; `desde_fondo: false` es un pago directo en el banco.
+  const desdeFondo = body?.desde_fondo !== false
+  return { banco, moneda, ids, totalUnidades, tipoCambio, desdeFondo }
 }
 
 function importePagoFondoClp(row, tipoCambio) {
@@ -352,6 +354,12 @@ export function createTarjetaRouter({ db = sql } = {}) {
             diferencia: desdeUnidades(base.totalUnidades - calculado, base.moneda),
           }
         }
+        const total = desdeUnidades(calculado, base.moneda)
+        // Pago directo (ej. abono en USD hecho en el banco): no toca el fondo ni pide tipo de cambio.
+        if (!base.desdeFondo) {
+          await tx`UPDATE gastos SET pagado = TRUE, updated_at = NOW() WHERE id = ANY(${base.ids})`
+          return { ok: true, actualizados: rows.length, total, total_fondo_clp: 0, desde_fondo: false }
+        }
         const importesFondo = rows.map(row => importePagoFondoClp(row, base.tipoCambio))
         if (importesFondo.some(importe => importe == null)) {
           return {
@@ -361,14 +369,13 @@ export function createTarjetaRouter({ db = sql } = {}) {
         }
         const totalFondoClp = importesFondo.reduce((suma, importe) => suma + importe, 0)
         await tx`UPDATE gastos SET pagado = TRUE, updated_at = NOW() WHERE id = ANY(${base.ids})`
-        const total = desdeUnidades(calculado, base.moneda)
         const detalleMoneda = base.moneda === 'USD' ? ` · ${total.toFixed(2)} USD` : ''
         const nota = `Pago ${rows.length} movimiento${rows.length === 1 ? '' : 's'}${detalleMoneda}`
         await tx`
           INSERT INTO fondo_tarjeta_movimiento (fecha, tipo, moneda, monto, banco, nota)
           VALUES (${hoyISO()}, 'pago', ${'CLP'}, ${-totalFondoClp}, ${base.banco}, ${nota})
         `
-        return { ok: true, actualizados: rows.length, total, total_fondo_clp: totalFondoClp }
+        return { ok: true, actualizados: rows.length, total, total_fondo_clp: totalFondoClp, desde_fondo: true }
       })
     } catch (error) {
       console.error('[tarjeta/pagar]', error.message)

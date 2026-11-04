@@ -73,7 +73,7 @@ quedan detrás del gate global normal.
 | Endpoint | Payload | Efecto |
 |----------|---------|--------|
 | `GET /api/tarjeta/resumen` | — | Totales globales/por banco y desglose por categoría derivados de gastos no pagados/no descartados |
-| `POST /api/tarjeta/pagar` | `{ banco, moneda, total_pagado, gasto_ids }` | Verifica banco, moneda, IDs y total; marca `pagado=true` y registra un movimiento `pago` (−total) en `fondo_tarjeta_movimiento`, todo atómicamente |
+| `POST /api/tarjeta/pagar` | `{ banco, moneda, total_pagado, gasto_ids, tipo_cambio?, desde_fondo? }` | Verifica banco, moneda, IDs y total; marca `pagado=true` y registra un movimiento `pago` (−total) en `fondo_tarjeta_movimiento`, todo atómicamente. Con `desde_fondo: false` (pago directo en el banco, en CLP o USD) solo marca `pagado=true`: no registra movimiento en el fondo ni exige tipo de cambio. Por defecto `desde_fondo` es `true` |
 | `GET /api/tarjeta/fondo` | — | `{ saldos: { CLP, USD }, movimientos: [últimos 50] }` |
 | `POST /api/tarjeta/fondo/aportes` | `{ moneda, monto > 0, fecha?, nota? }` | Registra un aporte manual |
 | `PUT /api/tarjeta/fondo/saldo` | `{ moneda, saldo }` | Lleva el saldo a un valor absoluto registrando la diferencia como `ajuste` |

@@ -78,6 +78,7 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
   const [filtroFacturado, setFiltroFacturado] = useState('todos')
   const [seleccionados, setSeleccionados] = useState(new Set())
   const [totalOperacion, setTotalOperacion] = useState('')
+  const [origenPago, setOrigenPago] = useState('fondo')
   const [editandoId, setEditandoId] = useState(null)
   const [editando, setEditando] = useState(null)
   const [valorSplit, setValorSplit] = useState('')
@@ -171,7 +172,7 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
     setProcesando(true)
     setError('')
     try {
-      await onPagar(bancoUnico, monedaUnica, idsSeleccionados, Number(totalOperacion))
+      await onPagar(bancoUnico, monedaUnica, idsSeleccionados, Number(totalOperacion), origenPago === 'fondo')
       aplicarSeleccion([])
     } catch (e) {
       const detalle = e.detalle
@@ -275,6 +276,18 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
                 className="w-52 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-right font-mono-numbers text-base text-slate-100 outline-none focus:border-sky-500 disabled:opacity-40"
               />
             </div>
+            <div>
+              <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">Cómo se pagó</div>
+              <Segmento
+                opciones={[
+                  { value: 'fondo', label: 'Desde el fondo' },
+                  { value: 'directo', label: monedaUnica === 'USD' ? 'Directo en USD' : monedaUnica === 'CLP' ? 'Directo en pesos' : 'Directo' },
+                ]}
+                valor={origenPago}
+                onChange={setOrigenPago}
+                ariaLabel="Origen del pago"
+              />
+            </div>
             <button disabled={seleccion.length === 0 || seleccionInvalida || procesando} onClick={registrarPago} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-30">Registrar pago</button>
           </div>
           <div className="flex min-h-11 items-center gap-3 rounded-lg border border-slate-700/60 bg-slate-950/40 px-4 py-2">
@@ -282,6 +295,11 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
             <div className="font-mono-numbers text-lg font-semibold text-slate-100">{monedaUnica ? formatMonto(totalSeleccionado, monedaUnica) : seleccion.length ? 'Banco y moneda únicos' : formatCLP(0)}</div>
           </div>
         </div>
+        <p className="mt-3 text-xs text-slate-500">
+          {origenPago === 'fondo'
+            ? 'Descuenta el pago del fondo en pesos (los USD se convierten con su equivalente o el tipo de cambio).'
+            : 'Pagado directo en el banco: marca los movimientos como pagados sin descontar del fondo ni pedir tipo de cambio.'}
+        </p>
         {seleccionInvalida && <p className="mt-3 text-xs text-amber-400">Seleccioná movimientos de un solo banco y una sola moneda para registrar el pago.</p>}
         {error && <p className="mt-3 text-xs text-rose-400">{error}</p>}
       </div>
