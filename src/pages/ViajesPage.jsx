@@ -26,37 +26,34 @@ function TarjetaViaje({ viaje, total, seleccionado, onClick, privado }) {
     <button
       type="button"
       onClick={onClick}
-      className={`text-left w-full rounded-xl border p-4 transition-colors ${
+      aria-pressed={seleccionado}
+      title={`${viaje.nombre} · ${estado.label}`}
+      className={`relative flex aspect-square w-32 shrink-0 snap-start flex-col rounded-xl border p-3 text-left transition-colors sm:w-36 ${
         seleccionado
           ? 'border-teal-500/50 bg-teal-500/[0.06]'
           : 'border-slate-700/50 bg-slate-800/50 hover:border-slate-600'
       }`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-base font-semibold text-slate-100">
-            {viaje.emoji && <span className="mr-1.5">{viaje.emoji}</span>}{viaje.nombre}
-          </div>
-          <div className="mt-0.5 text-xs text-slate-500 font-mono-numbers">
-            {formatFecha(viaje.fecha_desde)}/{viaje.fecha_desde.slice(2, 4)} → {formatFecha(viaje.fecha_hasta)}/{viaje.fecha_hasta.slice(2, 4)}
-            <span className="ml-1.5">· {diasDeViaje(viaje)} días</span>
-          </div>
-        </div>
-        <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${estado.cls}`}>
+      {viaje.estado !== 'cerrado' && (
+        <span className={`absolute right-2 top-2 rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${estado.cls}`}>
           {estado.label}
         </span>
-      </div>
-      <div className="mt-3 flex items-baseline justify-between gap-2">
-        <span className={`text-lg font-semibold font-mono-numbers ${pasado ? 'text-rose-400' : 'text-slate-100'}`}>{privacyFormat(total, privado)}</span>
-        {viaje.presupuesto != null && (
-          <span className="text-xs text-slate-500 font-mono-numbers">de {privacyFormat(viaje.presupuesto, privado)}</span>
-        )}
-      </div>
-      {pct != null && (
-        <div className="mt-2 h-1.5 rounded-full bg-slate-700/60 overflow-hidden">
-          <div className={`h-full rounded-full ${pasado ? 'bg-rose-400' : 'bg-teal-400/70'}`} style={{ width: `${pct}%` }} />
-        </div>
       )}
+      <span className="text-2xl leading-none">{viaje.emoji || '✈️'}</span>
+      <span className="mt-2 line-clamp-2 text-sm font-semibold leading-tight text-slate-100">{viaje.nombre}</span>
+      <span className="mt-0.5 text-[11px] text-slate-500 font-mono-numbers">
+        {formatFecha(viaje.fecha_desde)}/{viaje.fecha_desde.slice(2, 4)} · {diasDeViaje(viaje)}d
+      </span>
+      <span className="mt-auto">
+        <span className={`block text-sm font-semibold font-mono-numbers ${pasado ? 'text-rose-400' : 'text-slate-100'}`}>
+          {privacyFormat(total, privado)}
+        </span>
+        {pct != null && (
+          <span className="mt-1 block h-1 overflow-hidden rounded-full bg-slate-700/60">
+            <span className={`block h-full rounded-full ${pasado ? 'bg-rose-400' : 'bg-teal-400/70'}`} style={{ width: `${pct}%` }} />
+          </span>
+        )}
+      </span>
     </button>
   )
 }
@@ -155,7 +152,7 @@ export function ViajesPage({ gastos, catalogos, onActualizarGasto }) {
             />
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              <div className="flex snap-x gap-3 overflow-x-auto pb-2 scrollbar-thin">
                 {viajes.map(v => (
                   <TarjetaViaje
                     key={v.id}

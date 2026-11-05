@@ -21,7 +21,7 @@ function DesgloseGrupos({ porGrupo, total, privado }) {
   return (
     <section className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 sm:p-5">
       <h3 className="text-sm font-semibold text-slate-300">De qué presupuesto salió</h3>
-      <div className="mt-3 space-y-4">
+      <div className="mt-3 space-y-6">
         {grupos.map(([grupo, { total: totalGrupo, subcategorias }]) => (
           <div key={grupo}>
             <div className="flex items-baseline justify-between gap-3">
@@ -34,11 +34,18 @@ function DesgloseGrupos({ porGrupo, total, privado }) {
             <div className="mt-1.5 h-1.5 rounded-full bg-slate-700/60 overflow-hidden">
               <div className="h-full rounded-full bg-teal-400/70" style={{ width: `${total ? (totalGrupo / total) * 100 : 0}%` }} />
             </div>
-            <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+            <div className="mt-3 grid gap-x-8 gap-y-2 sm:grid-cols-2">
               {Object.entries(subcategorias).sort((a, b) => b[1] - a[1]).map(([sub, monto]) => (
-                <span key={sub} className="text-xs text-slate-500">
-                  {sub} <span className="font-mono-numbers text-slate-400">{privacyFormat(monto, privado)}</span>
-                </span>
+                <div key={sub} className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-3">
+                  <span className="truncate text-xs text-slate-400" title={sub}>{sub}</span>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-700/50">
+                    <div className="h-full rounded-full bg-indigo-400/80" style={{ width: `${totalGrupo ? (monto / totalGrupo) * 100 : 0}%` }} />
+                  </div>
+                  <span className="text-right text-xs font-mono-numbers text-slate-300">
+                    {privacyFormat(monto, privado)}
+                    <span className="ml-1.5 text-slate-500">{totalGrupo ? Math.round((monto / totalGrupo) * 100) : 0}%</span>
+                  </span>
+                </div>
               ))}
             </div>
           </div>

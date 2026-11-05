@@ -256,7 +256,10 @@ múltiple), editando un gasto, o sola al crear un gasto mientras un viaje está 
 pestaña **Resumen** es el dashboard de todos los viajes (`resumirTodosLosViajes`): KPIs (total,
 promedio por viaje, gasto por día, % desde ALE), costo por viaje apilado ALE/VIAJES/otros,
 comparación, subcategorías sumadas entre grupos y los gastos agrupados por viaje; filtro por año
-de salida. La pestaña **Por viaje** es el detalle de uno. API:
+de salida. La pestaña **Por viaje** es el detalle de uno: arriba un selector de cuadrados compactos en una sola
+fila con scroll horizontal (emoji, nombre, fecha de salida y días, total y barra de presupuesto), y
+abajo el detalle, donde "De qué presupuesto salió" muestra cada grupo con su barra y, debajo, una
+barra por subcategoría (monto y % del grupo). API:
 `/api/viajes` (ver `docs/architecture/integrations.md`). Modelo en `data_model_context.md`.
 
 ## API — Clases particulares
