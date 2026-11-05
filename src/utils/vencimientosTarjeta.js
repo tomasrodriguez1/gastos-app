@@ -70,6 +70,8 @@ export function nivelVencimiento(dias, diasAviso = DIAS_AVISO_VENCIMIENTO) {
  * gastos: gastos de cualquier banco (se filtran los de tarjeta impagos y no descartados).
  * ciclos / diasPago: banco → día de cierre / día de pago.
  * saldoFondoClp: saldo CLP del fondo de tarjeta.
+ * abonos: { CLP, USD } abonos ya depositados en las tarjetas y sin aplicar. Cuentan como cobertura
+ * extra; el USD se valora con `tipoCambioUsd` (aproximación, igual que un gasto USD sin equivalente).
  *
  * Un gasto en USD usa su `monto_clp_manual`; si no lo tiene se estima con `tipoCambioUsd` (950 por
  * defecto) y se cuenta en `usdEstimado`. Los gastos de una tarjeta sin cierre o sin día de pago
@@ -84,6 +86,7 @@ export function calcularVencimientosTarjeta({
   ciclos = {},
   diasPago = {},
   saldoFondoClp = 0,
+  abonos = null,
   hoyISO = hoyLocalISO(),
   diasAviso = DIAS_AVISO_VENCIMIENTO,
   tipoCambioUsd = TIPO_CAMBIO_USD_DEFAULT,
@@ -131,7 +134,8 @@ export function calcularVencimientosTarjeta({
     grupos.set(clave, grupo)
   }
 
-  const saldo = numero(saldoFondoClp)
+  const abonosClp = Math.round(Math.max(0, numero(abonos?.CLP)) + Math.max(0, numero(abonos?.USD)) * (usdEstimado.tipoCambio || 0))
+  const saldo = numero(saldoFondoClp) + abonosClp
   let acumulado = 0
   const vencimientos = [...grupos.values()]
     .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.banco.localeCompare(b.banco))
@@ -156,6 +160,7 @@ export function calcularVencimientosTarjeta({
     usdEstimado: { ...usdEstimado, usd: Math.round(usdEstimado.usd * 100) / 100 },
     usdSinConvertir,
     faltanteTotal: Math.max(0, acumulado + sinFecha.total - saldo),
-    saldoFondoClp: saldo,
+    saldoFondoClp: numero(saldoFondoClp),
+    abonosClp,
   }
 }

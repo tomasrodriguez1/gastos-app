@@ -72,13 +72,13 @@ function Segmento({ opciones, valor, onChange, ariaLabel }) {
   )
 }
 
-export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, catalogos, nombresFondos = [] }) {
+export function TablaTarjeta({ gastos, tipoCambio, saldosAbonos, onActualizarGasto, onPagar, catalogos, nombresFondos = [] }) {
   const [filtroBanco, setFiltroBanco] = useState('Todos')
   const [filtroMoneda, setFiltroMoneda] = useState('Todas')
   const [filtroFacturado, setFiltroFacturado] = useState('todos')
   const [seleccionados, setSeleccionados] = useState(new Set())
   const [totalOperacion, setTotalOperacion] = useState('')
-  const [origenPago, setOrigenPago] = useState('fondo')
+  const [origenElegido, setOrigenElegido] = useState('fondo')
   const [editandoId, setEditandoId] = useState(null)
   const [editando, setEditando] = useState(null)
   const [valorSplit, setValorSplit] = useState('')
@@ -102,6 +102,10 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
   const bancoUnico = bancosSeleccion.length === 1 ? bancosSeleccion[0] : null
   const monedaUnica = monedasSeleccion.length === 1 ? monedasSeleccion[0] : null
   const totalSeleccionado = sumarMontos(seleccion)
+  // "Con abonos" solo aparece si hay algún abono sin aplicar; el saldo mostrado es el del banco y moneda elegidos.
+  const hayAbonos = BANCOS.some(banco => MONEDAS.some(moneda => Number(saldosAbonos?.[banco]?.[moneda]) > 0))
+  const abonoDisponible = bancoUnico && monedaUnica ? Number(saldosAbonos?.[bancoUnico]?.[monedaUnica]) || 0 : null
+  const origenPago = origenElegido === 'abonos' && !hayAbonos ? 'fondo' : origenElegido
   const idsFiltrados = filasFiltradas.map(({ id }) => id)
   const todosMarcados = idsFiltrados.length > 0 && idsFiltrados.every(id => seleccionados.has(id))
   const puedeSeleccionarTodos = filtroBanco !== 'Todos' && filtroMoneda !== 'Todas'
@@ -172,7 +176,7 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
     setProcesando(true)
     setError('')
     try {
-      await onPagar(bancoUnico, monedaUnica, idsSeleccionados, Number(totalOperacion), origenPago === 'fondo')
+      await onPagar(bancoUnico, monedaUnica, idsSeleccionados, Number(totalOperacion), origenPago)
       aplicarSeleccion([])
     } catch (e) {
       const detalle = e.detalle
@@ -282,9 +286,10 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
                 opciones={[
                   { value: 'fondo', label: 'Desde el fondo' },
                   { value: 'directo', label: monedaUnica === 'USD' ? 'Directo en USD' : monedaUnica === 'CLP' ? 'Directo en pesos' : 'Directo' },
+                  ...(hayAbonos ? [{ value: 'abonos', label: 'Con abonos' }] : []),
                 ]}
                 valor={origenPago}
-                onChange={setOrigenPago}
+                onChange={setOrigenElegido}
                 ariaLabel="Origen del pago"
               />
             </div>
@@ -296,9 +301,9 @@ export function TablaTarjeta({ gastos, tipoCambio, onActualizarGasto, onPagar, c
           </div>
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          {origenPago === 'fondo'
-            ? 'Descuenta el pago del fondo en pesos (los USD se convierten con su equivalente o el tipo de cambio).'
-            : 'Pagado directo en el banco: marca los movimientos como pagados sin descontar del fondo ni pedir tipo de cambio.'}
+          {origenPago === 'fondo' && 'Descuenta el pago del fondo en pesos (los USD se convierten con su equivalente o el tipo de cambio).'}
+          {origenPago === 'directo' && 'Pagado directo en el banco: marca los movimientos como pagados sin descontar del fondo ni pedir tipo de cambio.'}
+          {origenPago === 'abonos' && `Usa los abonos ya registrados: marca los movimientos como pagados y consume el abono, sin descontar del fondo.${abonoDisponible == null ? '' : ` Abono disponible: ${formatMonto(abonoDisponible, monedaUnica)}.`}`}
         </p>
         {seleccionInvalida && <p className="mt-3 text-xs text-amber-400">Seleccioná movimientos de un solo banco y una sola moneda para registrar el pago.</p>}
         {error && <p className="mt-3 text-xs text-rose-400">{error}</p>}

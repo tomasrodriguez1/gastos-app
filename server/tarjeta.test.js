@@ -178,11 +178,39 @@ describe('endpoints de ciclo de facturación', () => {
   })
 })
 
-function dbFalsa(filasIniciales, movimientosIniciales = []) {
+function dbFalsa(filasIniciales, movimientosIniciales = [], abonosIniciales = []) {
   const filas = filasIniciales.map(fila => ({ ...fila }))
   const movimientos = movimientosIniciales.map(mov => ({ ...mov }))
+  const abonos = abonosIniciales.map((abono, i) => ({ id: i + 1, fecha: '2026-11-01', nota: null, ...abono }))
   const db = async (strings, ...values) => {
     const consulta = strings.join('?')
+    if (consulta.includes('FROM tarjeta_abono WHERE banco')) {
+      const saldo = abonos.filter(a => a.banco === values[0] && a.moneda === values[1]).reduce((s, a) => s + Number(a.monto), 0)
+      return [{ saldo: String(saldo) }]
+    }
+    if (consulta.includes('FROM tarjeta_abono GROUP BY')) {
+      const grupos = {}
+      for (const a of abonos) {
+        const clave = `${a.banco}|${a.moneda}`
+        grupos[clave] = { banco: a.banco, moneda: a.moneda, saldo: (grupos[clave]?.saldo || 0) + Number(a.monto) }
+      }
+      return Object.values(grupos).map(g => ({ ...g, saldo: String(g.saldo) }))
+    }
+    if (consulta.includes('INSERT INTO tarjeta_abono')) {
+      const fila = {
+        id: abonos.length + 1,
+        fecha: values[0], banco: values[1], moneda: values[2], monto: values[3], nota: values[4],
+        tipo: consulta.includes("'aplicacion'") ? 'aplicacion' : 'abono',
+      }
+      abonos.push(fila)
+      return [fila]
+    }
+    if (consulta.includes('FROM tarjeta_abono ORDER BY')) return [...abonos].reverse()
+    if (consulta.includes('SELECT * FROM tarjeta_abono WHERE id')) return abonos.filter(a => a.id === values[0])
+    if (consulta.includes('DELETE FROM tarjeta_abono')) {
+      abonos.splice(abonos.findIndex(a => a.id === values[0]), 1)
+      return []
+    }
     if (consulta.includes('SUM(monto)')) {
       const porMoneda = {}
       for (const mov of movimientos) porMoneda[mov.moneda] = (porMoneda[mov.moneda] || 0) + Number(mov.monto)
@@ -219,7 +247,7 @@ function dbFalsa(filasIniciales, movimientosIniciales = []) {
     throw new Error(`Consulta no contemplada en test: ${consulta}`)
   }
   db.begin = callback => callback(db)
-  return { db, filas, movimientos }
+  return { db, filas, movimientos, abonos }
 }
 
 function post(router, ruta, body) {
@@ -308,7 +336,7 @@ describe('operaciones transaccionales de tarjeta', () => {
     })
 
     expect(respuesta.status).toBe(200)
-    expect(await respuesta.json()).toMatchObject({ total: 12.5, total_fondo_clp: 0, desde_fondo: false })
+    expect(await respuesta.json()).toMatchObject({ total: 12.5, total_fondo_clp: 0, origen: 'directo' })
     expect(filas[0].pagado).toBe(true)
     expect(movimientos).toHaveLength(0)
   })
@@ -397,5 +425,91 @@ describe('fondo de tarjetas', () => {
     expect((await router.request('/fondo/movimientos/1', { method: 'DELETE' })).status).toBe(200)
     expect(movimientos.map(mov => mov.id)).toEqual([2])
     expect((await router.request('/fondo/movimientos/99', { method: 'DELETE' })).status).toBe(404)
+  })
+})
+
+describe('abonos a la tarjeta', () => {
+  test('un abono en USD suma al saldo del banco sin tocar el fondo', async () => {
+    const { db, movimientos } = dbFalsa([])
+    const router = createTarjetaRouter({ db })
+    const respuesta = await post(router, '/abonos', { banco: 'Edwards', moneda: 'USD', monto: 170, nota: 'depósito en el banco' })
+    expect(respuesta.status).toBe(200)
+    expect(movimientos).toHaveLength(0)
+
+    const abonos = await (await router.request('/abonos')).json()
+    expect(abonos.saldos.Edwards).toEqual({ CLP: 0, USD: 170 })
+    expect(abonos.saldos.BICE).toEqual({ CLP: 0, USD: 0 })
+    expect(abonos.movimientos[0]).toMatchObject({ banco: 'Edwards', moneda: 'USD', tipo: 'abono', monto: 170, nota: 'depósito en el banco' })
+  })
+
+  test('rechaza abonos con banco, moneda, monto o fecha inválidos', async () => {
+    const { db, abonos } = dbFalsa([])
+    const router = createTarjetaRouter({ db })
+    expect((await post(router, '/abonos', { banco: 'Otro', moneda: 'USD', monto: 10 })).status).toBe(400)
+    expect((await post(router, '/abonos', { banco: 'Edwards', moneda: 'EUR', monto: 10 })).status).toBe(400)
+    expect((await post(router, '/abonos', { banco: 'Edwards', moneda: 'USD', monto: 0 })).status).toBe(400)
+    expect((await post(router, '/abonos', { banco: 'Edwards', moneda: 'USD', monto: -5 })).status).toBe(400)
+    expect((await post(router, '/abonos', { banco: 'Edwards', moneda: 'USD', monto: 10, fecha: '01-11-2026' })).status).toBe(400)
+    expect(abonos).toHaveLength(0)
+  })
+
+  test('pagar con abonos marca los movimientos y consume el saldo', async () => {
+    const { db, filas, movimientos, abonos } = dbFalsa(
+      [gasto({ id: 'usd-1', monto: 0, usd: 100 }), gasto({ id: 'usd-2', monto: 0, usd: 50 })],
+      [],
+      [{ banco: 'Edwards', moneda: 'USD', tipo: 'abono', monto: 170 }],
+    )
+    const router = createTarjetaRouter({ db })
+    const respuesta = await post(router, '/pagar', {
+      banco: 'Edwards', moneda: 'USD', gasto_ids: ['usd-1', 'usd-2'], total_pagado: 150, origen: 'abonos',
+    })
+
+    expect(respuesta.status).toBe(200)
+    expect(filas.every(fila => fila.pagado)).toBe(true)
+    expect(movimientos).toHaveLength(0)
+    expect(abonos.at(-1)).toMatchObject({ tipo: 'aplicacion', monto: -150, banco: 'Edwards', moneda: 'USD' })
+    expect((await (await router.request('/abonos')).json()).saldos.Edwards.USD).toBe(20)
+  })
+
+  test('pagar con abonos falla si el saldo del banco y moneda no alcanza', async () => {
+    const { db, filas, abonos } = dbFalsa(
+      [gasto({ id: 'usd-1', monto: 0, usd: 100 })],
+      [],
+      [{ banco: 'Edwards', moneda: 'USD', tipo: 'abono', monto: 50 }, { banco: 'BICE', moneda: 'USD', tipo: 'abono', monto: 500 }],
+    )
+    const router = createTarjetaRouter({ db })
+    const respuesta = await post(router, '/pagar', {
+      banco: 'Edwards', moneda: 'USD', gasto_ids: ['usd-1'], total_pagado: 100, origen: 'abonos',
+    })
+
+    expect(respuesta.status).toBe(409)
+    expect((await respuesta.json()).abono_disponible).toBe(50)
+    expect(filas[0].pagado).toBe(false)
+    expect(abonos).toHaveLength(2)
+  })
+
+  test('rechaza un origen de pago desconocido', async () => {
+    const { db } = dbFalsa([gasto({ id: 'g-1', monto: 1000 })])
+    const router = createTarjetaRouter({ db })
+    const respuesta = await post(router, '/pagar', {
+      banco: 'Edwards', moneda: 'CLP', gasto_ids: ['g-1'], total_pagado: 1000, origen: 'trueque',
+    })
+    expect(respuesta.status).toBe(400)
+  })
+
+  test('borra un abono libre pero no una aplicación ni uno ya consumido', async () => {
+    const { db, abonos } = dbFalsa([], [], [
+      { banco: 'Edwards', moneda: 'USD', tipo: 'abono', monto: 100 },
+      { banco: 'Edwards', moneda: 'USD', tipo: 'aplicacion', monto: -80 },
+      { banco: 'BICE', moneda: 'CLP', tipo: 'abono', monto: 5000 },
+    ])
+    const router = createTarjetaRouter({ db })
+    const borrar = id => router.request(`/abonos/${id}`, { method: 'DELETE' })
+
+    expect((await borrar(2)).status).toBe(409) // aplicación
+    expect((await borrar(1)).status).toBe(409) // saldo 20 < 100: ya se consumió
+    expect((await borrar(3)).status).toBe(200) // libre
+    expect((await borrar(99)).status).toBe(404)
+    expect(abonos.map(a => a.id)).toEqual([1, 2])
   })
 })

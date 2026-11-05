@@ -148,6 +148,7 @@ export function ResumenGlobalTarjeta({ deuda, porBanco, tipoCambio, onTipoCambio
                 <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Deuda en CLP</div>
                 <div className="mt-2 font-mono-numbers text-2xl font-bold text-sky-300">{oculto(formatMontoTarjeta(deudaClp, 'CLP'))}</div>
                 <div className="mt-1 text-sm text-slate-500">En pesos</div>
+                {deuda.abonadoClp > 0 && <div className="mt-1 font-mono-numbers text-xs text-emerald-400">Ya descontados {oculto(formatMontoTarjeta(deuda.abonadoClp, 'CLP'))} abonados</div>}
               </div>
               <div className="mt-5">
                 <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
@@ -164,6 +165,7 @@ export function ResumenGlobalTarjeta({ deuda, porBanco, tipoCambio, onTipoCambio
                 <div className="text-xs font-medium uppercase tracking-wider text-slate-500">Deuda en USD</div>
                 <div className="mt-2 font-mono-numbers text-2xl font-bold text-violet-300">{oculto(formatMontoTarjeta(deuda.usd || 0, 'USD'))}</div>
                 <div className="mt-1 font-mono-numbers text-sm text-slate-500">{deuda.parcial ? 'Conversión pendiente' : `≈ ${oculto(formatCLP(deudaUsdClp))}`}</div>
+                {deuda.abonadoUsd > 0 && <div className="mt-1 font-mono-numbers text-xs text-emerald-400">Ya descontados {oculto(formatMontoTarjeta(deuda.abonadoUsd, 'USD'))} abonados</div>}
               </div>
               <div className="mt-5">
                 <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">

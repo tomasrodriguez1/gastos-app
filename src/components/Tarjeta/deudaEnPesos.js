@@ -34,10 +34,26 @@ export function fondoEnPesos(saldos, tipoCambio) {
   }
 }
 
-export function deudaEnPesos(gastos, { bancos = [], tipoCambio = null, ciclos = {}, hoyISO = new Date().toISOString().slice(0, 10) } = {}) {
+// Suma los saldos de abonos (banco → { CLP, USD }) de los bancos pedidos.
+export function saldoAbonos(saldos, bancos) {
+  const suma = { CLP: 0, USD: 0 }
+  for (const banco of bancos || []) {
+    suma.CLP += Math.max(0, numero(saldos?.[banco]?.CLP))
+    suma.USD += Math.max(0, numero(saldos?.[banco]?.USD))
+  }
+  suma.USD = redondearUsd(suma.USD)
+  return suma
+}
+
+// `abonos` = { CLP, USD }: saldo de abonos sin aplicar de esos bancos. Baja la deuda de cada moneda
+// (nunca bajo cero) y el sobrante queda como saldo a favor. Los USD abonados descuentan en la misma
+// proporción su equivalente en pesos, sea propio o por tasa.
+export function deudaEnPesos(gastos, { bancos = [], tipoCambio = null, ciclos = {}, abonos = null, hoyISO = new Date().toISOString().slice(0, 10) } = {}) {
   const tc = numero(tipoCambio) > 0 ? numero(tipoCambio) : null
   const resultado = {
     total: 0,
+    abonadoClp: 0,
+    abonadoUsd: 0,
     facturado: 0,
     clp: 0,
     usdPropioClp: 0,
@@ -97,7 +113,29 @@ export function deudaEnPesos(gastos, { bancos = [], tipoCambio = null, ciclos = 
   resultado.usdPropioUsd = redondearUsd(resultado.usdPropioUsd)
   resultado.usdTasaUsd = redondearUsd(resultado.usdTasaUsd)
   resultado.sinConvertirUsd = redondearUsd(resultado.sinConvertirUsd)
+  const totalBruto = resultado.clp + resultado.usdPropioClp + resultado.usdTasaClp
+
+  const abonoClp = Math.min(Math.max(0, Math.round(numero(abonos?.CLP))), resultado.clp)
+  resultado.abonadoClp = abonoClp
+  resultado.clp -= abonoClp
+
+  const usdBruto = redondearUsd(resultado.usdPropioUsd + resultado.usdTasaUsd + resultado.sinConvertirUsd)
+  const abonoUsd = Math.min(Math.max(0, redondearUsd(numero(abonos?.USD))), usdBruto)
+  if (abonoUsd > 0) {
+    const factor = (usdBruto - abonoUsd) / usdBruto
+    resultado.abonadoUsd = abonoUsd
+    resultado.usdPropioClp = Math.round(resultado.usdPropioClp * factor)
+    resultado.usdTasaClp = Math.round(resultado.usdTasaClp * factor)
+    resultado.usdPropioUsd = redondearUsd(resultado.usdPropioUsd * factor)
+    resultado.usdTasaUsd = redondearUsd(resultado.usdTasaUsd * factor)
+    resultado.sinConvertirUsd = redondearUsd(resultado.sinConvertirUsd * factor)
+    // Con todo el USD abonado ya no hay nada que convertir, aunque los movimientos sigan pendientes.
+    if (factor === 0) resultado.sinConvertir = 0
+  }
+
   resultado.total = resultado.clp + resultado.usdPropioClp + resultado.usdTasaClp
+  // Los abonos pagan primero lo más antiguo: bajan lo facturado antes que lo no facturado.
+  resultado.facturado = Math.max(0, resultado.facturado - (totalBruto - resultado.total))
   resultado.usd = redondearUsd(resultado.usdPropioUsd + resultado.usdTasaUsd + resultado.sinConvertirUsd)
   resultado.movimientosUsd = resultado.movimientosUsdPropio + resultado.movimientosUsdTasa + resultado.sinConvertir
   resultado.parcial = resultado.sinConvertir > 0

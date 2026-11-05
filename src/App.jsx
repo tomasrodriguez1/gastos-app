@@ -28,7 +28,8 @@ import { useFGP } from './hooks/useFGP'
 import { useResumenIngresos } from './hooks/useIngresos'
 import { AvisoFGP } from './components/shared/AvisoFGP'
 import { calcularFondoFGP } from './utils/fgp'
-import { calcularVencimientosTarjeta } from './utils/vencimientosTarjeta'
+import { BANCOS_TARJETA, calcularVencimientosTarjeta } from './utils/vencimientosTarjeta'
+import { saldoAbonos } from './components/Tarjeta/deudaEnPesos'
 import { cargarReglas } from './utils/mapeo'
 import { calcularSaldosCiclo, calcularTotalMes } from './utils/calculos'
 import { obtenerCicloActual } from './utils/ciclos'
@@ -106,6 +107,7 @@ export default function App() {
     ciclos: reconciliacion.ciclos,
     diasPago: reconciliacion.diasPago,
     saldoFondoClp: reconciliacion.fondo?.saldos?.CLP || 0,
+    abonos: saldoAbonos(reconciliacion.abonos?.saldos, BANCOS_TARJETA),
   })
 
   const sharedProps = {

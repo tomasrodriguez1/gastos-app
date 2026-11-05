@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { ResumenGlobalTarjeta } from '../components/Tarjeta/ResumenGlobalTarjeta'
-import { deudaEnPesos } from '../components/Tarjeta/deudaEnPesos'
+import { deudaEnPesos, saldoAbonos } from '../components/Tarjeta/deudaEnPesos'
 import { TablaTarjeta } from '../components/Tarjeta/TablaTarjeta'
 import { CicloChip } from '../components/Tarjeta/CicloChip'
 import { ProximoVencimiento } from '../components/Tarjeta/ProximoVencimiento'
+import { AbonosTarjeta } from '../components/Tarjeta/AbonosTarjeta'
 import { HistorialFondoCompleto } from '../components/Tarjeta/HistorialFondoCompleto'
 import { formatMontoTarjeta } from '../components/Tarjeta/formato'
 import { usePrivacyMode } from '../contexts/PrivacyModeContext'
@@ -38,16 +39,18 @@ export function TarjetaPage({ gastos, reconciliacion, vencimientos, onActualizar
   const tasaValida = tipoCambio.trim() !== '' && Number.isFinite(tasa) && tasa > 0 ? tasa : null
   const totales = useMemo(() => reconciliacion.resumen?.totales || { CLP: VACIO, USD: VACIO }, [reconciliacion.resumen])
 
+  const saldosAbonos = reconciliacion.abonos?.saldos
+
   const deuda = useMemo(
-    () => deudaEnPesos(gastos, { bancos: BANCOS, tipoCambio: tasaValida, ciclos: ciclosCierre }),
-    [gastos, tasaValida, ciclosCierre],
+    () => deudaEnPesos(gastos, { bancos: BANCOS, tipoCambio: tasaValida, ciclos: ciclosCierre, abonos: saldoAbonos(saldosAbonos, BANCOS) }),
+    [gastos, tasaValida, ciclosCierre, saldosAbonos],
   )
 
   // Deuda global y tarjetas por banco salen de la misma lista de gastos para que siempre cuadren.
   const porBanco = useMemo(() => BANCOS.map(banco => ({
     banco,
-    deudaPesos: deudaEnPesos(gastos, { bancos: [banco], tipoCambio: tasaValida, ciclos: ciclosCierre }),
-  })), [gastos, tasaValida, ciclosCierre])
+    deudaPesos: deudaEnPesos(gastos, { bancos: [banco], tipoCambio: tasaValida, ciclos: ciclosCierre, abonos: saldoAbonos(saldosAbonos, [banco]) }),
+  })), [gastos, tasaValida, ciclosCierre, saldosAbonos])
 
   const nombresFondos = useMemo(() => {
     const set = new Set()
@@ -71,8 +74,8 @@ export function TarjetaPage({ gastos, reconciliacion, vencimientos, onActualizar
     await reconciliacion.refrescar()
   }
 
-  async function registrarPago(banco, moneda, gastoIds, total, desdeFondo = true) {
-    const resultado = await reconciliacion.pagar({ banco, moneda, gasto_ids: gastoIds, total_pagado: total, tipo_cambio: tasaValida, desde_fondo: desdeFondo })
+  async function registrarPago(banco, moneda, gastoIds, total, origen = 'fondo') {
+    const resultado = await reconciliacion.pagar({ banco, moneda, gasto_ids: gastoIds, total_pagado: total, tipo_cambio: tasaValida, origen })
     await onRefetchGastos()
     return resultado
   }
@@ -106,8 +109,16 @@ export function TarjetaPage({ gastos, reconciliacion, vencimientos, onActualizar
         onAjustarSaldo={reconciliacion.ajustarSaldoFondo}
       />
 
+      <AbonosTarjeta
+        bancos={BANCOS}
+        abonos={reconciliacion.abonos}
+        onAbonar={reconciliacion.abonar}
+        onEliminar={reconciliacion.eliminarAbono}
+      />
+
       <TablaTarjeta
         gastos={pendientes}
+        saldosAbonos={saldosAbonos}
         tipoCambio={tasaValida}
         onActualizarGasto={actualizarGasto}
         onPagar={registrarPago}

@@ -148,3 +148,28 @@ describe('calcularVencimientosTarjeta', () => {
     expect(calcularVencimientosTarjeta({ gastos, ciclos, diasPago: { Edwards: 5 }, saldoFondoClp: 120000, hoyISO: '2026-10-16' }).faltanteTotal).toBe(40000)
   })
 })
+
+describe('abonos en los vencimientos', () => {
+  const base = {
+    gastos: [{ banco: 'Edwards', monto: 0, usd: 100, monto_clp_manual: 95000, fecha: '2026-09-10' }],
+    ciclos: { Edwards: 22 },
+    diasPago: { Edwards: 5 },
+    hoyISO: '2026-10-01',
+  }
+
+  test('un abono en USD cuenta como cobertura extra del fondo', () => {
+    const sinAbono = calcularVencimientosTarjeta({ ...base, saldoFondoClp: 0 })
+    expect(sinAbono.faltanteTotal).toBe(95000)
+
+    const conAbono = calcularVencimientosTarjeta({ ...base, saldoFondoClp: 0, abonos: { CLP: 0, USD: 100 } })
+    expect(conAbono.abonosClp).toBe(95000)
+    expect(conAbono.faltanteTotal).toBe(0)
+    expect(conAbono.proximo).toBeNull()
+    expect(conAbono.saldoFondoClp).toBe(0)
+  })
+
+  test('suma abonos en CLP al fondo', () => {
+    const resultado = calcularVencimientosTarjeta({ ...base, saldoFondoClp: 50000, abonos: { CLP: 20000, USD: 0 } })
+    expect(resultado.faltanteTotal).toBe(25000)
+  })
+})

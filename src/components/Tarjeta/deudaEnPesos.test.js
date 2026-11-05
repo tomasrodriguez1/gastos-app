@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { deudaEnPesos, fondoEnPesos } from './deudaEnPesos'
+import { deudaEnPesos, fondoEnPesos, saldoAbonos } from './deudaEnPesos'
 
 const bancos = ['Edwards', 'BICE']
 
@@ -115,6 +115,75 @@ describe('deudaEnPesos', () => {
 
     expect(deuda.facturado).toBe(0)
     expect(deuda.total).toBe(1000)
+  })
+})
+
+describe('abonos en la deuda', () => {
+  const gastosUsd = [
+    { banco: 'Edwards', monto: 0, usd: 200, monto_clp_manual: 190000, fecha: '2026-09-01' },
+    { banco: 'Edwards', monto: 0, usd: 50, monto_clp_manual: 47500, fecha: '2026-10-20' },
+  ]
+
+  test('un abono en USD baja la deuda en dólares y su equivalente en pesos', () => {
+    const deuda = deudaEnPesos(gastosUsd, { bancos, abonos: { CLP: 0, USD: 170 } })
+
+    expect(deuda.usd).toBe(80)
+    expect(deuda.abonadoUsd).toBe(170)
+    expect(deuda.total).toBe(76000) // 80 de 250 USD a 950
+    expect(deuda.movimientosUsd).toBe(2)
+  })
+
+  test('un abono en CLP baja solo la deuda en pesos', () => {
+    const deuda = deudaEnPesos([
+      { banco: 'Edwards', monto: 10000 },
+      { banco: 'Edwards', monto: 0, usd: 10, monto_clp_manual: 9500 },
+    ], { bancos, abonos: { CLP: 4000, USD: 0 } })
+
+    expect(deuda.clp).toBe(6000)
+    expect(deuda.abonadoClp).toBe(4000)
+    expect(deuda.usd).toBe(10)
+    expect(deuda.total).toBe(15500)
+  })
+
+  test('un abono mayor a la deuda la deja en cero y no inventa deuda negativa', () => {
+    const deuda = deudaEnPesos(gastosUsd, { bancos, abonos: { CLP: 5000, USD: 999 } })
+
+    expect(deuda.usd).toBe(0)
+    expect(deuda.abonadoUsd).toBe(250)
+    expect(deuda.abonadoClp).toBe(0)
+    expect(deuda.total).toBe(0)
+  })
+
+  test('el abono en USD cubre también lo que no tiene tipo de cambio', () => {
+    const deuda = deudaEnPesos([{ banco: 'BICE', monto: 0, usd: 30 }], { bancos, abonos: { CLP: 0, USD: 30 } })
+
+    expect(deuda.usd).toBe(0)
+    expect(deuda.sinConvertir).toBe(0)
+    expect(deuda.parcial).toBe(false)
+  })
+
+  test('los abonos bajan primero lo facturado', () => {
+    const deuda = deudaEnPesos([
+      { banco: 'Edwards', monto: 10000, fecha: '2026-09-20' },
+      { banco: 'Edwards', monto: 4000, fecha: '2026-10-10' },
+    ], { bancos, ciclos: { Edwards: 22 }, hoyISO: '2026-10-13', abonos: { CLP: 3000, USD: 0 } })
+
+    expect(deuda.facturado).toBe(7000)
+    expect(deuda.total).toBe(11000)
+  })
+
+  test('sin abonos nada cambia', () => {
+    const deuda = deudaEnPesos(gastosUsd, { bancos })
+    expect(deuda.usd).toBe(250)
+    expect(deuda.abonadoUsd).toBe(0)
+    expect(deuda.total).toBe(237500)
+  })
+
+  test('saldoAbonos suma los bancos pedidos e ignora saldos negativos', () => {
+    const saldos = { Edwards: { CLP: 1000, USD: 170 }, BICE: { CLP: -50, USD: 30.5 } }
+    expect(saldoAbonos(saldos, ['Edwards', 'BICE'])).toEqual({ CLP: 1000, USD: 200.5 })
+    expect(saldoAbonos(saldos, ['BICE'])).toEqual({ CLP: 0, USD: 30.5 })
+    expect(saldoAbonos(undefined, ['Edwards'])).toEqual({ CLP: 0, USD: 0 })
   })
 })
 

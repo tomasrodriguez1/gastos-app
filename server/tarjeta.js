@@ -5,6 +5,7 @@ import { cierreDelPeriodo } from '../src/utils/vencimientosTarjeta.js'
 
 export const BANCOS_TARJETA = ['Edwards', 'BICE']
 export const MONEDAS_TARJETA = ['CLP', 'USD']
+const ORIGENES_PAGO = ['fondo', 'directo', 'abonos']
 const SIN_CLASIFICAR = 'SIN CLASIFICAR'
 
 function tiposDe(row) {
@@ -181,9 +182,11 @@ function validarPago(body) {
   if (totalUnidades == null) return { error: 'Total inválido' }
   const tipoCambio = body?.tipo_cambio == null || body.tipo_cambio === '' ? null : Number(body.tipo_cambio)
   if (tipoCambio != null && (!Number.isFinite(tipoCambio) || tipoCambio <= 0)) return { error: 'Tipo de cambio inválido' }
-  // Por defecto el pago sale del fondo; `desde_fondo: false` es un pago directo en el banco.
-  const desdeFondo = body?.desde_fondo !== false
-  return { banco, moneda, ids, totalUnidades, tipoCambio, desdeFondo }
+  // 'fondo' (default) descuenta del fondo; 'directo' es plata pagada en el banco sin registro previo;
+  // 'abonos' consume abonos ya registrados. `desde_fondo: false` se mantiene como alias de 'directo'.
+  const origen = body?.origen ?? (body?.desde_fondo === false ? 'directo' : 'fondo')
+  if (!ORIGENES_PAGO.includes(origen)) return { error: 'Origen de pago no permitido' }
+  return { banco, moneda, ids, totalUnidades, tipoCambio, origen }
 }
 
 function importePagoFondoClp(row, tipoCambio) {
@@ -234,6 +237,31 @@ async function saldosFondo(db) {
   const saldos = Object.fromEntries(MONEDAS_TARJETA.map(moneda => [moneda, 0]))
   for (const row of rows) {
     if (MONEDAS_TARJETA.includes(row.moneda)) saldos[row.moneda] = toMonto(row.saldo) || 0
+  }
+  return saldos
+}
+
+function serializarAbono(row) {
+  return {
+    id: row.id,
+    fecha: row.fecha,
+    banco: row.banco,
+    moneda: row.moneda,
+    tipo: row.tipo,
+    monto: toMonto(row.monto),
+    nota: row.nota || null,
+  }
+}
+
+// Saldo de abonos sin aplicar por banco y moneda: SUM(monto) del libro, nunca persistido.
+async function saldosAbonos(db) {
+  const rows = await db`SELECT banco, moneda, COALESCE(SUM(monto), 0) AS saldo FROM tarjeta_abono GROUP BY banco, moneda`
+  const saldos = Object.fromEntries(BANCOS_TARJETA.map(banco => [
+    banco,
+    Object.fromEntries(MONEDAS_TARJETA.map(moneda => [moneda, 0])),
+  ]))
+  for (const row of rows) {
+    if (saldos[row.banco] && MONEDAS_TARJETA.includes(row.moneda)) saldos[row.banco][row.moneda] = toMonto(row.saldo) || 0
   }
   return saldos
 }
@@ -336,6 +364,49 @@ export function createTarjetaRouter({ db = sql } = {}) {
     return c.json({ ok: true })
   })
 
+  router.get('/abonos', async (c) => {
+    const [saldos, movimientos] = await Promise.all([
+      saldosAbonos(db),
+      db`SELECT * FROM tarjeta_abono ORDER BY fecha DESC, id DESC LIMIT 50`,
+    ])
+    return c.json({ saldos, movimientos: movimientos.map(serializarAbono) })
+  })
+
+  // Un abono baja la deuda de ese banco y moneda sin tocar el fondo ni elegir movimientos.
+  router.post('/abonos', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    const { banco, moneda } = body
+    if (!BANCOS_TARJETA.includes(banco)) return respuestaError(c, 'Banco no permitido')
+    if (!MONEDAS_TARJETA.includes(moneda)) return respuestaError(c, 'Moneda no permitida')
+    const unidades = unidadesDesdeTotal(body.monto, moneda)
+    if (unidades == null || unidades <= 0) return respuestaError(c, 'El abono debe ser un monto positivo')
+    const fecha = body.fecha ?? hoyISO()
+    if (!fechaValida(fecha)) return respuestaError(c, 'Fecha inválida (YYYY-MM-DD)')
+    const nota = typeof body.nota === 'string' && body.nota.trim() ? body.nota.trim().slice(0, 200) : null
+    const [row] = await db`
+      INSERT INTO tarjeta_abono (fecha, banco, moneda, tipo, monto, nota)
+      VALUES (${fecha}, ${banco}, ${moneda}, 'abono', ${desdeUnidades(unidades, moneda)}, ${nota})
+      RETURNING *
+    `
+    return c.json({ ok: true, abono: serializarAbono(row) })
+  })
+
+  // Las aplicaciones quedan atadas a gastos marcados pagado, igual que los pagos del fondo.
+  router.delete('/abonos/:id', async (c) => {
+    const id = Number(c.req.param('id'))
+    if (!Number.isInteger(id) || id <= 0) return respuestaError(c, 'Id inválido')
+    const [row] = await db`SELECT * FROM tarjeta_abono WHERE id = ${id}`
+    if (!row) return respuestaError(c, 'Abono no encontrado', 404)
+    if (row.tipo === 'aplicacion') return respuestaError(c, 'Las aplicaciones de abonos no se pueden borrar', 409)
+    // Si ya se aplicó parte de este abono a movimientos pagados, borrarlo dejaría el saldo negativo.
+    const saldoActual = (await saldosAbonos(db))[row.banco]?.[row.moneda] || 0
+    if (saldoActual - toMonto(row.monto) < 0) {
+      return respuestaError(c, 'Este abono ya se aplicó a movimientos pagados y no se puede borrar', 409)
+    }
+    await db`DELETE FROM tarjeta_abono WHERE id = ${id}`
+    return c.json({ ok: true })
+  })
+
   router.post('/pagar', async (c) => {
     const base = validarPago(await c.req.json())
     if (base.error) return respuestaError(c, base.error)
@@ -355,10 +426,32 @@ export function createTarjetaRouter({ db = sql } = {}) {
           }
         }
         const total = desdeUnidades(calculado, base.moneda)
-        // Pago directo (ej. abono en USD hecho en el banco): no toca el fondo ni pide tipo de cambio.
-        if (!base.desdeFondo) {
+        // Pago directo (plata pagada en el banco sin registro previo): no toca el fondo ni pide tipo de cambio.
+        if (base.origen === 'directo') {
           await tx`UPDATE gastos SET pagado = TRUE, updated_at = NOW() WHERE id = ANY(${base.ids})`
-          return { ok: true, actualizados: rows.length, total, total_fondo_clp: 0, desde_fondo: false }
+          return { ok: true, actualizados: rows.length, total, total_fondo_clp: 0, origen: 'directo' }
+        }
+        // Con abonos: los movimientos que un abono ya cubrió pasan a pagados y el abono se consume,
+        // así la deuda no se descuenta dos veces.
+        if (base.origen === 'abonos') {
+          const [fila] = await tx`
+            SELECT COALESCE(SUM(monto), 0) AS saldo FROM tarjeta_abono WHERE banco = ${base.banco} AND moneda = ${base.moneda}
+          `
+          const disponible = unidadesDesdeTotal(toMonto(fila?.saldo) || 0, base.moneda)
+          if (calculado > disponible) {
+            return {
+              error: 'Los abonos registrados no alcanzan para estos movimientos',
+              status: 409,
+              abono_disponible: desdeUnidades(disponible, base.moneda),
+            }
+          }
+          await tx`UPDATE gastos SET pagado = TRUE, updated_at = NOW() WHERE id = ANY(${base.ids})`
+          const nota = `Aplicado a ${rows.length} movimiento${rows.length === 1 ? '' : 's'}`
+          await tx`
+            INSERT INTO tarjeta_abono (fecha, banco, moneda, tipo, monto, nota)
+            VALUES (${hoyISO()}, ${base.banco}, ${base.moneda}, 'aplicacion', ${-total}, ${nota})
+          `
+          return { ok: true, actualizados: rows.length, total, total_fondo_clp: 0, origen: 'abonos' }
         }
         const importesFondo = rows.map(row => importePagoFondoClp(row, base.tipoCambio))
         if (importesFondo.some(importe => importe == null)) {
@@ -375,7 +468,7 @@ export function createTarjetaRouter({ db = sql } = {}) {
           INSERT INTO fondo_tarjeta_movimiento (fecha, tipo, moneda, monto, banco, nota)
           VALUES (${hoyISO()}, 'pago', ${'CLP'}, ${-totalFondoClp}, ${base.banco}, ${nota})
         `
-        return { ok: true, actualizados: rows.length, total, total_fondo_clp: totalFondoClp, desde_fondo: true }
+        return { ok: true, actualizados: rows.length, total, total_fondo_clp: totalFondoClp, origen: 'fondo' }
       })
     } catch (error) {
       console.error('[tarjeta/pagar]', error.message)

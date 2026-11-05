@@ -305,7 +305,7 @@ fondo_tarjeta_movimiento(id SERIAL PK, fecha TEXT YYYY-MM-DD, tipo 'aporte'|'aju
 |------|-------|--------|
 | `aporte` | + | Manual desde `/tarjeta` ("+ Aportar") — `POST /api/tarjeta/fondo/aportes` |
 | `ajuste` | ± | Corrección manual del saldo a un valor absoluto; se guarda la diferencia — `PUT /api/tarjeta/fondo/saldo` |
-| `pago` | − | Automático dentro de la transacción de `POST /api/tarjeta/pagar` (con `banco`). Los pagos nuevos, incluso los de consumos USD, se registran en CLP; para USD usa `monto_clp_manual` por gasto o el `tipo_cambio` enviado por la vista. Un pago directo (`desde_fondo: false`, p. ej. abono en USD hecho en el banco) no genera fila: solo marca los gastos `pagado` y no deja rastro en este libro |
+| `pago` | − | Automático dentro de la transacción de `POST /api/tarjeta/pagar` (con `banco`). Los pagos nuevos, incluso los de consumos USD, se registran en CLP; para USD usa `monto_clp_manual` por gasto o el `tipo_cambio` enviado por la vista. Un pago directo (`origen: 'directo'`, plata pagada en el banco sin registro previo) no genera fila: solo marca los gastos `pagado` y no deja rastro en este libro |
 
 **Saldo = `SUM(monto)` por moneda, derivado, nunca persistido.** En `/tarjeta` se presenta el saldo
 CLP y su destino: deuda CLP + equivalente de la deuda USD; no se presenta el saldo USD histórico
@@ -314,6 +314,28 @@ descontar del fondo un equivalente inventado. Los pagos no se pueden borrar
 (`DELETE /api/tarjeta/fondo/movimientos/:id` responde 409): quedan atados a gastos marcados
 `pagado`. Mismo criterio standalone que `reserva_tarjeta`: no es un `presupuesto_fondo` ni genera
 gastos (el cargo ya está en `gastos`; un aporte como gasto lo contaría dos veces).
+
+### `tarjeta_abono`
+
+Abonos hechos directo a una tarjeta (ej. depositar 170 USD en el banco), por banco y moneda. Libro
+con signo, standalone: no toca `fondo_tarjeta_movimiento` ni crea gastos.
+
+```sql
+tarjeta_abono(id SERIAL PK, fecha TEXT YYYY-MM-DD, banco TEXT, moneda 'CLP'|'USD',
+              tipo 'abono'|'aplicacion', monto NUMERIC con signo, nota TEXT NULL, created_at)
+```
+
+- `abono` (+): `POST /api/tarjeta/abonos`. Baja la deuda mostrada de ese banco y moneda.
+- `aplicacion` (−): automática en `POST /api/tarjeta/pagar` con `origen: 'abonos'`, cuando se marcan
+  como pagados los movimientos que el abono cubrió; consume el abono para no descontarlo dos veces.
+- **Saldo = `SUM(monto)` por banco y moneda, derivado, nunca persistido.** La deuda neta (`deudaEnPesos`,
+  `src/components/Tarjeta/deudaEnPesos.js`) es deuda de movimientos − saldo, sin bajar de cero; el
+  sobrante queda como saldo a favor. Un abono en USD descuenta en la misma proporción el equivalente
+  en pesos de cada movimiento USD. Las aplicaciones no se pueden borrar y un abono ya consumido
+  tampoco (409). El abono no cambia `gastos.pagado`: los movimientos siguen pendientes hasta
+  aplicarlos.
+- Los abonos también cuentan como cobertura extra en `calcularVencimientosTarjeta` (USD valorado a
+  `TIPO_CAMBIO_USD_DEFAULT`).
 
 ### `tarjeta_ciclo`
 
@@ -691,6 +713,7 @@ GAP: no hay Row Level Security. App de usuario único con auth por passkey/sesi�
 | — | `gastos.financiado_por`, `presupuesto_fondo.estado` (PG-only, `server/db/migrate-fondo-uso.js`) — uso de fondos de ahorro |
 | — | `reserva`, `reserva_saldo` (PG-only, `server/db/migrate-reservas.js`) — tracking de saldos reales vs esperados en reservas externas (F6) |
 | — | `fondo_tarjeta_movimiento` (PG-only, `server/db/migrate-fondo-tarjeta.js`) — fondo común manual para pagar tarjetas |
+| — | `tarjeta_abono` (PG-only, `server/db/migrate-tarjeta-abono.js`) — abonos directos a la tarjeta por banco y moneda |
 | — | `ingreso` (PG-only, `server/db/migrate-ingresos.js`) — ingresos reales, separados de la previsión de `presupuesto_ingreso` |
 | — | `fondo_ahorro_movimiento` (PG-only, `server/db/migrate-fondo-ahorro-movimientos.js`) — libro de aportes/ajustes de fondos de ahorro manuales |
 | — | `fondo_ahorro_movimiento.tipo` (PG-only, `server/db/migrate-fondo-ahorro-tipo.js`) — distingue aporte de ajuste; pasa a ser la fuente del saldo de un fondo manual (antes solo informativo) |

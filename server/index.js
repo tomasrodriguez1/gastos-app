@@ -32,6 +32,7 @@ import { migrateFondoAhorroTipo } from './db/migrate-fondo-ahorro-tipo.js'
 import { fondoAhorroRouter } from './fondosAhorro.js'
 import { migrateFGP } from './db/migrate-fgp.js'
 import { migrateTarjetaPago } from './db/migrate-tarjeta-pago.js'
+import { migrateTarjetaAbono } from './db/migrate-tarjeta-abono.js'
 import { fgpRouter } from './fgp.js'
 import { migrateViajes } from './db/migrate-viajes.js'
 import { migratePagadoContado } from './db/migrate-pagado-contado.js'
@@ -63,6 +64,7 @@ await migrateFondoAhorroMovimientos()
 await migrateFondoAhorroTipo()
 await migrateFGP()
 await migrateTarjetaPago()
+await migrateTarjetaAbono()
 await migrateTelegramAvisos()
 await migrateViajes()
 await migratePagadoContado()
