@@ -17,6 +17,14 @@
 | Start | `bun run start` → `bun run server/index.js` |
 | Dev | `bun run dev` |
 
+**Versión de Bun fijada:** `package.json` declara `"packageManager": "bun@1.3.14"` (la misma
+versión que se usa en local). Sin eso, el builder de Railway (mise) instalaba la última versión de
+Bun en cada build. La descarga de Bun sigue saliendo de GitHub Releases: si el build falla con
+`mise install ... 504 Gateway Timeout`, es una caída transitoria de GitHub y basta con hacer
+Redeploy. Para subir de versión, actualizar el campo y probar en local primero.
+GAP: no verificado en Railway que el builder respete `packageManager`; revisar en el log del
+próximo build que diga `bun@1.3.14`.
+
 **Dominio y HTTPS:** WebAuthn/passkeys exigen HTTPS en producción (excepto `localhost`). El
 dominio configurado en Railway debe coincidir **exactamente** con `PASSKEY_RP_ID` (sin
 protocolo) y `PASSKEY_ORIGIN` (con `https://`) — sin wildcards, sin subdominios distintos.
