@@ -61,6 +61,7 @@ export function useReconciliacionTarjeta() {
   }, [])
 
   const aportarFondo = useCallback((moneda, monto, nota) => enviarFondo('/aportes', 'POST', { moneda, monto, nota }), [enviarFondo])
+  const retirarFondo = useCallback((moneda, monto, nota) => enviarFondo('/retiros', 'POST', { moneda, monto, nota }), [enviarFondo])
   const ajustarSaldoFondo = useCallback((moneda, saldo) => enviarFondo('/saldo', 'PUT', { moneda, saldo }), [enviarFondo])
   const eliminarMovimientoFondo = useCallback(id => enviarFondo(`/movimientos/${id}`, 'DELETE'), [enviarFondo])
 
@@ -114,6 +115,7 @@ export function useReconciliacionTarjeta() {
     error,
     refrescar,
     aportarFondo,
+    retirarFondo,
     ajustarSaldoFondo,
     eliminarMovimientoFondo,
     abonar,

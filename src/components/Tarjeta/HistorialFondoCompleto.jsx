@@ -3,7 +3,7 @@ import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 import { formatFecha } from '../../utils/formatters'
 import { formatMontoTarjeta } from './formato'
 
-const ETIQUETAS = { aporte: 'Aporte', ajuste: 'Ajuste', pago: 'Pago' }
+const ETIQUETAS = { aporte: 'Aporte', retiro: 'Retiro', ajuste: 'Ajuste', pago: 'Pago' }
 const VISIBLES = 10
 
 export function HistorialFondoCompleto({ movimientos, saldos, onEliminar }) {
@@ -70,7 +70,7 @@ export function HistorialFondoCompleto({ movimientos, saldos, onEliminar }) {
               {visibles.map(mov => (
                 <tr key={mov.id} className="group hover:bg-white/[0.02]">
                   <td className="px-4 py-3 font-mono-numbers text-xs text-slate-500">{formatFecha(mov.fecha)}</td>
-                  <td className={`px-4 py-3 ${mov.tipo === 'pago' ? 'text-rose-400' : mov.tipo === 'aporte' ? 'text-emerald-400' : 'text-amber-400'}`}>{ETIQUETAS[mov.tipo]}</td>
+                  <td className={`px-4 py-3 ${mov.tipo === 'pago' || mov.tipo === 'retiro' ? 'text-rose-400' : mov.tipo === 'aporte' ? 'text-emerald-400' : 'text-amber-400'}`}>{ETIQUETAS[mov.tipo]}</td>
                   <td className="px-4 py-3 text-center"><span className={`rounded-md bg-slate-700/40 px-2 py-1 font-mono-numbers text-[10px] font-semibold ${mov.moneda === 'USD' ? 'text-violet-300' : 'text-sky-300'}`}>{mov.moneda}</span></td>
                   <td className="px-4 py-3 text-slate-400">{mov.nota || (mov.banco ? `${ETIQUETAS[mov.tipo]} ${mov.banco}` : 'Sin nota')}</td>
                   <td className={`px-4 py-3 text-right font-mono-numbers font-medium ${mov.monto < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{isPrivacyModeEnabled ? '••••••' : `${mov.monto > 0 ? '+' : ''}${formatMontoTarjeta(mov.monto, mov.moneda)}`}</td>

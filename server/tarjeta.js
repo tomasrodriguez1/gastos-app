@@ -334,6 +334,26 @@ export function createTarjetaRouter({ db = sql } = {}) {
     return c.json({ ok: true, movimiento: serializarMovimientoFondo(row) })
   })
 
+  // Saca plata del fondo sin pagar la tarjeta (ej. pasarla a otro fondo). No puede dejarlo en negativo.
+  router.post('/fondo/retiros', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    const moneda = body?.moneda
+    if (!MONEDAS_TARJETA.includes(moneda)) return respuestaError(c, 'Moneda no permitida')
+    const unidades = unidadesDesdeTotal(body?.monto, moneda)
+    if (unidades == null || unidades <= 0) return respuestaError(c, 'El retiro debe ser un monto positivo')
+    const fecha = body?.fecha ?? hoyISO()
+    if (!fechaValida(fecha)) return respuestaError(c, 'Fecha inválida (YYYY-MM-DD)')
+    const nota = typeof body?.nota === 'string' && body.nota.trim() ? body.nota.trim().slice(0, 200) : null
+    const disponible = unidadesDesdeTotal((await saldosFondo(db))[moneda], moneda)
+    if (unidades > disponible) return respuestaError(c, 'El retiro supera el saldo del fondo')
+    const [row] = await db`
+      INSERT INTO fondo_tarjeta_movimiento (fecha, tipo, moneda, monto, nota)
+      VALUES (${fecha}, 'retiro', ${moneda}, ${desdeUnidades(-unidades, moneda)}, ${nota})
+      RETURNING *
+    `
+    return c.json({ ok: true, movimiento: serializarMovimientoFondo(row) })
+  })
+
   // Corrige el saldo a un valor absoluto registrando la diferencia como ajuste,
   // así el historial sigue sumando exactamente al saldo mostrado.
   router.put('/fondo/saldo', async (c) => {

@@ -615,6 +615,26 @@ siendo válido).
 Consequences: lo ya pagado no se reescribe. Marcar cobrada no mueve el saldo del ciclo. El campo
 `cobrado` del resumen de clases sigue siendo la plata que entró por fecha de pago, no este estado.
 
+## DEC-028 - El fondo TC se administra desde /tarjeta y /fondos
+
+Date: 2026-11-16
+Context: el fondo TC solo se podía aportar o corregir en `/tarjeta`; `/fondos` lo mostraba en
+solo lectura al final de la página. Sacar plata sin pagar la tarjeta solo se podía con un ajuste
+de saldo, que en el historial queda como "Ajuste manual" sin motivo.
+Decision:
+- Aportar, retirar y corregir saldo usan un solo componente (`ControlesFondo`) en las dos vistas.
+  `/fondos` lo muestra arriba, bajo "Próximo vencimiento", con la línea de cobertura (cubre la
+  deuda / faltan $X), calculada con el mismo `deudaEnPesos` de `/tarjeta`.
+- Los pagos siguen solo en `/tarjeta`: necesitan elegir movimientos, banco, moneda y tipo de cambio.
+- Nuevo tipo `retiro` (−) en `fondo_tarjeta_movimiento`, con nota. `POST /api/tarjeta/fondo/retiros`
+  rechaza retiros mayores al saldo. Se puede borrar como un aporte.
+Alternatives considered: duplicar los controles en cada vista (descartada: se desincronizan);
+mover también los pagos a `/fondos` (descartada: la página se vuelve pesada); seguir usando
+ajustes para retirar (descartada: pierde el motivo).
+Consequences: en `/fondos`, sin tipo de cambio escrito, los USD sin `monto_clp_manual` no se
+convierten y la cobertura lo avisa ("ver en /tarjeta"). Un retiro no crea gasto ni aporte en otro
+fondo: si la plata va a un fondo de ahorro, ese aporte se registra aparte.
+
 ## GAP: decisions to document
 
 - Política de rotación de `ACCESS_TOKEN` (hasta su retiro definitivo, ver DEC-009).

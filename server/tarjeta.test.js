@@ -220,8 +220,8 @@ function dbFalsa(filasIniciales, movimientosIniciales = [], abonosIniciales = []
       const conBanco = consulta.includes('banco')
       const fila = conBanco
         ? { fecha: values[0], tipo: 'pago', moneda: values[1], monto: values[2], banco: values[3], nota: values[4] }
-        : consulta.includes("'aporte'")
-          ? { fecha: values[0], tipo: 'aporte', moneda: values[1], monto: values[2], nota: values[3] }
+        : consulta.includes("'aporte'") || consulta.includes("'retiro'")
+          ? { fecha: values[0], tipo: consulta.includes("'retiro'") ? 'retiro' : 'aporte', moneda: values[1], monto: values[2], nota: values[3] }
           : { fecha: values[0], tipo: 'ajuste', moneda: values[1], monto: values[2] }
       fila.id = movimientos.length + 1
       movimientos.push(fila)
@@ -401,6 +401,24 @@ describe('fondo de tarjetas', () => {
     expect((await post(router, '/fondo/aportes', { moneda: 'EUR', monto: 10 })).status).toBe(400)
     expect((await post(router, '/fondo/aportes', { moneda: 'CLP', monto: 10, fecha: '01-10-2026' })).status).toBe(400)
     expect(movimientos).toHaveLength(0)
+  })
+
+  test('un retiro descuenta del saldo con monto negativo y nota', async () => {
+    const { db, movimientos } = dbFalsa([], [{ id: 1, moneda: 'CLP', monto: '500000', tipo: 'aporte' }])
+    const router = createTarjetaRouter({ db })
+    const respuesta = await post(router, '/fondo/retiros', { moneda: 'CLP', monto: 120000, nota: 'a vacaciones' })
+    expect(respuesta.status).toBe(200)
+    expect(movimientos[1]).toMatchObject({ tipo: 'retiro', moneda: 'CLP', monto: -120000, nota: 'a vacaciones' })
+    expect((await (await router.request('/fondo')).json()).saldos.CLP).toBe(380000)
+  })
+
+  test('rechaza retiros no positivos o mayores al saldo', async () => {
+    const { db, movimientos } = dbFalsa([], [{ id: 1, moneda: 'CLP', monto: '1000', tipo: 'aporte' }])
+    const router = createTarjetaRouter({ db })
+    expect((await post(router, '/fondo/retiros', { moneda: 'CLP', monto: 0 })).status).toBe(400)
+    expect((await post(router, '/fondo/retiros', { moneda: 'CLP', monto: -5 })).status).toBe(400)
+    expect((await post(router, '/fondo/retiros', { moneda: 'CLP', monto: 1001 })).status).toBe(400)
+    expect(movimientos).toHaveLength(1)
   })
 
   test('PUT /fondo/saldo registra la diferencia como ajuste', async () => {

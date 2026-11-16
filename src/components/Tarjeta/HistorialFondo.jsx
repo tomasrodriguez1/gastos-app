@@ -3,7 +3,7 @@ import { usePrivacyMode } from '../../contexts/PrivacyModeContext'
 import { formatFecha } from '../../utils/formatters'
 import { formatMontoTarjeta } from './formato'
 
-const ETIQUETAS = { aporte: 'Aporte', ajuste: 'Ajuste', pago: 'Pago' }
+const ETIQUETAS = { aporte: 'Aporte', retiro: 'Retiro', ajuste: 'Ajuste', pago: 'Pago' }
 const VISIBLES = 8
 
 export function HistorialFondo({ movimientos, moneda, onEliminar }) {
@@ -38,7 +38,7 @@ export function HistorialFondo({ movimientos, moneda, onEliminar }) {
             <li key={mov.id} className="group flex items-center gap-2 text-xs">
               <span className="w-10 shrink-0 font-mono-numbers text-slate-600">{formatFecha(mov.fecha)}</span>
               <span className="min-w-0 flex-1 truncate text-slate-400" title={mov.nota || ''}>
-                {ETIQUETAS[mov.tipo]}{mov.banco ? ` ${mov.banco}` : ''}{mov.nota && mov.tipo === 'aporte' ? ` · ${mov.nota}` : ''}
+                {ETIQUETAS[mov.tipo]}{mov.banco ? ` ${mov.banco}` : ''}{mov.nota && (mov.tipo === 'aporte' || mov.tipo === 'retiro') ? ` · ${mov.nota}` : ''}
               </span>
               <span className={`font-mono-numbers ${mov.monto < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
                 {isPrivacyModeEnabled ? '••••' : `${mov.monto > 0 ? '+' : ''}${formatMontoTarjeta(mov.monto, moneda)}`}

@@ -254,7 +254,7 @@ CREATE TABLE IF NOT EXISTS tarjeta_ciclo (
 CREATE TABLE IF NOT EXISTS fondo_tarjeta_movimiento (
   id         SERIAL PRIMARY KEY,
   fecha      TEXT NOT NULL CHECK (fecha ~ '^\d{4}-\d{2}-\d{2}$'),
-  tipo       TEXT NOT NULL CHECK (tipo IN ('aporte', 'ajuste', 'pago')),
+  tipo       TEXT NOT NULL CHECK (tipo IN ('aporte', 'retiro', 'ajuste', 'pago')),
   moneda     TEXT NOT NULL CHECK (moneda IN ('CLP', 'USD')),
   monto      NUMERIC NOT NULL,
   banco      TEXT,

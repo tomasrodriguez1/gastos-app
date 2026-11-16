@@ -159,6 +159,7 @@ traspaso lo devuelve a pendiente, no a standby.
 | `traspaso_tc` | no afecta | El gasto ya pasó al fondo de tarjeta. Con `tarjeta_movimiento_id` si generó un aporte real (un aporte por lote); `NULL` si solo se marcó como "ya movido" (historial) |
 | `cobertura` | + | Plata traída para tapar un exceso. Desde un fondo de ahorro manual inserta además un `ajuste` negativo en `fondo_ahorro_movimiento` (misma transacción) |
 | `deficit` | + | Exceso que se paga con el sueldo del ciclo siguiente a `ciclo`. Mientras ese ciclo no pase se muestra como compromiso ("Del sueldo de Nov: $X extra a la tarjeta") |
+| `retiro` | − | Manual desde `/tarjeta` o `/fondos` ("− Retirar"): plata que sale del fondo sin pagar la tarjeta. No puede superar el saldo — `POST /api/tarjeta/fondo/retiros` (DEC-028) |
 | `ajuste` | ± | Corrección del saldo ("Ajustar saldo" guarda la diferencia) |
 
 Borrar en `/tarjeta` el aporte creado por un traspaso borra las filas `traspaso_tc` del lote
@@ -297,13 +298,13 @@ el libro compatible.
 Libro de movimientos con signo:
 
 ```sql
-fondo_tarjeta_movimiento(id SERIAL PK, fecha TEXT YYYY-MM-DD, tipo 'aporte'|'ajuste'|'pago',
+fondo_tarjeta_movimiento(id SERIAL PK, fecha TEXT YYYY-MM-DD, tipo 'aporte'|'retiro'|'ajuste'|'pago',
                          moneda 'CLP'|'USD', monto NUMERIC con signo, banco TEXT NULL, nota TEXT, created_at)
 ```
 
 | tipo | Signo | Origen |
 |------|-------|--------|
-| `aporte` | + | Manual desde `/tarjeta` ("+ Aportar") — `POST /api/tarjeta/fondo/aportes` |
+| `aporte` | + | Manual desde `/tarjeta` o `/fondos` ("+ Aportar") — `POST /api/tarjeta/fondo/aportes` |
 | `ajuste` | ± | Corrección manual del saldo a un valor absoluto; se guarda la diferencia — `PUT /api/tarjeta/fondo/saldo` |
 | `pago` | − | Automático dentro de la transacción de `POST /api/tarjeta/pagar` (con `banco`). Los pagos nuevos, incluso los de consumos USD, se registran en CLP; para USD usa `monto_clp_manual` por gasto o el `tipo_cambio` enviado por la vista. Un pago directo (`origen: 'directo'`, plata pagada en el banco sin registro previo) no genera fila: solo marca los gastos `pagado` y no deja rastro en este libro |
 

@@ -52,7 +52,7 @@ Principales grupos:
 - Presupuesto por ciclo financiero (`GET /api/presupuesto/ciclos`, `GET/PUT /api/presupuesto/:ciclo`)
 - Gastos por ciclo (`GET /api/gastos?ciclo=YYYY-MM`) con filtro calendario secundario combinable (`&mes=YYYY-MM`)
 - Pagos de tarjeta (`GET /api/tarjeta/resumen`, `POST /api/tarjeta/pagar`) — totales derivados y pago atómico para Edwards/BICE
-- Fondo de tarjetas (`GET /api/tarjeta/fondo`, `POST /api/tarjeta/fondo/aportes`, `PUT /api/tarjeta/fondo/saldo`, `DELETE /api/tarjeta/fondo/movimientos/:id`) — fondo común manual por moneda; `pagar` descuenta automáticamente
+- Fondo de tarjetas (`GET /api/tarjeta/fondo`, `POST /api/tarjeta/fondo/aportes`, `POST /api/tarjeta/fondo/retiros`, `PUT /api/tarjeta/fondo/saldo`, `DELETE /api/tarjeta/fondo/movimientos/:id`) — fondo común manual por moneda; `pagar` descuenta automáticamente
 - Abonos a la tarjeta (`GET/POST /api/tarjeta/abonos`, `DELETE /api/tarjeta/abonos/:id`) — depósitos directos en el banco por tarjeta y moneda; bajan la deuda mostrada y se aplican después con `pagar` (`origen: 'abonos'`)
 - Reserva de tarjeta legacy (`GET/PUT /api/reserva-tarjeta`) — LEGACY, ya no usado por la UI; se conserva por el dato histórico
 - Reservas de ahorro F6 (`GET/POST /api/reservas`, `PATCH /api/reservas/:id`, `GET/POST /api/reservas/:id/saldos`) — bolsillos externos (Mercado Pago); UI en `/fondos` además del agente. `POST /:id/saldos` (`{ monto, fecha }`) es el camino manual — registra con `origen='manual'`, usando la misma `registrarSaldo()` que ya usaba el agente con `origen='foto_agente'`. La respuesta (y cada fila de `GET /:id/saldos`) incluye `retiros`/`crecimiento`: el desglose de cuánto de la diferencia fueron gastos de la categoría vinculada vs rendimiento estimado
@@ -80,6 +80,7 @@ quedan detrás del gate global normal.
 | `DELETE /api/tarjeta/abonos/:id` | — | Borra un abono; 409 si es una `aplicacion` o si ya se aplicó parte a movimientos pagados (el saldo quedaría negativo) |
 | `GET /api/tarjeta/fondo` | — | `{ saldos: { CLP, USD }, movimientos: [últimos 50] }` |
 | `POST /api/tarjeta/fondo/aportes` | `{ moneda, monto > 0, fecha?, nota? }` | Registra un aporte manual |
+| `POST /api/tarjeta/fondo/retiros` | `{ moneda, monto > 0, fecha?, nota? }` | Registra un retiro (monto negativo); 400 si supera el saldo (DEC-028) |
 | `PUT /api/tarjeta/fondo/saldo` | `{ moneda, saldo }` | Lleva el saldo a un valor absoluto registrando la diferencia como `ajuste` |
 | `DELETE /api/tarjeta/fondo/movimientos/:id` | — | Borra un aporte/ajuste; 409 si es un `pago` |
 

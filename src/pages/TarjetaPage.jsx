@@ -106,6 +106,7 @@ export function TarjetaPage({ gastos, reconciliacion, vencimientos, onActualizar
         onTipoCambio={setTipoCambio}
         fondoSaldos={reconciliacion.fondo?.saldos}
         onAportar={reconciliacion.aportarFondo}
+        onRetirar={reconciliacion.retirarFondo}
         onAjustarSaldo={reconciliacion.ajustarSaldoFondo}
       />
 
