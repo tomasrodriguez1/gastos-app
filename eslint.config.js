@@ -19,7 +19,7 @@ export default defineConfig([
     },
   },
   {
-    files: ['server/**/*.js', 'tests/**/*.js'],
+    files: ['server/**/*.js', 'tests/**/*.js', 'src/**/*.test.jsx'],
     languageOptions: {
       globals: globals.bunBuiltin,
     },

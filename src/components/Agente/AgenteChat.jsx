@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { PasoAgente } from './PasoAgente'
 import { HistorialConversaciones } from './HistorialConversaciones'
+import { MarkdownMensaje } from './MarkdownMensaje'
 import { useAgenteChat } from '../../contexts/AgenteChatContext'
 
 const TOOL_PART_TYPES = new Set([
@@ -76,47 +77,57 @@ export function AgenteChat() {
           </p>
         )}
 
-        {messages.map(message => (
-          <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-            {message.role === 'user' ? (
-              <div className="max-w-[85%] flex flex-col items-end gap-1.5">
-                {message.parts.some(p => p.type === 'file') && (
-                  <div className="flex flex-wrap gap-1.5 justify-end">
-                    {message.parts.filter(p => p.type === 'file').map((p, i) => (
-                      <img
-                        key={i}
-                        src={p.url}
-                        alt={p.filename || 'Imagen adjunta'}
-                        className="w-20 h-20 object-cover rounded-lg border border-emerald-500/30"
-                      />
-                    ))}
-                  </div>
-                )}
-                {message.parts.some(p => p.type === 'text' && p.text) && (
-                  <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-100 text-sm px-3 py-2 whitespace-pre-wrap">
-                    {message.parts.filter(p => p.type === 'text').map(p => p.text).join('')}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="max-w-[85%] space-y-1.5">
-                {message.parts.map((part, i) => {
-                  if (part.type === 'text' && part.text) {
-                    return (
-                      <div key={i} className="rounded-xl bg-slate-800 border border-slate-700/50 text-slate-200 text-sm px-3 py-2 whitespace-pre-wrap">
-                        {part.text}
-                      </div>
-                    )
-                  }
-                  if (TOOL_PART_TYPES.has(part.type)) {
-                    return <PasoAgente key={i} part={part} />
-                  }
-                  return null
-                })}
-              </div>
-            )}
-          </div>
-        ))}
+        {messages.map(message => {
+          const esUltimo = message.id === messages[messages.length - 1]?.id && status === 'streaming'
+          let ultimoTexto = -1
+          if (esUltimo) {
+            message.parts.forEach((part, indice) => {
+              if (part.type === 'text' && part.text) ultimoTexto = indice
+            })
+          }
+          return (
+            <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+              {message.role === 'user' ? (
+                <div className="max-w-[85%] flex flex-col items-end gap-1.5">
+                  {message.parts.some(p => p.type === 'file') && (
+                    <div className="flex flex-wrap gap-1.5 justify-end">
+                      {message.parts.filter(p => p.type === 'file').map((p, i) => (
+                        <img
+                          key={i}
+                          src={p.url}
+                          alt={p.filename || 'Imagen adjunta'}
+                          className="w-20 h-20 object-cover rounded-lg border border-emerald-500/30"
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {message.parts.some(p => p.type === 'text' && p.text) && (
+                    <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-100 text-sm px-3 py-2 whitespace-pre-wrap">
+                      {message.parts.filter(p => p.type === 'text').map(p => p.text).join('')}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="min-w-0 w-full space-y-2">
+                  {message.parts.map((part, i) => {
+                    if (part.type === 'text' && part.text) {
+                      return (
+                        <div key={i}>
+                          <MarkdownMensaje texto={part.text} />
+                          {i === ultimoTexto && <span className="chat-md-cursor" aria-hidden="true" />}
+                        </div>
+                      )
+                    }
+                    if (TOOL_PART_TYPES.has(part.type)) {
+                      return <PasoAgente key={i} part={part} />
+                    }
+                    return null
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
 
         {status === 'submitted' && (
           <div className="text-xs text-slate-500 pl-3">Pensando…</div>
