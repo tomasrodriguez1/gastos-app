@@ -74,3 +74,78 @@ body {
   background: #2a2d3e;
   border-radius: 2px;
 }
+
+/* Markdown del chat del agente. El resaltado usa las clases de highlight.js
+   (rehype-highlight) pero con una paleta propia, para no cargar el CSS global
+   de un tema y que el bloque se vea como el de un chat. */
+.chat-md pre,
+.chat-md pre code,
+.chat-md th,
+.chat-md td {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.chat-md pre,
+.chat-md pre code {
+  font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre;
+}
+
+.chat-md ul.contains-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.chat-md li.task-list-item {
+  list-style: none;
+}
+
+.chat-md .hljs-keyword,
+.chat-md .hljs-selector-tag,
+.chat-md .hljs-built_in,
+.chat-md .hljs-tag,
+.chat-md .hljs-name { color: #ff7b72; }
+
+.chat-md .hljs-string,
+.chat-md .hljs-attr,
+.chat-md .hljs-attribute,
+.chat-md .hljs-symbol,
+.chat-md .hljs-bullet,
+.chat-md .hljs-addition,
+.chat-md .hljs-template-tag { color: #a5d6ff; }
+
+.chat-md .hljs-title,
+.chat-md .hljs-section,
+.chat-md .hljs-title.function_,
+.chat-md .hljs-function { color: #d2a8ff; }
+
+.chat-md .hljs-comment,
+.chat-md .hljs-quote,
+.chat-md .hljs-deletion,
+.chat-md .hljs-meta { color: #8b949e; }
+
+.chat-md .hljs-number,
+.chat-md .hljs-literal,
+.chat-md .hljs-type,
+.chat-md .hljs-link { color: #79c0ff; }
+
+.chat-md .hljs-variable,
+.chat-md .hljs-template-variable,
+.chat-md .hljs-regexp { color: #ffa657; }
+
+.chat-md-cursor {
+  display: inline-block;
+  width: 0.45rem;
+  height: 1.05em;
+  margin-top: 0.35rem;
+  border-radius: 1px;
+  background: #e8e8e8;
+  vertical-align: text-bottom;
+  animation: chat-md-cursor 1s steps(2) infinite;
+}
+
+@keyframes chat-md-cursor {
+  0% { opacity: 1; }
+  50% { opacity: 0; }
+}

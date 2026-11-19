@@ -126,7 +126,10 @@ una sola conversación **activa** a la vez, no una por página. `AgentePage` (p�
 `AgenteFlotante` (botón flotante + panel deslizable, visible en todas las rutas salvo
 `/agente` mismo) consumen ambos el mismo estado vía `useAgenteChat()` y renderizan la misma UI
 de chat (`src/components/Agente/AgenteChat.jsx`) — escribir en uno y mirar el otro muestra la
-misma conversación. El panel flotante no embebe la tabla de bandeja completa (un `TablaGastos`
+misma conversación. Las respuestas del agente se renderizan como Markdown
+(`src/components/Agente/MarkdownMensaje.jsx`: negritas, listas, tablas, citas y
+bloques de código con resaltado y botón de copiar). Lo que escribe la persona
+sigue en texto plano. El panel flotante no embebe la tabla de bandeja completa (un `TablaGastos`
 angosto se ve mal — cambia de layout por *viewport width*, no por ancho de contenedor); en su
 lugar linkea a `/bandeja` vía `BotonBandeja`.
 
